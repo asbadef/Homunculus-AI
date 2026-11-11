@@ -15,7 +15,14 @@ file and the server disagree, the server is right and this file changes.
 * Errors (§4.5) come in three shapes; `read_error` reads all three. Every refusal is a
   `TresError` with the HTTP status; a failure with no answer at all (a timeout, a refused
   connection) is a `TresError` with `status` None, named by its class and never by a URL.
+* A session that cannot be had is a `TresSessionError`: the token route answered anything but a
+  2xx, or a 2xx with no usable session id; or a FHIR call was refused 401 again after the one new
+  token. Nothing in it is about one resource, so the ledger counts it against none and the round
+  ends (review #1: a password changed at the ministry must not make every due stay `stuck`).
 * HTTP 429 (D21) is never retried here: the `TresError` carries `retry_after` and the round ends.
+* `is_outage` tells the platform's (or the line's) failures — a session refused, a 429, a 5xx, no
+  answer — from a refusal of ONE resource (any other status), which is the only kind the ledger
+  counts towards `stuck` (open item O13, closed «no»).
 
 As `api/infinity_waves.py`'s hub client: `trust_env=False` (no proxy from the environment), no
 redirects, https only, an explicit timeout, one keep-alive client built on first use. Nothing is
@@ -25,6 +32,7 @@ logged here: a body is PHI (D25).
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from urllib.parse import quote
@@ -59,6 +67,24 @@ class TresError(Exception):
         self.status = status
         self.message = message
         self.retry_after = retry_after
+
+
+class TresSessionError(TresError):
+    """No session could be had: the token route refused or answered no usable session id, or a
+    FHIR call was refused 401 again after the one new token. `status`, `message` and
+    `retry_after` as `TresError`'s (a 429 from the token route keeps its `Retry-After`)."""
+
+
+def is_outage(exc: TresError) -> bool:
+    """Is this failure the platform's or the line's, not one resource's? A session refused, a 429,
+    any 5xx, or no answer at all. Everything else (a 4xx about the body, a 2xx `$validate` that
+    holds an error) is a refusal of the resource that was sent."""
+    return (isinstance(exc, TresSessionError) or exc.status is None or exc.status == 429
+            or exc.status >= 500)
+
+
+#: What a session id must look like to ride in a header: printable ASCII, no space.
+_SESSION_ID = re.compile(r"[!-~]+")
 
 
 def read_error(body: str) -> str:
@@ -171,28 +197,32 @@ class TresClient:
             raise TresError(None, type(exc).__name__) from None
 
     async def token(self) -> str:
-        """The session id (§4.1), asked once and kept until a 401 or `aclose()`."""
+        """The session id (§4.1), asked once and kept until a 401 or `aclose()`. Any answer but a
+        2xx carrying a usable session id is a `TresSessionError`; no answer at all stays a plain
+        `TresError` with `status` None (a dead line counts towards the round's five in a row)."""
         if self._session is None:
             response = await self._request(
                 "POST", f"{self._base}/auth/token",
                 auth=httpx.BasicAuth(self.account.username, self.account.password),
                 headers={"Content-Type": TOKEN_CONTENT_TYPE, "Accept": "application/json"},
                 content=json.dumps({"healthcareProviderId": self.account.provider_id}))
-            if response.status_code == 429:
-                raise TresError(429, read_error(response.text) or "Too Many Requests",
-                                retry_after=_retry_after(response))
-            _refuse_unless_ok(response)
+            status = response.status_code
+            if not response.is_success:
+                said = read_error(response.text) or ("Too Many Requests" if status == 429 else f"HTTP {status}")
+                raise TresSessionError(status, said,
+                                       retry_after=_retry_after(response) if status == 429 else None)
             payload = _answer(response).get("payload")
             session = payload.get("sessionId") if isinstance(payload, dict) else None
-            if not isinstance(session, str) or not session.strip():
-                raise TresError(response.status_code, "the platform's answer carries no session id")
+            if not isinstance(session, str) or not _SESSION_ID.fullmatch(session):
+                raise TresSessionError(status, "the platform's answer carries no session id")
             self._session = session
         return self._session
 
     async def _fhir(self, method: str, path: str, *, params: dict | None = None,
                     resource: dict | None = None) -> httpx.Response:
         """One FHIR request with the session. A 401 asks one new token and sends it once more; a
-        429 raises with what `Retry-After` said. Every other answer is the caller's to read."""
+        second 401 is a `TresSessionError`. A 429 raises with what `Retry-After` said. Every other
+        answer is the caller's to read."""
         headers = {"Accept": "application/json"}
         content = None
         if resource is not None:
@@ -207,6 +237,8 @@ class TresClient:
             if response.status_code != 401:
                 break
             self._session = None            # §4.1: a 401 means a new token
+        if response.status_code == 401:
+            raise TresSessionError(401, read_error(response.text) or "HTTP 401")
         if response.status_code == 429:
             raise TresError(429, read_error(response.text) or "Too Many Requests",
                             retry_after=_retry_after(response))

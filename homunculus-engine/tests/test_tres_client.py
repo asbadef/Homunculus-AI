@@ -12,7 +12,8 @@ import httpx
 import pytest
 
 from homunculus.tres.client import (
-    LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, read_error,
+    LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, TresSessionError, is_outage,
+    read_error,
 )
 
 ACCOUNT = TresAccount("https://tres.test", "sentetik", "gizli-parola", "PRV-0001")
@@ -89,13 +90,27 @@ async def test_the_token_request_is_basic_with_the_provider_id_and_is_asked_once
     (httpx.Response(401, json={"message": "Invalid credentials"}), 401, "Invalid credentials"),
     (httpx.Response(200, json={"payload": {}}), 200, "the platform's answer carries no session id"),
     (httpx.Response(200, text="<html>"), 200, "the platform's answer carries no session id"),
+    (httpx.Response(200, json={"payload": {"sessionId": "oturum ç"}}), 200,
+     "the platform's answer carries no session id"),        # no header could carry it
     (httpx.Response(503, text=""), 503, "HTTP 503"),
+    (httpx.Response(403, json={"error": "Provider blocked"}), 403, "Provider blocked"),
 ])
-async def test_a_refused_or_empty_token_answer_is_an_error(response, status, words):
+async def test_a_refused_or_malformed_token_answer_is_a_session_error(response, status, words):
+    """Nothing in it is about one resource: the ledger must count it against none (review #1)."""
     client = TresClient(ACCOUNT, transport=httpx.MockTransport(lambda request: response))
-    with pytest.raises(TresError) as raised:
+    with pytest.raises(TresSessionError) as raised:
         await client.token()
     assert (raised.value.status, raised.value.message) == (status, words)
+    assert isinstance(raised.value, TresError) and is_outage(raised.value)
+    await client.aclose()
+
+
+async def test_a_429_from_the_token_route_is_a_session_error_that_keeps_retry_after():
+    client = TresClient(ACCOUNT, transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, headers={"Retry-After": "90"}, json={"message": "Slow down"})))
+    with pytest.raises(TresSessionError) as raised:
+        await client.find("Patient", "hmn-p-0001")
+    assert (raised.value.status, raised.value.message, raised.value.retry_after) == (429, "Slow down", 90.0)
     await client.aclose()
 
 
@@ -124,7 +139,7 @@ async def test_a_second_401_is_the_error_and_the_next_call_asks_a_token_again():
                     httpx.Response(401, json={"error": "Session expired"}),
                     httpx.Response(200, json={"resourceType": "Bundle", "entry": []}))
     client = client_on(script)
-    with pytest.raises(TresError) as raised:
+    with pytest.raises(TresSessionError) as raised:
         await client.find("Patient", "hmn-p-0001")
     assert (raised.value.status, raised.value.message) == (401, "Session expired")
     assert len(script.fhir) == 2 and script.sessions == 2
@@ -271,7 +286,20 @@ async def test_a_failure_with_no_answer_is_an_error_named_by_its_class_never_by_
     with pytest.raises(TresError) as raised:
         await client.token()
     assert (raised.value.status, raised.value.message) == (None, "ConnectError")
+    # No answer is not a refusal of the session: it counts towards the round's five in a row.
+    assert not isinstance(raised.value, TresSessionError) and is_outage(raised.value)
     await client.aclose()
+
+
+@pytest.mark.parametrize("error, outage", [
+    (TresError(None, "ConnectError"), True), (TresError(429, "Too many"), True),
+    (TresError(500, "x"), True), (TresError(503, "x"), True), (TresSessionError(401, "x"), True),
+    (TresSessionError(200, "x"), True),
+    (TresError(400, "x"), False), (TresError(404, "x"), False), (TresError(409, "x"), False),
+    (TresError(422, "x"), False), (TresError(200, "Patient.name: minimum required = 1"), False),
+])
+def test_an_outage_is_the_platforms_or_the_lines_and_a_refusal_is_one_resources(error, outage):
+    assert is_outage(error) is outage
 
 
 # ---------------------------------------------------------------- the spacing hook, and the end

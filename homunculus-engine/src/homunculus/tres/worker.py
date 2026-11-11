@@ -12,8 +12,11 @@ whole, one after the other, each on its own client:
 * requests are sequential and at least PACE_S apart (the client's `pace` hook);
 * HTTP 429 ends the tenant's round; the report carries how long to wait (`Retry-After`, or
   THROTTLED_S);
-* MAX_CONSECUTIVE packages failing in a row end the tenant's round too — the platform, or the
-  line to it, is not well, and the next round will find out.
+* a session refused (`TresSessionError`: a wrong password, a blocked provider) ends the tenant's
+  round at once — every next package would ask the same token route the same question;
+* MAX_CONSECUTIVE packages failing in a row (a 5xx, a dead line, a package's own exception) end
+  the tenant's round too — the platform, or the line to it, is not well, and the next round will
+  find out. None of these is counted against a ledger row (ledger.py: an outage).
 
 THE INSTALL'S LOCK (D2 (b)): with `egress` false `run_round` returns at once — no session is
 opened, no client is built, no connection is made, whatever a tenant's row says. `tres_loop` is
@@ -36,7 +39,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.tres.client import TresAccount, TresClient, TresError
+from homunculus.tres.client import TresAccount, TresClient, TresError, TresSessionError
 from homunculus.tres.ledger import deliver, record_skip
 from homunculus.tres.models import TresDelivery, TresSettings, account_of
 
@@ -77,7 +80,8 @@ class Sender:
 
 
 #: One stay's resources, taken to the platform in order through the `Sender` it is handed. It lets
-#: a `TresError` the ledger raised again (a 429, a dead line) pass: the round reads it.
+#: a `TresError` the ledger raised again (an outage: no session, a 429, a 5xx, a dead line) pass:
+#: the round reads it.
 Package = Callable[[Sender], Awaitable[None]]
 #: The packages a tenant has to send this round, by its settings (F1: the stays that are due).
 PackageSource = Callable[[AsyncSession, TresSettings], AsyncIterator[Package]]
@@ -112,7 +116,8 @@ class _Pacer:
 
 async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: TresSettings,
                 source: PackageSource, report: RoundReport) -> None:
-    """One tenant's packages, until they end, a 429 comes, or MAX_CONSECUTIVE fail in a row."""
+    """One tenant's packages, until they end, a 429 or a refused session comes, or MAX_CONSECUTIVE
+    fail in a row."""
     consecutive = 0
     async for package in source(db, settings):
         try:
@@ -124,6 +129,10 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
                 report.retry_after = max(report.retry_after or 0.0, wait)
                 log.warning("TRƏS: 429 for tenant %s; its round ends, the next waits %.0f s",
                             sender.tenant_id, report.retry_after)
+                return
+            if isinstance(exc, TresSessionError):
+                log.warning("TRƏS: %s (HTTP %s) for tenant %s; its round ends",
+                            type(exc).__name__, exc.status, sender.tenant_id)
                 return
             consecutive += 1
         except Exception as exc:  # noqa: BLE001 — one bad package must not end the round

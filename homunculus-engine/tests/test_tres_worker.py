@@ -3,13 +3,14 @@
 and no client is ever built; the loop is started by the lifespan only when the lock is open, waits
 five minutes between rounds, survives a bad one and backs off after a 429; a round works only the
 tenants whose mode is not `off` and whose account is whole, hands each package a `Sender`, spaces
-the requests 300 ms apart, ends a tenant's round on a 429 and after five failures in a row. The
+the requests 300 ms apart, ends a tenant's round at once on a 429 or a refused session and after
+five failures in a row (a 5xx, a dead line), and an outage counts against no ledger row. The
 lock, the loop and the lifespan need no database; the rounds run on Postgres against the stand-in
 (tests/fake_tres.py). Synthetic tenants, synthetic people."""
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -30,6 +31,7 @@ from tests.conftest import requires_db
 from tests.fake_tres import FakeTres
 
 T0 = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
+EARLIER = T0 - timedelta(hours=1)
 
 
 def patient(local_id: str, given: str = "Ayşe") -> dict:
@@ -145,14 +147,14 @@ async def feed(db_session):
     await db_session.commit()
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    async def round_(source):
+    async def round_(source, transport=None):
         sleeps, clients = [], []
 
         async def sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
         def factory(account):
-            clients.append(TresClient(account, transport=fake.transport))
+            clients.append(TresClient(account, transport=transport or fake.transport))
             return clients[-1]
 
         report = await run_round(maker, egress=True, source=source, now=T0, client_factory=factory, sleep=sleep)
@@ -218,8 +220,75 @@ async def test_a_429_ends_the_tenants_round_and_says_how_long_to_wait(feed, db_s
     assert (report.packages, report.failed, report.retry_after) == (0, 1, waits)
     assert fake.fhir_requests == [("GET", "/fhir/Patient")]          # the second package never ran
     (row,) = (await db_session.execute(select(TresDelivery))).scalars()
-    assert (row.local_id, row.status, row.attempts) == ("hmn-p-0001", "failed", 1)
+    assert (row.local_id, row.status, row.attempts) == ("hmn-p-0001", "pending", 0)   # counted against no row
     assert clients[0]._client is None
+
+
+async def _failed_before(db_session, tenant_id, local_ids) -> None:
+    """Rows that failed twice before and are due again: an outage must leave them exactly so."""
+    for local_id in local_ids:
+        db_session.add(TresDelivery(tenant_id=tenant_id, environment="test", resource_type="patient",
+                                    local_id=local_id, status="failed", attempts=2, payload_digest="a" * 64,
+                                    last_error="Eski xəta", next_attempt_at=EARLIER))
+    await db_session.commit()
+
+
+async def _ledger(db_session) -> set:
+    db_session.expire_all()
+    return {(r.local_id, r.status, r.attempts, r.payload_digest, r.last_error, r.next_attempt_at)
+            for r in (await db_session.execute(select(TresDelivery))).scalars()}
+
+
+@requires_db
+async def test_a_wrong_password_asks_one_token_ends_the_round_and_touches_no_row(feed, db_session, caplog):
+    """Review #1: the password was changed at the ministry. Twelve stays are due."""
+    fake, tenants, round_ = feed
+    settings = await db_session.get(TresSettings, tenants["acik"].id)
+    settings.test_password = "degisdirilib-parola"
+    await db_session.commit()
+    local_ids = [f"hmn-p-{n:04d}" for n in range(12)]
+    await _failed_before(db_session, tenants["acik"].id, local_ids)
+    before = await _ledger(db_session)
+    with caplog.at_level("WARNING"):
+        report, _, clients = await round_(source_of(*[sends(local_id) for local_id in local_ids]))
+    assert fake.requests == [("POST", "/auth/token")]                # ONE token request, no FHIR at all
+    assert (report.packages, report.failed, report.retry_after) == (0, 1, None)
+    assert await _ledger(db_session) == before                      # every row as it was
+    assert "TresSessionError" in caplog.text and "Invalid credentials" not in caplog.text
+    assert clients[0]._client is None
+
+
+@requires_db
+async def test_a_platform_answering_503_ends_the_round_after_five_and_touches_no_row(feed, db_session):
+    fake, tenants, round_ = feed
+    local_ids = [f"hmn-p-{n:04d}" for n in range(12)]
+    await _failed_before(db_session, tenants["acik"].id, local_ids)
+    before = await _ledger(db_session)
+
+    def down(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/token":
+            return fake.transport.handler(request)                  # the session still opens
+        return httpx.Response(503, text="Service Unavailable")
+
+    report, _, _ = await round_(source_of(*[sends(local_id) for local_id in local_ids]),
+                                transport=httpx.MockTransport(down))
+    assert (report.packages, report.failed, report.retry_after) == (0, MAX_CONSECUTIVE, None)
+    assert await _ledger(db_session) == before
+
+
+@requires_db
+async def test_a_refusal_about_one_resource_is_still_counted_and_the_round_goes_on(feed, db_session):
+    fake, tenants, round_ = feed
+    broken = {k: v for k, v in patient("hmn-p-0001").items() if k != "meta"}
+
+    async def refused(sender) -> None:
+        await sender.send(resource_type="patient", fhir_type="Patient", local_id="hmn-p-0001", resource=broken)
+
+    report, _, _ = await round_(source_of(refused, sends("hmn-p-0002")))
+    assert (report.packages, report.failed) == (2, 0)
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.local_id, r.status, r.attempts) for r in rows] == [("hmn-p-0001", "failed", 1),
+                                                                  ("hmn-p-0002", "sent", 0)]
 
 
 @requires_db
@@ -271,4 +340,5 @@ async def test_a_dead_line_counts_as_a_failure_and_five_of_them_end_the_round(db
         client_factory=lambda account: TresClient(account, transport=httpx.MockTransport(refuse)))
     assert (report.packages, report.failed, report.retry_after) == (0, 5, None)
     rows = (await db_session.execute(select(TresDelivery))).scalars().all()
-    assert len(rows) == 5 and {r.last_error for r in rows} == {"ConnectError"}
+    # counted against the round, never against a row: five brand-new rows, still `pending`
+    assert len(rows) == 5 and {(r.status, r.attempts, r.last_error) for r in rows} == {("pending", 0, None)}

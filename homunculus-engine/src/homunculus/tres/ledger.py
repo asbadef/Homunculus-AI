@@ -11,11 +11,15 @@ what is asked of the platform because of it.
   id went stale, and falls back to the search (§4.2).
 * mode `send`, no platform id — find by the local id, then PUT, or POST with the local id as the
   placeholder `id` (D4). Another sender never collides: the local ids carry `hmn-` (D5).
-* a refusal — the row reads `failed`, the attempt is counted, the platform's words are kept
-  (encrypted: they may echo a value), and the same payload is not tried again for 30 minutes; the
-  fifth failure in a row makes it `stuck`, which only `force` (the nightly retry, «Yeniden dene»)
-  or a changed payload tries again (D21). A 429 and a failure with no answer are recorded the same
-  way AND RE-RAISED, so the caller ends its round.
+* a refusal OF THIS RESOURCE (a 4xx other than 401 and 429, or a `$validate` that holds an error)
+  — the row reads `failed`, the attempt is counted, the platform's words are kept (encrypted: they
+  may echo a value), and the same payload is not tried again for 30 minutes; the fifth failure in
+  a row makes it `stuck`, which only `force` (the nightly retry, «Yeniden dene») or a changed
+  payload tries again (D21).
+* an OUTAGE (`client.is_outage`: no session, a 429, a 5xx, no answer at all) is the platform's
+  state, not this resource's (review #1; open item O13, closed «no»): it is RE-RAISED, so the
+  caller ends or counts its round, and the row is left as it was — its status, its attempts, its
+  wait, its last words. A row made by this call stays `pending`.
 
 `record_skip` writes why a resource was not built (`fin_missing`, `unit_unmapped`… — a catalogue
 code, never text).
@@ -33,7 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.crypto import phi_digest
-from homunculus.tres.client import TresClient, TresError
+from homunculus.tres.client import TresClient, TresError, is_outage
 from homunculus.tres.models import TresDelivery
 
 #: The failures in a row after which a resource is `stuck` (D21).
@@ -112,8 +116,8 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
                   force: bool = False) -> TresDelivery:
     """One resource to the platform, its outcome on its ledger row (the module's docstring).
     `resource_type` is the ledger's key (`vital`, `lab`, `patient`…); `fhir_type` the platform's
-    (`Observation`, `Patient`…). Returns the row; raises `TresError` again for a 429 and for a
-    failure with no answer, after recording it."""
+    (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
+    (`client.is_outage`), the row left as it was."""
     if mode not in ("validate", "send"):
         raise ValueError(f"deliver() is for the modes validate and send, not {mode!r}")
     now = now or datetime.now(timezone.utc)
@@ -125,8 +129,6 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     if same and (row.status in done or (not force and not due(row, now))):
         await db.commit()
         return row
-    if not same:
-        row.attempts = 0                       # a corrected record starts its count again
     try:
         if mode == "validate":
             await client.validate(fhir_type, {**resource, "id": local_id})
@@ -134,14 +136,18 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
         else:
             remote_id, operation = await _write(client, fhir_type, local_id, resource, row.remote_id)
     except TresError as exc:
-        row.attempts += 1
+        if is_outage(exc):
+            # Nothing was learnt about this resource. The row is not written (a new one stays
+            # `pending`); the commit ends the transaction all the same.
+            await db.commit()
+            raise
+        # A corrected record starts its count again.
+        row.attempts = (row.attempts if same else 0) + 1
         row.status = "stuck" if row.attempts >= MAX_ATTEMPTS else "failed"
         row.payload_digest = digest
         row.last_error = clip_error(exc.message)
         row.next_attempt_at = now + RETRY_AFTER
         await db.commit()
-        if exc.status is None or exc.status == 429:
-            raise
         return row
     row.status = "validated" if mode == "validate" else "sent"
     row.operation, row.remote_id, row.payload_digest = operation, remote_id, digest
