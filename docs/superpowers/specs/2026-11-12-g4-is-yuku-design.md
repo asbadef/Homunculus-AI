@@ -127,6 +127,14 @@ nurse groups in the picker; shift history views; per-person «kim ne yaptı».
 Its `down_revision` is the head of main when it lands: `0020` today; **if G3-05's `0021` («Cihaz ölçüm kaydı») lands
 first, it becomes `0021`** (one line; whoever merges second makes it; `alembic heads` stays one).
 
+**It changes data, and its downgrade does not undo that.** Step 2 sets `is_active = false` on duplicate rows; the
+downgrade drops the index and the key but **does not re-activate those rows** (it cannot tell them from rows a later
+PUT deactivated). Deploy notes (Lane A, 2026-11-12): before the migration, a read-only count of the `(bed_id,
+shift_start)` pairs with more than one active row and of the rows that would be deactivated (numbers only); the
+rollback note says the deactivations stay; building the index briefly locks `nurse_bed_assignments`, so an assignment
+save in those seconds waits. Retiring `POST /shift-schedule` cannot break an old web against a new api in the deploy
+window: no dashboard version has ever called it.
+
 ## 4. Tests
 
 **Engine:**
