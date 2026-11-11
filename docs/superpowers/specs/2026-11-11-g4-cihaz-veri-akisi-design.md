@@ -109,6 +109,13 @@ already shown on the strip.
 **Standby counts as neither.** A device in `standby` (no parameters: the monitor is on but measures nothing) is not silent
 and has no stale channels. The page counts it separately.
 
+**Amendment (2026-11-11, plan review): an hour, then one count line.** A channel is listed only while its silence lasts
+from `STALE_LIST_AFTER_S` (60 s) up to `STALE_LIST_UNTIL_S` (3600 s, a new server constant beside it, sent on the board
+as `stale_list_until_s`): 60 s and 3599 s are listed, 59 s and 3600 s are not. Past an hour it drops out of the list — a
+channel silent that long has more likely been removed on purpose (an arterial line taken out) than lost. It is not
+deleted from the ledger or from `channels_seen`. Instead the section ends with one count line, printed only when the
+count is above zero: «{n} kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış olabilir)».
+
 ### D5 — the page `/devices` «Cihaz & Veri Akışı»
 
 **Route.** It keeps its id, path, icon and permissions. Line 655's access rule is already met: biomedical

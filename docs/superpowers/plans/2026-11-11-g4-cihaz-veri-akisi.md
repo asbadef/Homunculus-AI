@@ -16,7 +16,7 @@
 
 Each note is a choice this plan makes where the spec and the tree disagree, or where the spec leaves a detail open. They are binding for the implementers; a reviewer who disagrees raises it, the implementer does not improvise.
 
-**N1 — How `STALE_LIST_AFTER_S` reaches the client (settled).** As a top-level board field, `stale_list_after_s: 60.0`, beside `display_max_age_s`. The client compares its own ticking durations with it (`deviceFeed.js staleAfterOf`) and falls back to its own `STALE_LIST_AFTER_S = 60` for an answer that carries none. The server does **not** mark channels: a mark taken at `generated_at` would not tick between polls, and on a board that is not fresh it would freeze — D5 says durations tick. The field is additive; it is the one field not named in D3's table.
+**N1 — How `STALE_LIST_AFTER_S` reaches the client (settled).** As a top-level board field, `stale_list_after_s: 60.0`, beside `display_max_age_s`. The client compares its own ticking durations with it (`deviceFeed.js staleAfterOf`) and falls back to its own `STALE_LIST_AFTER_S = 60` for an answer that carries none. The server does **not** mark channels: a mark taken at `generated_at` would not tick between polls, and on a board that is not fresh it would freeze — D5 says durations tick. The field is additive and not named in D3's table; its partner `stale_list_until_s: 3600.0` (N15) travels the same way.
 
 **N2 — How `vanished` is scoped through the approved table (settled).** `vanished` is cut from the cards the caller is already shown: bed cards that passed `visible(card)` (the table row valid now, then the caller's scope) and unassigned cards only when `show_unassigned`. So it inherits the cards' rule exactly, with no second rule to drift: a scoped `board.view` caller gets the vanished rows of its own beds only, `devices.manage` gets all, and an unassigned device's row has `bed_label: null`.
 
@@ -43,6 +43,8 @@ Each note is a choice this plan makes where the spec and the tree disagree, or w
 **N13 — What the rename touches.** Nav label «Cihazlar» (az «Cihazlar», ru «Устройства», en «Devices»), heading «Cihaz & Veri Akışı» (new key `cihaz.title`; the route keeps `labelKey: "nav.devices"`). Two UI texts name the screen by its rail name and follow it: `kabul.err.bedHasMonitor` and `perms.devices.map_beds`. The login screen's `auth.noScreen` drops its example «(ör. yalnız cihaz yönetimi)», which is false now that `devices.manage` opens a screen — the UI's copy of the stale guide sentence D5 corrects. The guide's older sections (§3.9, §3.11) keep «Monitörler»; §3.22 says it is the same screen.
 
 **N14 — Words that would collide with the strip's.** The chain's rejected line has its own words (`cihaz.chainRejected`, az «Qəbul edilməyən dəyərlər») rather than `monitor.feedRejected`, and the az verdict says «monitordan məlumat gəlir», not «məlumat göndərir»: the strip below keeps its own counter lines, and the existing `DevicesScreen.test.jsx` finds them by those words (`/rədd edilən oxunuş/i`, `/məlumat göndərir/`). The az collector's heartbeat is «əlaqə», never «siqnal», which is the az UI's word for an alarm. `cihaz.strings.test.js` pins all three.
+
+**N15 — Listed up to an hour, then one count line (coordinator's amendment, 2026-11-11; spec D4 amendment).** A channel of a sending (`streaming`) monitor, NBP excepted, is listed in «Eskiyen kanallar» while its silence `s` satisfies `stale_list_after_s ≤ s < stale_list_until_s`: 60 s and 3599 s are listed, 59 s and 3600 s are not (60 s itself is D4's «after 60 s»). From 3600 s on it drops out of the list — a channel silent that long has more likely been removed on purpose, an arterial line taken out, than lost — and the section ends with one line, «{n} kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış olabilir)», printed only when n > 0, and not when the chain's verdict replaces the section (N12). n counts the same channels the list would (sending monitors, not NBP). The ledger and `channels_seen` keep the channel; only the page's listing changes. `STALE_LIST_UNTIL_S = 3600.0` is a server constant beside `STALE_LIST_AFTER_S`, sent as `stale_list_until_s`; the client falls back to its own 3600. Section 1's «köhnələn kanal» count is the listed channels only. The closing line is the last answer's like every other line, so on a board that is not fresh it stays, under the section's mark.
 
 ---
 
@@ -82,7 +84,8 @@ Present only when the strip is on and the caller is the strip's hospital (as eve
 | Where | Field | Type | Example | Meaning |
 |---|---|---|---|---|
 | top level | `watching_since` | string (ISO) | `"2027-01-15T08:00:00+00:00"` | when the ledger started: the API's start. A restart resets it. |
-| top level | `stale_list_after_s` | number | `60.0` | the page lists a channel as stale once its last valid value is older than this (N1) |
+| top level | `stale_list_after_s` | number | `60.0` | the page lists a channel as stale from this many seconds without a valid value (N1, N15) |
+| top level | `stale_list_until_s` | number | `3600.0` | …and only below this many: from here on the channel drops out of the list and is counted on one closing line instead; it stays in the ledger and in `channels_seen` (N15, spec D4 amendment) |
 | top level | `vanished` | array | `[{"source": "192.0.2.11", "bed_label": "B-2", "last_packet_at": "2027-01-15T07:59:59.880000+00:00", "last_report_at": "2027-01-15T08:00:00+00:00"}]` | devices the hub no longer lists, still in the ledger (≤ 24 h), scoped as the cards (N2, N3). Order: the cards' order (beds by label, then unassigned by address). |
 | `vanished[]` | `source` | string | `"192.0.2.11"` | the device's address |
 | `vanished[]` | `bed_label` | string \| null | `"B-2"` / `null` | the card's bed label; null for an unassigned device |
@@ -97,7 +100,7 @@ None of these fields names a patient. `GET /infinity-shadow/device-beds` is unch
 ## File map
 
 **Engine**
-- Modify `homunculus-engine/src/homunculus/api/infinity_shadow.py` — constants `LEDGER_KEEP_S`, `STALE_LIST_AFTER_S`; the ledger block (`CHANNELS`, `SHOWN_VALUE`, `reported_sources`, `_Seen`, `SeenView`, `LedgerView`, `FeedLedger`) between `ShadowStore` and the board's answer; `board_view(…, ledger=None)` and `_ledger_fields`.
+- Modify `homunculus-engine/src/homunculus/api/infinity_shadow.py` — constants `LEDGER_KEEP_S`, `STALE_LIST_AFTER_S`, `STALE_LIST_UNTIL_S`; the ledger block (`CHANNELS`, `SHOWN_VALUE`, `reported_sources`, `_Seen`, `SeenView`, `LedgerView`, `FeedLedger`) between `ShadowStore` and the board's answer; `board_view(…, ledger=None)` and `_ledger_fields`.
 - Modify `homunculus-engine/src/homunculus/api/app.py` — create the ledger beside the store, `app.state.shadow_ledger`, feed it in `POST /infinity-shadow/readings` (`_note_seen`), pass it in `GET /infinity-shadow/board`.
 - Create `homunculus-engine/tests/test_infinity_shadow_ledger.py` — the ledger (Task 1) and `board_view`'s fields (Task 2), pure.
 - Create `homunculus-engine/tests/test_infinity_shadow_ledger_api.py` — through the two routes: fields, vanished for 24 h, scope, no patient, a failing ledger (Task 3).
@@ -105,7 +108,7 @@ None of these fields names a patient. `GET /infinity-shadow/device-beds` is unch
 **Dashboard**
 - Create `dashboard/src/live/i18n/strings/cihaz.js` — the namespace; register it in `catalog.js`.
 - Create `dashboard/src/live/i18n/cihaz.strings.test.js` — the spec's Turkish, the duration phrase, the words that must not collide.
-- Create `dashboard/src/live/screens/devices/deviceFeed.js` — pure: `serverNowMs`, `minutesOf`, `staleAfterOf`, `verdictOf`, `silentRows`, `staleRows`, `countsOf`, `chainLines`, `neverSeenRows`.
+- Create `dashboard/src/live/screens/devices/deviceFeed.js` — pure: `serverNowMs`, `minutesOf`, `staleAfterOf`, `staleUntilOf`, `verdictOf`, `silentRows`, `staleRows`, `staleLongCount`, `countsOf`, `chainLines`, `neverSeenRows`.
 - Create `dashboard/src/live/screens/devices/deviceFeed.test.js` — the rules on a fixed clock.
 - Create `dashboard/src/live/screens/devices/FeedSections.jsx` — the five sections.
 - Create `dashboard/src/live/screens/devices/DevicesScreen.feed.test.jsx` — the page with each section, Decision 18.
@@ -169,8 +172,8 @@ from datetime import datetime, timezone
 import pytest
 
 from homunculus.api.infinity_shadow import (
-    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, FeedLedger, ShadowStore,
-    reported_sources,
+    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, FeedLedger,
+    ShadowStore, reported_sources,
 )
 
 T0 = 1_800_000_000.0
@@ -224,7 +227,7 @@ def _iso(epoch):
 # --- the ledger (Task 1) -------------------------------------------------------------------------
 
 def test_the_ledgers_bounds_are_the_specs():
-    assert (STALE_LIST_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES) == (60.0, 24 * 3600.0, 100)
+    assert (STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, LEDGER_KEEP_S, MAX_DEVICES) == (60.0, 3600.0, 24 * 3600.0, 100)
 
 
 def test_watching_starts_when_the_ledger_is_made_and_nothing_is_held_before_a_report():
@@ -373,12 +376,16 @@ replace with:
 
 ```python
 REJECTIONS = ("too_old", "clock", "unit", "range", "unknown_parameter", "duplicate")
-# G4-01 (spec 2026-11-11 D2, D4): the last-seen ledger's bounds. A device the hub stopped reporting is kept
-# this long after its last report. A channel is stale once its last valid value is DISPLAY_MAX_AGE_S old — the
-# strip already shows every such gap — and the device page LISTS it once it is this old; the page reads the
-# number from the board (`stale_list_after_s`), so it is said here once.
+# G4-01 (spec 2026-11-11 D2, D4 and its amendment): the last-seen ledger's bounds. A device the hub stopped
+# reporting is kept LEDGER_KEEP_S after its last report. A channel is stale once its last valid value is
+# DISPLAY_MAX_AGE_S old — the strip already shows every such gap — and the device page LISTS it from
+# STALE_LIST_AFTER_S until STALE_LIST_UNTIL_S: silent longer, it has more likely been removed on purpose (an
+# arterial line taken out) than lost, and the page counts it on one line instead. The ledger keeps it either
+# way. The page reads both numbers from the board (`stale_list_after_s`, `stale_list_until_s`), so they are
+# said here once.
 LEDGER_KEEP_S = 24 * 3600.0
 STALE_LIST_AFTER_S = 60.0
+STALE_LIST_UNTIL_S = 3600.0
 ```
 
 `homunculus-engine/src/homunculus/api/infinity_shadow.py` — find (exactly once):
@@ -528,8 +535,8 @@ from datetime import datetime, timezone
 import pytest
 
 from homunculus.api.infinity_shadow import (
-    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, FeedLedger, ShadowStore,
-    reported_sources,
+    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, FeedLedger,
+    ShadowStore, reported_sources,
 )
 ```
 
@@ -544,8 +551,8 @@ import pytest
 
 from homunculus.api.infinity_device_beds import DeviceBedTable, Row, TableState
 from homunculus.api.infinity_shadow import (
-    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, FeedLedger, ShadowStore,
-    board_view, reported_sources,
+    FORGET_AFTER_S, LEDGER_KEEP_S, MAX_DEVICES, NBP_PARTS, SCHEMA, STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, FeedLedger,
+    ShadowStore, board_view, reported_sources,
 )
 ```
 
@@ -594,8 +601,9 @@ def test_with_the_ledger_every_card_and_the_body_carry_it():
                              device("192.0.2.12", reading("spo2", 97, "%"))))
     clock.t = T0 + 2
     out = _board(store, ledger, clock)
-    assert set(out) == OLD_TOP | {"watching_since", "stale_list_after_s", "vanished"}
-    assert (out["watching_since"], out["stale_list_after_s"], out["vanished"]) == (_iso(T0), 60.0, [])
+    assert set(out) == OLD_TOP | {"watching_since", "stale_list_after_s", "stale_list_until_s", "vanished"}
+    assert (out["watching_since"], out["stale_list_after_s"], out["stale_list_until_s"], out["vanished"]) == (
+        _iso(T0), STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, [])
     bed, stray = out["beds"][0], out["unassigned"][0]
     assert set(bed) == OLD_BED | {"last_packet_at", "silent_for_s", "channels_seen"}
     assert set(stray) == OLD_STRAY | {"last_packet_at", "silent_for_s", "channels_seen"}
@@ -615,6 +623,20 @@ def test_channels_seen_keeps_a_channel_the_store_has_forgotten():
     assert "spo2" not in {p["parameter"] for p in card["parameters"]}
     assert [ch["parameter"] for ch in card["channels_seen"]] == ["hr", "spo2"]
     assert card["channels_seen"][1]["last_value_at"] == _iso(T0 - 0.5)
+
+
+def test_a_channel_silent_for_over_an_hour_stays_in_channels_seen():
+    # Spec D4's amendment: past stale_list_until_s the PAGE stops listing a channel; the board still carries it.
+    clock, store, ledger = lane()
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72), reading("art_systolic", 120, "mmHg"))))
+    clock.t = T0 + STALE_LIST_UNTIL_S + 100             # the arterial line was taken out at T0
+    post(store, ledger, body(device("192.0.2.10", reading("hr", 72, captured_at=clock.t - 0.5)), sent_at=clock.t))
+    out = _board(store, ledger, clock)
+    card = out["beds"][0]
+    assert card["status"] == "streaming"
+    assert card["channels_seen"] == [{"parameter": "hr", "last_value_at": _iso(clock.t - 0.5)},
+                                     {"parameter": "art_systolic", "last_value_at": _iso(T0 - 0.5)}]
+    assert (out["stale_list_after_s"], out["stale_list_until_s"]) == (60.0, 3600.0)
 
 
 def test_silent_for_is_whole_seconds_since_the_last_packet_for_a_silent_or_unknown_monitor_only():
@@ -674,7 +696,7 @@ def test_the_new_fields_name_no_patient():
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `cd /c/tmp/g4-cihaz/homunculus-engine && "/c/Users/User/Desktop/Project/Homunculus AI/homunculus-engine/.venv/Scripts/python.exe" -m pytest tests/test_infinity_shadow_ledger.py -q -p no:cacheprovider`
-Expected: the Task 1 tests pass; `test_without_a_ledger_the_board_is_exactly_what_it_was` passes; the other six FAIL with `TypeError: board_view() got an unexpected keyword argument 'ledger'`.
+Expected: the Task 1 tests pass; `test_without_a_ledger_the_board_is_exactly_what_it_was` passes; the other seven FAIL with `TypeError: board_view() got an unexpected keyword argument 'ledger'`.
 
 - [ ] **Step 3: Write the minimal implementation**
 
@@ -696,7 +718,7 @@ QUIET_STATUSES = ("silent", "unknown")
 
 
 def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> dict:
-    """G4-01 (D3): the ledger on the cards this caller is shown, and the body's three new fields.
+    """G4-01 (D3): the ledger on the cards this caller is shown, and the body's four new fields.
 
     `vanished` is cut from those same cards, so it reaches exactly what they reach: a bed card only
     through the approved table's row valid now and the caller's scope (`visible`), an unassigned one
@@ -718,7 +740,7 @@ def _ledger_fields(shown: list[dict], ledger: LedgerView, now: float) -> dict:
             vanished.append({"source": card["source"], "bed_label": card.get("bed_label"),
                              "last_packet_at": card["last_packet_at"], "last_report_at": _iso(seen.last_report_at)})
     return {"watching_since": _iso(ledger.started_at), "stale_list_after_s": STALE_LIST_AFTER_S,
-            "vanished": vanished}
+            "stale_list_until_s": STALE_LIST_UNTIL_S, "vanished": vanished}
 ```
 
 `homunculus-engine/src/homunculus/api/infinity_shadow.py` — find (exactly once):
@@ -745,8 +767,8 @@ replace with:
     - `visible(card)` decides each bed card (scope). Counts cover only what is shown.
     - `ledger` (G4-01) is `FeedLedger.view()`, or None — the shadow engine's pass. With it every shown
       card carries `last_packet_at`, `silent_for_s` and `channels_seen`, and the body
-      `watching_since`, `stale_list_after_s` and `vanished` (`_ledger_fields`); without it the body
-      is exactly what it was.
+      `watching_since`, `stale_list_after_s`, `stale_list_until_s` and `vanished` (`_ledger_fields`);
+      without it the body is exactly what it was.
 ```
 
 `homunculus-engine/src/homunculus/api/infinity_shadow.py` — find (exactly once):
@@ -775,14 +797,14 @@ replace with:
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `cd /c/tmp/g4-cihaz/homunculus-engine && "/c/Users/User/Desktop/Project/Homunculus AI/homunculus-engine/.venv/Scripts/python.exe" -m pytest tests/test_infinity_shadow_ledger.py tests/test_infinity_shadow_store.py tests/test_infinity_rules.py -q -p no:cacheprovider`
-Expected: all pass (20 in the ledger file).
+Expected: all pass (21 in the ledger file).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd /c/tmp/g4-cihaz
 git add homunculus-engine/src/homunculus/api/infinity_shadow.py homunculus-engine/tests/test_infinity_shadow_ledger.py
-git commit -m "feat(shadow): G4-01 board_view carries the ledger, additively — watching_since, stale_list_after_s, vanished, and on each shown card last_packet_at, silent_for_s, channels_seen; vanished cut from the shown cards, so scoped as they are; without a ledger the body is unchanged" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/src/homunculus/api/infinity_shadow.py homunculus-engine/tests/test_infinity_shadow_ledger.py
+git commit -m "feat(shadow): G4-01 board_view carries the ledger, additively — watching_since, stale_list_after_s and stale_list_until_s, vanished, and on each shown card last_packet_at, silent_for_s, channels_seen; vanished cut from the shown cards, so scoped as they are; without a ledger the body is unchanged" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- homunculus-engine/src/homunculus/api/infinity_shadow.py homunculus-engine/tests/test_infinity_shadow_ledger.py
 ```
 
 ## Task 3 (engine): the routes feed and read the ledger
@@ -841,7 +863,7 @@ CALLERS = {
 SCOPES = {"scoped-jwt": Scope(False, ScopeReason.ASSIGNED, unit_ids=frozenset({"unit-1"}))}
 EVERYONE = ("192.0.2.10", "192.0.2.11", "192.0.2.13")          # .13: not in the table
 NEW_CARD = {"last_packet_at", "silent_for_s", "channels_seen"}
-NEW_TOP = {"watching_since", "stale_list_after_s", "vanished"}
+NEW_TOP = {"watching_since", "stale_list_after_s", "stale_list_until_s", "vanished"}
 VANISHED_KEYS = {"source", "bed_label", "last_packet_at", "last_report_at"}
 
 
@@ -919,7 +941,8 @@ def test_the_board_keeps_every_field_it_had_and_adds_the_ledgers(tmp_path):
     clock.t = T0 + 2
     board = _board(client)
     assert set(board) == {"stage", "display_max_age_s", "generated_at", "table", "feed", "beds", "unassigned"} | NEW_TOP
-    assert (board["watching_since"], board["stale_list_after_s"], board["vanished"]) == (_iso(T0), 60.0, [])
+    assert (board["watching_since"], board["stale_list_after_s"], board["stale_list_until_s"], board["vanished"]) == (
+        _iso(T0), 60.0, 3600.0, [])
     one = _cards(board)["192.0.2.10"]
     assert (one["last_packet_at"], one["silent_for_s"]) == (_iso(T0 - 0.12), None)
     assert one["channels_seen"] == [{"parameter": "hr", "last_value_at": _iso(T0 - 0.4)}]
@@ -1199,6 +1222,7 @@ describe("the device page's words (cihaz)", () => {
     expect(tr["cihaz.vanished"]).toBe("hub artık bildirmiyor");
     expect([tr["cihaz.silentNone"], tr["cihaz.staleNone"]]).toEqual(["Sessiz monitör yok", "Eskiyen kanal yok"]);
     expect(fill(tr["cihaz.staleChannel"], { channel: "SpO₂", for: forOf(4) })).toBe("SpO₂ · 4 dk'dır değer yok");
+    expect(fill(tr["cihaz.staleLongCount"], { n: 2 })).toBe("2 kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış olabilir)");
     expect(fill(tr["cihaz.notFresh"], { time: "10:42" })).toBe("Pano güncel değil · 10:42");
   });
 
@@ -1207,6 +1231,7 @@ describe("the device page's words (cihaz)", () => {
       const d = DICTIONARIES[lang];
       for (const key of ["cihaz.verdictForwarder", "cihaz.silentFor", "cihaz.staleChannel"]) expect(d[key], `${lang} ${key}`).toContain("{for}");
       expect(d["cihaz.forMinutes"], lang).toContain("{n}");
+      expect(d["cihaz.staleLongCount"], lang).toContain("{n}");          // the closing count of D4's amendment
       expect(d["cihaz.forUnderMinute"], lang).toMatch(/^<1 /);
     }
   });
@@ -1238,7 +1263,9 @@ Create `dashboard/src/live/i18n/strings/cihaz.js` with:
 // The Turkish is the spec's own. `{for}` is one duration phrase (`forMinutes`, `forUnderMinute`: whole minutes,
 // «<1 dk» under one), so each language puts it where its grammar wants it. The az collector's heartbeat is «əlaqə»,
 // never «siqnal», the az UI's word for an alarm (nav.alarms). The vanished row says «hub», as the spec words it;
-// the chain says «Infinity sunucusu», as the strip's own sentences do (monitor.feedForwarder). The chain's refused
+// the chain says «Infinity sunucusu», as the strip's own sentences do (monitor.feedForwarder). `staleLongCount`
+// closes «Eskiyen kanallar» (D4's amendment): the channels silent for an hour or more, which the list no longer
+// shows; `{n}` is their number, and the line is printed only when it is above zero. The chain's refused
 // values and the az verdict use words of their own, so the strip's counter lines below stay findable by theirs
 // (cihaz.strings.test.js). AZ/RU/EN await a native speaker's review before the pilot.
 export default {
@@ -1269,6 +1296,7 @@ export default {
     staleTitle: "Eskiyen kanallar",
     staleChannel: "{channel} · {for} değer yok",
     staleNone: "Eskiyen kanal yok",
+    staleLongCount: "{n} kanal 1 saatten uzun süredir değer göndermiyor (çıkarılmış olabilir)",
     chainTitle: "Veri zinciri",
     chainCollector: "Toplayıcı · son sinyal {age} önce",
     chainCollectorNone: "Toplayıcı · sinyal yok",
@@ -1312,6 +1340,7 @@ export default {
     staleTitle: "Köhnələn kanallar",
     staleChannel: "{channel} · {for} dəyər yoxdur",
     staleNone: "Köhnələn kanal yoxdur",
+    staleLongCount: "{n} kanal 1 saatdan çox dəyər göndərmir (çıxarılmış ola bilər)",
     chainTitle: "Məlumat zənciri",
     chainCollector: "Toplayıcı · son əlaqə {age} əvvəl",
     chainCollectorNone: "Toplayıcı · əlaqə yoxdur",
@@ -1355,6 +1384,7 @@ export default {
     staleTitle: "Устаревающие каналы",
     staleChannel: "{channel} · нет значения {for}",
     staleNone: "Устаревающих каналов нет",
+    staleLongCount: "Каналов без значения дольше 1 часа: {n} (возможно, отключены)",
     chainTitle: "Цепочка данных",
     chainCollector: "Сборщик · последний сигнал {age} назад",
     chainCollectorNone: "Сборщик · сигнала нет",
@@ -1398,6 +1428,7 @@ export default {
     staleTitle: "Stale channels",
     staleChannel: "{channel} · no value for {for}",
     staleNone: "No stale channel",
+    staleLongCount: "{n} channels have sent no value for over 1 hour (possibly removed)",
     chainTitle: "Data chain",
     chainCollector: "Collector · last heartbeat {age} ago",
     chainCollectorNone: "Collector · no heartbeat",
@@ -1493,8 +1524,8 @@ Create `dashboard/src/live/screens/devices/deviceFeed.test.js` with:
 import { describe, it, expect } from "vitest";
 import { AT, bed, strip, unassigned } from "../../data/shadow.testutil.js";
 import {
-  STALE_LIST_AFTER_S, chainLines, countsOf, minutesOf, neverSeenRows, serverNowMs, silentRows, staleAfterOf,
-  staleRows, verdictOf,
+  STALE_LIST_AFTER_S, STALE_LIST_UNTIL_S, chainLines, countsOf, minutesOf, neverSeenRows, serverNowMs, silentRows,
+  staleAfterOf, staleLongCount, staleRows, staleUntilOf, verdictOf,
 } from "./deviceFeed.js";
 
 const AT_MS = Date.parse(AT);
@@ -1573,20 +1604,37 @@ describe("«Sessiz monitörler»", () => {
 });
 
 describe("«Eskiyen kanallar»", () => {
-  it("lists a channel only past the limit — at 61 s, not at 59 — oldest first, the devices by their oldest", () => {
+  it("lists a channel from 60 s up to an hour — 60 s and 3599 s yes, 59 s and 3600 s no — oldest first, the devices by their oldest", () => {
     const data = withLedger(strip({
       beds: [
-        bed("REA-01 · 2", [], { channels_seen: seen(["hr", 0], ["spo2", 59], ["art_systolic", 61], ["etco2", 5 * 60]) }),
-        bed("REA-01 · 3", [], { channels_seen: seen(["hr", 10 * 60]) }),
+        bed("REA-01 · 2", [], { channels_seen: seen(["hr", 0], ["spo2", 59], ["art_systolic", 60], ["etco2", 5 * 60]) }),
+        bed("REA-01 · 3", [], { channels_seen: seen(["hr", 3599], ["temperature", 3600]) }),
       ],
     }));
     expect(staleRows(data, NOW)).toEqual([
-      { source: "192.0.2.3", label: "REA-01 · 3", channels: [{ parameter: "hr", lastMs: AT_MS - 600_000, minutes: 10 }] },
+      { source: "192.0.2.3", label: "REA-01 · 3", channels: [{ parameter: "hr", lastMs: AT_MS - 3_599_000, minutes: 59 }] },
       { source: "192.0.2.2", label: "REA-01 · 2", channels: [
         { parameter: "etco2", lastMs: AT_MS - 300_000, minutes: 5 },
-        { parameter: "art_systolic", lastMs: AT_MS - 61_000, minutes: 1 },
+        { parameter: "art_systolic", lastMs: AT_MS - 60_000, minutes: 1 },
       ] },
     ]);
+    expect(staleLongCount(data, NOW)).toBe(1);                   // temperature, at 3600 s: counted, not listed
+  });
+
+  it("counts the channels silent an hour or more on one line instead — never NBP, never a monitor not sending — by the server's hour", () => {
+    const data = withLedger(strip({
+      beds: [
+        bed("REA-01 · 2", [], { channels_seen: seen(["art_systolic", 2 * 3600], ["art_mean", 2 * 3600], ["nbp", 5 * 3600]) }),
+        bed("REA-01 · 3", [], { status: "standby", channels_seen: seen(["hr", 2 * 3600]) }),
+      ],
+    }));
+    expect(staleRows(data, NOW)).toEqual([]);
+    expect(staleLongCount(data, NOW)).toBe(2);
+    expect(staleLongCount(withLedger(strip()), NOW)).toBe(0);
+    expect(staleUntilOf(strip())).toBe(STALE_LIST_UNTIL_S);   // an answer that sends none: the client's 3600
+    const longer = { ...data, stale_list_until_s: 3 * 3600 };
+    expect(staleRows(longer, NOW).map((row) => row.channels.length)).toEqual([2]);
+    expect(staleLongCount(longer, NOW)).toBe(0);
   });
 
   it("takes the server's limit, and 60 s from an answer that sends none", () => {
@@ -1683,6 +1731,10 @@ import { displayAge } from "../common/monitor.js";
  *  is what it sends, for an answer from an API that sends none. */
 export const STALE_LIST_AFTER_S = 60;
 
+/** …and `stale_list_until_s` (D4's amendment): a channel silent this long drops out of the list — more likely
+ *  removed on purpose (an arterial line taken out) than lost — and is counted on one closing line instead. */
+export const STALE_LIST_UNTIL_S = 3600;
+
 const MINUTE_MS = 60_000;
 const QUIET = new Set(["silent", "unknown"]);
 const CHAIN_KEY = Object.freeze({
@@ -1717,6 +1769,12 @@ export function minutesOf(ms) {
 export function staleAfterOf(data) {
   const server = data?.stale_list_after_s;
   return Number.isFinite(server) && server >= 0 ? server : STALE_LIST_AFTER_S;
+}
+
+/** The list-until limit in seconds: the server's, or STALE_LIST_UNTIL_S from an answer that has none. */
+export function staleUntilOf(data) {
+  const server = data?.stale_list_until_s;
+  return Number.isFinite(server) && server >= 0 ? server : STALE_LIST_UNTIL_S;
 }
 
 /** Every card the caller is shown; `label` is the bed's for a bed card, null for an unassigned one. */
@@ -1774,25 +1832,42 @@ export function silentRows(data, now) {
   return rows.sort(bySilence);
 }
 
-/** Section 3 «Eskiyen kanallar» (D4): per device that is still sending (`streaming`), the channels with no valid
- *  value for longer than the list-after limit, oldest first; the devices by their oldest channel. NBP is never
- *  stale — it comes when the cuff measures. A monitor in standby, silent or unknown has none: its silence is
- *  section 2's, and standby is counted on its own. */
+/** A card's channels that can be stale, each with the time of its last valid value. Only a card still sending
+ *  (`streaming`) has any: a monitor in standby, silent or unknown has none — its silence is section 2's, and
+ *  standby is counted on its own. NBP never: it comes when the cuff measures. */
+function quietChannels(card) {
+  if (card.status !== "streaming") return [];
+  return listOf(card.channels_seen)
+    .filter((ch) => typeof ch?.parameter === "string" && ch.parameter !== "nbp")
+    .map((ch) => ({ parameter: ch.parameter, lastMs: msOf(ch.last_value_at) }))
+    .filter((ch) => ch.lastMs !== null);
+}
+
+/** Section 3 «Eskiyen kanallar» (D4 and its amendment): per sending device, the channels whose silence is at
+ *  least the list-after limit and less than the list-until limit — 60 s and 3599 s are listed, 59 s and 3600 s
+ *  are not — oldest first; the devices by their oldest channel. */
 export function staleRows(data, now) {
   if (now === null) return [];
   const afterMs = staleAfterOf(data) * 1000;
+  const untilMs = staleUntilOf(data) * 1000;
   const rows = [];
   for (const { card, label } of cardsOf(data)) {
-    if (card.status !== "streaming") continue;
-    const channels = listOf(card.channels_seen)
-      .filter((ch) => typeof ch?.parameter === "string" && ch.parameter !== "nbp")
-      .map((ch) => ({ parameter: ch.parameter, lastMs: msOf(ch.last_value_at) }))
-      .filter((ch) => ch.lastMs !== null && now - ch.lastMs > afterMs)
+    const channels = quietChannels(card)
+      .filter((ch) => now - ch.lastMs >= afterMs && now - ch.lastMs < untilMs)
       .map((ch) => ({ ...ch, minutes: minutesOf(now - ch.lastMs) }))
       .sort((x, y) => x.lastMs - y.lastMs || cmp(x.parameter, y.parameter));
     if (channels.length > 0) rows.push({ source: card.source, label, channels });
   }
   return rows.sort((a, b) => a.channels[0].lastMs - b.channels[0].lastMs || cmp(nameOf(a), nameOf(b)));
+}
+
+/** Section 3's closing count (D4's amendment): the channels of sending devices silent for the list-until limit
+ *  or longer. They are not listed — more likely removed on purpose than lost — and the server still holds them
+ *  (the ledger, `channels_seen`); the screen prints the line only when the count is above zero. */
+export function staleLongCount(data, now) {
+  if (now === null) return 0;
+  const untilMs = staleUntilOf(data) * 1000;
+  return cardsOf(data).reduce((sum, { card }) => sum + quietChannels(card).filter((ch) => now - ch.lastMs >= untilMs).length, 0);
 }
 
 /** Section 1's counts after a verdict that the data flows: silent monitors and stale channels (the rows'),
@@ -1842,14 +1917,14 @@ export function neverSeenRows(body) {
 - [ ] **Step 4: Run it to see it pass**
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run src/live/screens/devices/deviceFeed.test.js`
-Expected: all pass (14 tests).
+Expected: all pass (15 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd /c/tmp/g4-cihaz
 git add dashboard/src/live/screens/devices/deviceFeed.js dashboard/src/live/screens/devices/deviceFeed.test.js
-git commit -m "feat(devices): G4-01 deviceFeed.js — the verdict, the silent monitors, the stale channels, the chain's links and the never-seen rows, pure, in whole minutes on the server's own clock" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/screens/devices/deviceFeed.js dashboard/src/live/screens/devices/deviceFeed.test.js
+git commit -m "feat(devices): G4-01 deviceFeed.js — the verdict, the silent monitors, the stale channels from 60 s up to an hour and the count past it, the chain's links and the never-seen rows, pure, in whole minutes on the server's own clock" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/screens/devices/deviceFeed.js dashboard/src/live/screens/devices/deviceFeed.test.js
 ```
 
 ## Task 7 (dashboard): «veri geliyor mu?» first — sections 1–4 at the top of `DevicesScreen`
@@ -1905,11 +1980,13 @@ async function open(answer, perms = ["devices.manage"], list = EMPTY_LIST) {
 const region = (name) => screen.getByRole("region", { name });
 const items = (name) => within(region(name)).getAllByRole("listitem").map((li) => li.textContent);
 
-// A streaming bed with a channel quiet for 4½ min (and NBP, never stale), a silent bed, an unknown one the hub no
-// longer lists, a monitor in standby, and an unassigned streaming monitor with a channel quiet for 2 min.
+// A streaming bed with a channel quiet for 4½ min, one quiet for 1½ h (counted, not listed) and NBP (never stale), a
+// silent bed, an unknown one the hub no longer lists, a monitor in standby, and an unassigned streaming monitor with a
+// channel quiet for 2 min.
 const WARD = withLedger(strip({
   beds: [
-    bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: before(0), channels_seen: seen(["hr", 0], ["art_systolic", 4.5], ["nbp", 30]) }),
+    bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: before(0),
+      channels_seen: seen(["hr", 0], ["art_systolic", 4.5], ["art_mean", 90], ["nbp", 30]) }),
     bed("REA-01 · 5", [], { status: "silent", last_packet_at: before(12.5), silent_for_s: 750, channels_seen: [] }),
     bed("REA-01 · 6", [], { status: "unknown", last_packet_at: before(3), silent_for_s: 180, channels_seen: seen(["hr", 3]) }),
     bed("REA-01 · 7", [], { status: "standby", last_packet_at: before(0), channels_seen: seen(["spo2", 50]) }),
@@ -1949,6 +2026,15 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
       "REA-01 · 2 · ART S · 4 dəqiqədir dəyər yoxdur",
       "192.0.2.28 · SpO₂ · 2 dəqiqədir dəyər yoxdur",
     ]);
+  });
+
+  it("counts the channels silent an hour or more on the section's last line, and prints no such line for none", async () => {
+    await open(WARD);
+    expect(region("Köhnələn kanallar")).toHaveTextContent("1 kanal 1 saatdan çox dəyər göndərmir (çıxarılmış ola bilər)");
+    expect(items("Köhnələn kanallar")).toHaveLength(2);                          // ART M is counted, not listed
+    cleanup();
+    await open(withLedger(strip({ beds: [bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: before(0), channels_seen: seen(["hr", 0]) })] })));
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("çıxarılmış ola bilər");
   });
 
   it("shows the data chain, each link with its state word", async () => {
@@ -2028,7 +2114,7 @@ replace with:
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run src/live/screens/devices/DevicesScreen.feed.test.jsx src/live/screens/devices/DevicesScreen.test.jsx`
-Expected: 8 of the feed file's 10 tests FAIL (no region «Məlumat gəlirmi?»; the heading list starts with the editor's) — the two guards, no patient and the strip off, pass already; `DevicesScreen.test.jsx` still passes (19).
+Expected: 9 of the feed file's 11 tests FAIL (no region «Məlumat gəlirmi?»; the heading list starts with the editor's) — the two guards, no patient and the strip off, pass already; `DevicesScreen.test.jsx` still passes (19).
 
 - [ ] **Step 3: Write the minimal implementation**
 
@@ -2049,7 +2135,7 @@ import { hhmm } from "../../i18n/dates.js";
 import { StatusPill } from "../../ui/index.js";
 import { stripOn } from "../common/MonitorStrip.jsx";
 import { ageText } from "../common/monitor.js";
-import { chainLines, countsOf, serverNowMs, silentRows, staleRows, verdictOf } from "./deviceFeed.js";
+import { chainLines, countsOf, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
 
 const WORD = Object.freeze({ ok: "cihaz.wordOk", down: "cihaz.wordDown", warn: "cihaz.wordWarn", unknown: "cihaz.wordUnknown" });
 const TONE = Object.freeze({ ok: "ok", down: "att", warn: "att", unknown: "neutral" });
@@ -2157,6 +2243,8 @@ export function FeedSections({ shadow }) {
   const verdict = verdictOf(data, now);
   const silent = verdict.chain ? [] : silentRows(data, now);
   const stale = verdict.chain ? [] : staleRows(data, now);
+  // D4's amendment: the channels silent an hour or more are not listed, only counted, and only when there are some.
+  const staleLong = verdict.chain ? 0 : staleLongCount(data, now);
   const counts = countsOf(data, silent, stale);
   const blocked = <p className="m-0 text-13">{t("cihaz.chainBlocks")}</p>;
   const none = (key) => (fresh ? <p className="m-0 text-13 text-mute">{t(key)}</p> : null);
@@ -2172,6 +2260,7 @@ export function FeedSections({ shadow }) {
       </Section>
       <Section title={t("cihaz.staleTitle")}>
         {verdict.chain ? blocked : stale.length > 0 ? <StaleList t={t} rows={stale} /> : none("cihaz.staleNone")}
+        {staleLong > 0 ? <p className="m-0 text-12.5 text-mute">{t("cihaz.staleLongCount", { n: staleLong })}</p> : null}
         {mark}
       </Section>
       <Section title={t("cihaz.chainTitle")}>
@@ -2213,14 +2302,14 @@ replace with:
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run src/live/screens/devices src/reachable.test.js src/live/boundaries.test.js src/live/waveBoundaries.test.js`
-Expected: all pass — the feed tests (10), `DevicesScreen.test.jsx` (19, the strip's counters still found by their own words), `reachable.test.js` (deviceFeed.js and FeedSections.jsx now reached), the boundaries (`screens/devices/*` is strip code; nothing guarded imports it).
+Expected: all pass — the feed tests (11), `DevicesScreen.test.jsx` (19, the strip's counters still found by their own words), `reachable.test.js` (deviceFeed.js and FeedSections.jsx now reached), the boundaries (`screens/devices/*` is strip code; nothing guarded imports it).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd /c/tmp/g4-cihaz
 git add dashboard/src/live/screens/devices/FeedSections.jsx dashboard/src/live/screens/devices/DevicesScreen.feed.test.jsx dashboard/src/live/screens/devices/DevicesScreen.jsx dashboard/src/live/screens/devices/DevicesScreen.test.jsx
-git commit -m "feat(devices): G4-01 «veri geliyor mu?» first — the verdict and its counts, the silent monitors, the stale channels and the data chain above the editor and the strips" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/screens/devices/FeedSections.jsx dashboard/src/live/screens/devices/DevicesScreen.feed.test.jsx dashboard/src/live/screens/devices/DevicesScreen.jsx dashboard/src/live/screens/devices/DevicesScreen.test.jsx
+git commit -m "feat(devices): G4-01 «veri geliyor mu?» first — the verdict and its counts, the silent monitors, the stale channels (up to an hour, then one count line) and the data chain above the editor and the strips" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- dashboard/src/live/screens/devices/FeedSections.jsx dashboard/src/live/screens/devices/DevicesScreen.feed.test.jsx dashboard/src/live/screens/devices/DevicesScreen.jsx dashboard/src/live/screens/devices/DevicesScreen.test.jsx
 ```
 
 ## Task 8 (dashboard): «Tabloda var, hiç görülmedi» — the table's rows never seen
@@ -2310,14 +2399,15 @@ replace with:
 });
 
 /** G4-01: a strip with the device page's ledger (api/infinity_shadow.py board_view): a silent monitor, a vanished
- *  one, and a channel with no value for four minutes on a streaming one. STRIP carries no ledger, so the sweep
+ *  one, and on a streaming one a channel with no value for four minutes and one for an hour and a half. STRIP carries no ledger, so the sweep
  *  meets only the sections' empty words; this is where the rest are drawn. Synthetic devices only. */
 const minutesBefore = (n) => new Date(NOW - n * 60_000).toISOString();
 const FEED_STRIP = {
   ...strip({
     beds: [
       bed("REA-01 · 1", [param("hr", 96)], { last_packet_at: minutesBefore(0),
-        channels_seen: [{ parameter: "hr", last_value_at: minutesBefore(0) }, { parameter: "art_systolic", last_value_at: minutesBefore(4) }] }),
+        channels_seen: [{ parameter: "hr", last_value_at: minutesBefore(0) }, { parameter: "art_systolic", last_value_at: minutesBefore(4) },
+          { parameter: "art_mean", last_value_at: minutesBefore(90) }] }),
       bed("REA-01 · 5", [], { status: "silent", last_packet_at: minutesBefore(7), silent_for_s: 420, channels_seen: [] }),
       bed("REA-01 · 6", [], { status: "unknown", last_packet_at: minutesBefore(3), silent_for_s: 180, channels_seen: [] }),
     ],
@@ -2376,6 +2466,7 @@ replace with:
     expect(silent).toHaveTextContent("dəqiqədir məlumat yoxdur · son məlumat");                                // cihaz.silentFor, forMinutes
     expect(silent).toHaveTextContent("hub artıq bildirmir");                                                   // cihaz.vanished
     expect(screen.getByRole("region", { name: "Köhnələn kanallar" })).toHaveTextContent("dəqiqədir dəyər yoxdur"); // cihaz.staleChannel
+    expect(screen.getByRole("region", { name: "Köhnələn kanallar" })).toHaveTextContent("çıxarılmış ola bilər"); // cihaz.staleLongCount
     expect(screen.getByRole("region", { name: "Məlumat zənciri" })).toHaveTextContent("Ötürücü · son göndəriş"); // cihaz.chainForwarder
     expect(screen.getByRole("region", { name: "Cədvəldə var, heç görünməyib" })).toHaveTextContent("192.0.2.21 (BED09)"); // cihaz.neverTitle
     expect(rawKeys(document.body)).toEqual([]);
@@ -2434,14 +2525,14 @@ import { Note, StatusPill } from "../../ui/index.js";
 `dashboard/src/live/screens/devices/FeedSections.jsx` — find (exactly once):
 
 ```jsx
-import { chainLines, countsOf, serverNowMs, silentRows, staleRows, verdictOf } from "./deviceFeed.js";
+import { chainLines, countsOf, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
 ```
 
 replace with:
 
 ```jsx
 import { bedText, monitorName } from "./deviceMap.js";
-import { chainLines, countsOf, neverSeenRows, serverNowMs, silentRows, staleRows, verdictOf } from "./deviceFeed.js";
+import { chainLines, countsOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
 ```
 
 `dashboard/src/live/screens/devices/FeedSections.jsx` — find (exactly once):
@@ -2544,7 +2635,7 @@ replace with:
 - [ ] **Step 4: Run them to see them pass**
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run src/live/screens/devices src/live/rawKeys.test.jsx`
-Expected: all pass — the feed tests (15), `DevicesScreen.test.jsx`, `MappingSection.test.jsx` and `MappingSection.poll.test.jsx` unchanged, `rawKeys.test.jsx` with the new anchor.
+Expected: all pass — the feed tests (16), `DevicesScreen.test.jsx`, `MappingSection.test.jsx` and `MappingSection.poll.test.jsx` unchanged, `rawKeys.test.jsx` with the new anchor.
 
 - [ ] **Step 5: Commit**
 
@@ -2643,7 +2734,7 @@ replace with:
 - [ ] **Step 4: Run it to see it pass**
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run src/live/screens/devices src/live/rawKeys.test.jsx`
-Expected: all pass (18 feed tests).
+Expected: all pass (19 feed tests).
 
 - [ ] **Step 5: Commit**
 
@@ -3045,12 +3136,14 @@ replace with:
      «{n} dk'dır veri yok · son veri {SS:DD}». Hub'ın listesinden çıkan monitörün satırında «hub artık
      bildirmiyor» yazar; sunucu onun zamanlarını son bildiriminden sonra 24 saat tutar, sonra satır
      API yeniden başlayana dek «son verinin zamanı bilinmiyor» der.
-  3. **«Eskiyen kanallar».** Monitör veri gönderirken bir kanalı (ör. ART S, SpO₂) bir dakikadan uzun
-     süredir geçerli değer taşımıyorsa: «{kanal} · {n} dk'dır değer yok», en eskisi önce. 15 saniyelik
-     anlık boşlukları şerit zaten gösterir; burada yalnız bir dakikayı geçenler listelenir. **NBP hiç
-     eskimez** (manşon ölçünce gelir). Beklemedeki monitörün (açık ama ölçmüyor) eskiyen kanalı olmaz;
-     o ayrıca sayılır. Bilerek çıkarılan bir kanal (ör. arter kateteri alınınca ART) da monitör veri
-     gönderdikçe burada kalır.
+  3. **«Eskiyen kanallar».** Monitör veri gönderirken bir kanal (ör. ART S, SpO₂) bir dakikadır geçerli
+     değer taşımıyorsa: «{kanal} · {n} dk'dır değer yok», en eskisi önce. 15 saniyelik anlık boşlukları
+     şerit zaten gösterir; burada yalnız bir dakikayı bulanlar listelenir. Bir saat dolunca kanal
+     listeden çıkar: o kadar uzun susan bir kanal büyük olasılıkla bilerek çıkarılmıştır (ör. arter
+     kateteri alınınca ART). Bölüm böyle kanalları sonda tek satırda sayar — «2 kanal 1 saatten uzun
+     süredir değer göndermiyor (çıkarılmış olabilir)» —, hiç yoksa bu satır yazılmaz. Sunucu kanalı
+     unutmaz; yalnız liste onu artık göstermez. **NBP hiç eskimez** (manşon ölçünce gelir). Beklemedeki
+     monitörün (açık ama ölçmüyor) eskiyen kanalı olmaz; o ayrıca sayılır.
   4. **«Veri zinciri».** Toplayıcı (bağlı mı, son sinyal ne kadar önce), aktarıcı (son gönderi,
      gönderilen ve başarısız), Infinity sunucusunun aldığı ve eski ya da yinelenen paketler, nedenine
      göre reddedilen değerler. Her satırın durum sözcüğü vardır: normal, durmuş, dikkat, bilinmiyor.
@@ -3106,12 +3199,12 @@ cd /c/tmp/g4-cihaz/homunculus-engine && "/c/Users/User/Desktop/Project/Homunculu
 cd /c/tmp/g4-cihaz/homunculus-engine && "/c/Users/User/Desktop/Project/Homunculus AI/homunculus-engine/.venv/Scripts/python.exe" -m pytest tests/test_[s-z]*.py tests/rules tests/scoring tests/tenant -q -p no:cacheprovider
 ```
 
-Expected: every chunk `N passed, M skipped`, no failure, no error. Add the five passed counts and the five skipped counts and report the totals (the last full run before this slice was 3891 passed / 1222 skipped; this slice adds 26).
+Expected: every chunk `N passed, M skipped`, no failure, no error. Add the five passed counts and the five skipped counts and report the totals (the last full run before this slice was 3891 passed / 1222 skipped; this slice adds 27).
 
 - [ ] **Step 2: The whole dashboard suite** (from `C:\tmp\g4-cihaz\dashboard`)
 
 Run: `cd /c/tmp/g4-cihaz/dashboard && npx vitest run` (foreground, timeout 600000).
-Expected: `Test Files 153 passed (153)` (150 before this slice, plus `cihaz.strings.test.js`, `deviceFeed.test.js`, `DevicesScreen.feed.test.jsx`) and `Tests 4101 passed` (4064 before this slice, plus 37); report both.
+Expected: `Test Files 153 passed (153)` (150 before this slice, plus `cihaz.strings.test.js`, `deviceFeed.test.js`, `DevicesScreen.feed.test.jsx`) and `Tests 4103 passed` (4064 before this slice, plus 39); report both.
 If the single run would pass the tool's 10-minute limit, run the same files in three chunks instead:
 `npx vitest run src/live/screens`, then `npx vitest run src/live/data src/live/shell src/live/i18n src/live/session src/live/auth src/live/gallery src/live/signals src/live/theme src/live/ui src/live/LiveApp src/live/apiErrors src/live/boundaries src/live/prefs src/live/rawKeys src/live/waveBoundaries`, then `npx vitest run src/LoadFailed src/backendApi src/buildSha src/devProxy src/liveAdapters src/liveAuth src/liveConnection src/reachable src/routing src/sepsisContext` — the three file counts must add up to 153.
 
@@ -3136,12 +3229,13 @@ Expected: a clean tree; the plan's commit and the ten task commits (three engine
 - D2 the ledger (per device first/last report, last packet less its age; per channel last valid value; 24 h; `MAX_DEVICES`; board's channels only; `watching_since`; memory only): Task 1. Readings and the shadow engine's input unchanged: Task 4 and N6.
 - D3 the five fields, additive, scoped as cards, no patient: Task 2 (pure), Task 3 (through the routes), N1 adds `stale_list_after_s`.
 - D4 silent / unknown / stale / `STALE_LIST_AFTER_S` / NBP never stale / standby neither: Tasks 2 (silent_for_s), 6 (`staleRows`, `silentRows`), 7 (on screen); N9.
+- D4's amendment (listed from 60 s up to an hour, then one count line; the ledger and `channels_seen` keep the channel): Task 1 (`STALE_LIST_UNTIL_S`), Task 2 (`stale_list_until_s` on the board; a channel silent over an hour still in `channels_seen`), Task 3 (the field through the route), Task 5 (`cihaz.staleLongCount`, four languages, `{n}`), Task 6 (`staleRows` at 59/60/3599/3600 s, `staleLongCount`, `staleUntilOf`), Task 7 (the closing line, only when n > 0), Task 8 (its key in the rawKeys anchor), Task 11 (the guide); N15.
 - D5 route kept, names, order 1–6, durations in minutes with «<1 dk», on the board's clock, not-fresh marking: Tasks 7–10; N8, N11–N13; the guide's §3 correction and §3.22: Task 11.
 - D6 nothing out of scope is built (no inventory, no alarm-quality panel, no history, no badge, no hub change, no migration, no tenant binding change).
 - §4 Tests: engine list → Tasks 1–4 (route tables: Task 4 Step 4); dashboard list → Tasks 5–10 (`rawKeys` Task 8, `strings` Tasks 5/10, `routes.test.js` Task 10); gates → Task 12.
 
-**Dry run.** When the plan was written, its 72 file operations were applied in order to a scratch copy of the tree at `97743c3d` (outside the worktree): every find block matched exactly once; at each task's Step 2 the stated tests failed and at its Step 4 they passed, task by task; on the final state the engine's shadow, device-beds, waves and route suites gave 688 passed / 342 skipped, the dashboard 153 files / 4101 tests passed, and `vite build` succeeded (`DevicesScreen` chunk 23 kB). The engine's whole no-DB suite was not run then: Task 12 runs it.
+**Dry run.** When the plan was written, its 72 file operations were applied in order to a scratch copy of the tree at `97743c3d` (outside the worktree): every find block matched exactly once; at each task's Step 2 the stated tests failed and at its Step 4 they passed, task by task; on the final state the engine's shadow, device-beds, waves and route suites gave 689 passed / 342 skipped, the dashboard 153 files / 4103 tests passed, and `vite build` succeeded (`DevicesScreen` chunk 23 kB). The dry run was repeated, task by task, after the coordinator's amendment (N15) was folded in. The engine's whole no-DB suite was not run then: Task 12 runs it.
 
 **Placeholder scan.** No TBD, no "similar to", no step without its code. The one hard-coded value is Task 7's `const fresh = true; const mark = null;`, which is working code whose tests cover only fresh answers, replaced in Task 9 by the real rule under its own failing tests.
 
-**Type and name consistency.** Engine: `FeedLedger.observe(views, reported)` / `view() → LedgerView(started_at, devices: {source: SeenView(first_seen_at, last_report_at, last_packet_at, channels, reported)})`; `reported_sources(body)`; `board_view(…, ledger=None)`; `_ledger_fields(shown, ledger, now)`; `app.state.shadow_ledger`; `_note_seen(body)`. Board fields as the contract table. Dashboard: `serverNowMs(data, nowMs, fetchedAtMs)`, `minutesOf(ms)`, `staleAfterOf(data)`, `verdictOf(data, now) → {chain, key, streaming, total} | {chain, key, minutes}`, `silentRows(data, now) → [{source, label, lastMs, minutes, vanished}]`, `staleRows(data, now) → [{source, label, channels: [{parameter, lastMs, minutes}]}]`, `countsOf(data, silent, stale)`, `chainLines(data, nowMs, fetchedAtMs) → [{id, word, heard|posted|accepted|rejected, …}]`, `neverSeenRows(body)`; `FeedSections({shadow, mapping})`, `MappingSection({onList})`. Keys used by the code all exist in `cihaz.js` (`cihaz.verdict*`, `count*`, `for*`, `silent*`, `vanished`, `chainBlocks`, `stale*`, `chain*`, `word*`, `never*`, `notFresh`, `watchingSince`, `title`) or already did (`monitor.p.*`, `esleme.unreadable`, `esleme.unbound`, `esleme.otherUnit`).
+**Type and name consistency.** Engine: `LEDGER_KEEP_S`, `STALE_LIST_AFTER_S`, `STALE_LIST_UNTIL_S`; `FeedLedger.observe(views, reported)` / `view() → LedgerView(started_at, devices: {source: SeenView(first_seen_at, last_report_at, last_packet_at, channels, reported)})`; `reported_sources(body)`; `board_view(…, ledger=None)`; `_ledger_fields(shown, ledger, now)`; `app.state.shadow_ledger`; `_note_seen(body)`. Board fields as the contract table. Dashboard: `serverNowMs(data, nowMs, fetchedAtMs)`, `minutesOf(ms)`, `staleAfterOf(data)`, `staleUntilOf(data)`, `staleLongCount(data, now) → number`, `verdictOf(data, now) → {chain, key, streaming, total} | {chain, key, minutes}`, `silentRows(data, now) → [{source, label, lastMs, minutes, vanished}]`, `staleRows(data, now) → [{source, label, channels: [{parameter, lastMs, minutes}]}]`, `countsOf(data, silent, stale)`, `chainLines(data, nowMs, fetchedAtMs) → [{id, word, heard|posted|accepted|rejected, …}]`, `neverSeenRows(body)`; `FeedSections({shadow, mapping})`, `MappingSection({onList})`. Keys used by the code all exist in `cihaz.js` (`cihaz.verdict*`, `count*`, `for*`, `silent*`, `vanished`, `chainBlocks`, `stale*` incl. `staleLongCount`, `chain*`, `word*`, `never*`, `notFresh`, `watchingSince`, `title`) or already did (`monitor.p.*`, `esleme.unreadable`, `esleme.unbound`, `esleme.otherUnit`).
