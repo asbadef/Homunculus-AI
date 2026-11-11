@@ -37,11 +37,17 @@ from homunculus.api.audit import AuditRecord
 # rather than a delay. Operational, not clinical — it is a reporting boundary, not a rule.
 DEFAULT_SETTLE = timedelta(minutes=10)
 
-# The audit kinds `build_episodes` reads — and the only ones `/alarm-quality` asks the audit for, so
-# that no other row (an `ingest`, a `notification`, Aşama B's `shadow_alert`) takes a place under the
-# report's cap and moves its counters (T6 review). A kind read below and left out here would vanish
-# from the report without a word; tests/test_alarm_quality.py holds the two to each other.
+# The audit kinds `build_episodes` reads. A kind read below and left out here would vanish from the
+# reports without a word; tests/test_alarm_quality.py holds the two to each other.
 EPISODE_KINDS = frozenset({"first_seen", "alert", "ack", "escalation", "alert_cleared"})
+# The only kinds `/alarm-quality` and `/quality` ask the audit for, so that no other row (an `ingest`,
+# a `notification`, Aşama B's `shadow_alert`) takes a place under the reports' cap and moves their
+# counters (T6 review). Not `alert` either (G4-03, spec A2): the engine writes one for every active
+# alert on every ingest, so on a live ward they filled the 20 000-row cap within hours — «7 gün» read
+# as the last hours, and an episode whose `first_seen` fell past the cut vanished — while all they fed
+# was `Episode.repeats`, a count no screen shows. `build_episodes` still takes them (and counts them as
+# repeats, never as episodes); no report sends a repeat count.
+EPISODE_READ_KINDS = EPISODE_KINDS - {"alert"}
 
 
 def _parse(ts: str | None) -> datetime | None:
@@ -96,7 +102,7 @@ class KindStats:
     escalated: int = 0
     unanswered: int = 0
     pending: int = 0
-    repeats: int = 0
+    # No `repeats` (G4-03, spec A2): the reports no longer read the `alert` rows it counted.
     median_response_sec: float | None = None
 
     def as_dict(self) -> dict:
@@ -126,7 +132,7 @@ class AlarmQuality:
     # patient then hour. UTC because every `ts`/`at` in the trail is UTC and the engine knows no hospital time
     # zone: the browser turns each hour start into its own local hour of the day.
     per_patient_hour: list[dict] = field(default_factory=list)
-    repeats: int = 0
+    # No `repeats` (G4-03, spec A2): always 0 once the `alert` rows are not read, so not sent at all.
     window_from: str | None = None
     window_to: str | None = None
 
@@ -215,9 +221,7 @@ def summarise(episodes: list[Episode], now: datetime,
     for ep in episodes:
         stats = per_kind.setdefault(ep.kind, KindStats(kind=ep.kind))
         stats.episodes += 1
-        stats.repeats += ep.repeats
         report.episodes += 1
-        report.repeats += ep.repeats
         per_day[ep.started.date().isoformat()] = per_day.get(ep.started.date().isoformat(), 0) + 1
         per_bed[ep.patient_id] = per_bed.get(ep.patient_id, 0) + 1
         hour = ep.started.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()

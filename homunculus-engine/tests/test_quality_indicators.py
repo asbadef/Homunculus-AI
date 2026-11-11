@@ -9,7 +9,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from homunculus.api.alarm_quality import EPISODE_KINDS
+from homunculus.api.alarm_quality import EPISODE_KINDS, EPISODE_READ_KINDS
 from homunculus.api.audit import AuditRecord
 from homunculus.api.snooze import SNOOZE_REASONS
 from homunculus.quality.indicators import (
@@ -202,4 +202,7 @@ def test_snoozes_read_only_well_formed_figures():
 
 
 def test_the_kinds_read_are_the_episodes_and_the_two_acts():
-    assert QUALITY_KINDS == EPISODE_KINDS | {"alert_snooze", "rrt_call"}
+    """Spec A2: the episode kinds but `alert` — one row per active alert on every ingest, which would fill the read's
+    cap within hours and feed nothing here — and the two acts."""
+    assert QUALITY_KINDS == EPISODE_READ_KINDS | {"alert_snooze", "rrt_call"}
+    assert QUALITY_KINDS == (EPISODE_KINDS - {"alert"}) | {"alert_snooze", "rrt_call"}

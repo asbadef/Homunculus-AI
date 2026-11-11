@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
+from homunculus.api.alarm_quality import EPISODE_READ_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
     Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, entered_in_error_latches, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
@@ -2354,10 +2354,12 @@ def create_app(
         # more to know whether it held more — then the report says `truncated` rather than reading
         # as the whole window (the trends pattern, api/trends.py `_markers`). Only the kinds the
         # report counts (Aşama B, T6 review): a row of any other kind — an `ingest`, the shadow
-        # lane's `shadow_alert` — would take a place under the cap and move every counter.
+        # lane's `shadow_alert` — would take a place under the cap and move every counter. Not the
+        # `alert` rows either (G4-03, spec A2): one per active alert on every ingest, they filled the
+        # cap within hours and fed only a repeat count the report no longer sends.
         cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
         recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True,
-                             event_types=EPISODE_KINDS)
+                             event_types=EPISODE_READ_KINDS)
         truncated = len(recs) > cap
         report = alarm_quality(recs[1:] if truncated else recs, now)
         return {**report.as_dict(), "days": days, "truncated": truncated}

@@ -22,14 +22,16 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from homunculus.api.alarm_quality import EPISODE_KINDS, Episode, build_episodes, summarise
+from homunculus.api.alarm_quality import EPISODE_READ_KINDS, Episode, build_episodes, summarise
 from homunculus.api.audit import AuditRecord
 from homunculus.api.snooze import SNOOZE_CAPS, SNOOZE_REASONS
 
 #: The two acts `/quality` reads beside the episodes (spec D4 §1): a snooze («Ertele») and a call to the RRT.
 SNOOZE = "alert_snooze"
 RRT_CALL = "rrt_call"
-QUALITY_KINDS = EPISODE_KINDS | {SNOOZE, RRT_CALL}
+#: What `/quality` reads: the episode kinds `/alarm-quality` reads — not the `alert` rows, which would fill the cap
+#: within hours and feed nothing here (spec A2) — and the two acts.
+QUALITY_KINDS = EPISODE_READ_KINDS | {SNOOZE, RRT_CALL}
 
 #: The handover states (`admission.models.HandoverStatus`, a str enum: each member equals its text).
 OPEN, OUTGOING_SIGNED, COMPLETED, EXPIRED = "OPEN", "OUTGOING_SIGNED", "COMPLETED", "EXPIRED"
@@ -154,7 +156,7 @@ def build_report(*, records: list[AuditRecord], key_units: Mapping[str, uuid.UUI
         # a scoped caller is told nothing of it.
         return None if reach.scoped else unplaced
 
-    for episode in build_episodes([rec for rec in records if rec.event_type in EPISODE_KINDS]):
+    for episode in build_episodes([rec for rec in records if rec.event_type in EPISODE_READ_KINDS]):
         group = group_of(episode.patient_id)
         if group is not None:
             group.episodes.append(episode)

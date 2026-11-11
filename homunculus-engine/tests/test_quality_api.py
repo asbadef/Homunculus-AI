@@ -280,6 +280,22 @@ async def test_a_truncated_read_says_so_and_from_when(ward, db_session, monkeypa
     assert cut["window_from"] == kept[0].ts
 
 
+async def test_alert_rows_take_no_place_under_the_cap(ward, db_session, monkeypatch):
+    """Spec A2: the engine writes an `alert` row for every active alert on every ingest. Read, they filled the cap
+    within hours, cut «7 gün» to the last hours and dropped episodes whose `first_seen` fell past the cut (the
+    review's probe: cap 3, one answered episode and three `alert` rows → coverage 0). They are not read."""
+    w, client, app = ward
+    await here(db_session, w, "rea", "1", protocol_no=K1)
+    write(app, "first_seen", K1, "news2", 30)
+    write(app, "ack", K1, "news2", 29, **NURSE)
+    for minutes_ago in (28, 27, 26, 25, 24):
+        write(app, "alert", K1, "news2", minutes_ago)
+    monkeypatch.setattr(quality_router, "READ_CAP", 2)
+    body = await quality(client, w.auth["admin"])
+    assert (body["truncated"], body["coverage"]) == (False, {"episodes": 1, "placed": 1, "unplaced": 0})
+    assert (body["hospital"]["alarms"]["answered"], body["hospital"]["alarms"]["median_response_sec"]) == (1, 60.0)
+
+
 async def test_the_answer_names_no_patient_key_person_or_free_text(ward, db_session):
     w, client, app = ward
     legacy = await ward_with_a_trail(db_session, w, app)
