@@ -2134,9 +2134,12 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
   «Nakil / Taburcu» sekmesi kalıcı bir not gösterir — «Kart yeni yatağa taşınamadı» — ve «Kartı
   yeniden taşı» aynı nakli yeniden gönderir; sunucu veritabanına bir şey yazmadan kartı yeniden
   taşır (ikinci bir nakil olmaz, yanıt 200). Hasta bu arada yeniden nakledilmişse ya da taburcu
-  edilmişse aynı istek reddedilir (409): eski yatağa hayalet bir kart konmaz. Not, sekmenin
-  belleğindedir; sekme değiştirilir ya da sayfa yenilenirse kaybolur, kart o zaman da eski yatak
-  boşaltılırken yeniden taşınır (aşağıda).
+  edilmişse aynı istek reddedilir (409): eski yatağa hayalet bir kart konmaz. Böyle bir nakil artık
+  hiçbir zaman yerine ulaşamayacağı için not da kalkar; hastanın daha yeni bir nakli de eski bir
+  notu siler. Not yalnız sekmenin belleğindedir: dakikalık yeniden okumalardan etkilenmez, ama Kabul
+  sekmesi değiştirilir ya da sayfa yenilenirse kaybolur. Tarayıcıda hiçbir yere kaydedilmez (içinde
+  serbest metin olan nakil notu da bulunabilir). Not kaybolursa güvence, eski yatağın boşaltılmasıdır
+  (aşağıda); o ana dek kart eski yatakta durabilir ve alarmları eski birimin ekranlarında görünür.
 - **Kart yatakta kalırsa yatak boşalmaz.** Eski yatak temizlikten boşa alınırken (ve yöneticinin ham
   geçişinde, kullanıma açılırken) hastanın kartı hâlâ o yatakta duruyorsa yeniden taşınmaya çalışılır;
   taşınamazsa yatak boşalmaz (`board_not_cleared`) ve yeni bir hasta yatırılamaz, böylece bir yatakta
