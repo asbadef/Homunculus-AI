@@ -23,6 +23,10 @@ URINE = "urine_output_ml"
 #: sits far above a ward's day; the answer's `truncated` says when a read had to cut (review round 1). A cut loses
 #: the OLDEST rows: the last complete day's, which then reads short.
 READ_LIMIT = 5000
+#: G3-04 (Eczane): the ward's read — every patient's `chart` and `chart_retract` rows of the tenant in one read, the
+#: newest kept (the task board's hand-entry read asks for as many: `api/tasks.py` HAND_LIMIT × 4). A cut loses the
+#: day's OLDEST rows, and the answer's `fluid_truncated` says so.
+WARD_READ_LIMIT = 20000
 #: Sepsis-3 (sepsis-3-jama-2016), the SOFA renal row's urine bands — reference text beside the last complete day's
 #: urine total. The system awards no points (spec D8).
 SOFA_RENAL_REFERENCE = {"source": "sepsis-3-jama-2016",
@@ -61,22 +65,44 @@ def read_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: date
                             since=since - BEDSIDE_SKEW, limit=READ_LIMIT + 1, newest=True)
     truncated = len(fetched) > READ_LIMIT
     rows = fetched[max(len(fetched) - READ_LIMIT, 0):]      # drop the extra, OLDEST row
-    withdrawn: dict[int, dict] = {}
+    return _entries_by_patient(rows, since=since, until=until).get(patient_id, []), truncated
+
+
+def _entries_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, list[FluidEntry]]:
+    """The row → entry step `read_entries` and `read_entries_by_patient` share: each patient's fluid entries
+    measured in [since, until], oldest first, each with its withdrawal. A `chart_retract` withdraws an entry of the
+    SAME patient only (as `api/tasks.py` `_stamps_by_patient`): a row naming another patient's entry id touches
+    nothing. A row the trail cannot read — not a finite number, a time with no zone — is left out, never a 0."""
+    withdrawn: dict[tuple[str, int], dict] = {}
     for rec in rows:
         entry = rec.payload.get("entry")
         if rec.event_type == RETRACT and isinstance(entry, int) and not isinstance(entry, bool):
-            withdrawn[entry] = {"reason": str(rec.payload.get("reason") or ""),
-                                "by": str(rec.payload.get("retracted_by") or ""), "at": _iso(_instant(rec.ts))}
-    out = []
+            withdrawn[(rec.patient_id, entry)] = {"reason": str(rec.payload.get("reason") or ""),
+                                                  "by": str(rec.payload.get("retracted_by") or ""),
+                                                  "at": _iso(_instant(rec.ts))}
+    found: dict[str, list[FluidEntry]] = {}
     for rec in rows:
         if rec.event_type != "chart" or rec.subject not in INTAKE + OUTPUT:
             continue
         at, value = _instant(rec.payload.get("obs_ts")), rec.payload.get("value")
         if at is None or not _finite_number(value) or not since <= at <= until:
             continue
-        out.append(FluidEntry(rec.id, rec.subject, float(value), at, str(rec.payload.get("charted_by") or ""),
-                              withdrawn.get(rec.id)))
-    return sorted(out, key=lambda e: (e.at, e.entry)), truncated
+        found.setdefault(rec.patient_id, []).append(
+            FluidEntry(rec.id, rec.subject, float(value), at, str(rec.payload.get("charted_by") or ""),
+                       withdrawn.get((rec.patient_id, rec.id))))
+    return {pid: sorted(entries, key=lambda e: (e.at, e.entry)) for pid, entries in found.items()}
+
+
+def read_entries_by_patient(audit: AuditLog, hospital: str, *, since: datetime,
+                            until: datetime) -> tuple[dict[str, list[FluidEntry]], bool]:
+    """`read_entries` for every patient of the tenant in ONE read (G3-04, spec D13): what the Eczane page's poll
+    needs — one read per request, not one per patient. A patient with no entry in the window has no key. It asks
+    for one row more than WARD_READ_LIMIT: only that extra row proves a cut, so exactly the limit is whole."""
+    fetched = audit.records(tenant=hospital, event_types={"chart", RETRACT}, since=since - BEDSIDE_SKEW,
+                            limit=WARD_READ_LIMIT + 1, newest=True)
+    truncated = len(fetched) > WARD_READ_LIMIT
+    rows = fetched[max(len(fetched) - WARD_READ_LIMIT, 0):]      # drop the extra, OLDEST row
+    return _entries_by_patient(rows, since=since, until=until), truncated
 
 
 def fluid_day(now: datetime, zone, start_a: int, start_b: int) -> dict:

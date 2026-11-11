@@ -48,6 +48,7 @@ import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
+import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -224,12 +225,16 @@ const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", 
     vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
     tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
 const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
-/** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
+/** G2-B4: the audit page's newest events (a labelled type, a code no version names, a masked id) and a broken chain. */
 const AUDIT_ROWS = { records: [
   { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
     subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
-  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
+  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "legacy.made_up", patient_id: "",
     subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
+  // G2-B4 follow-up D2: a scope row written before the engine wrote names — both its user ids masked
+  { id: 3, ts: "2026-11-09T10:03:00+00:00", tenant: "demo-hastanesi", event_type: "scope", patient_id: "",
+    subject: "22222222-2222-4222-8222-2222222261a2", payload: { by: "11111111-1111-4111-8111-11111111ad01", before: [], after: [] },
+    prev_hash: "", hash: "" },
 ] };
 const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
   records: 2, complete: true };
@@ -310,6 +315,11 @@ async function openAt(path, extra) {
 
       // G4-02: «Yönetici özeti» (screens/ozet) — the units' waiting handovers.
       api.pendingHandovers.mockResolvedValue(PENDING_SWEEP);
+
+      // G3-04: «Eczane» (screens/eczane) — a row in each of the six antibiotic states, with vasopressors, a creatinine
+      // and a fluid balance, so the sweep meets every word of the table. Unstubbed the page would say only that its
+      // list could not be read.
+      api.pharmacy.mockResolvedValue(pharmacyAnswer());
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -484,6 +494,32 @@ describe("no screen shows a reader a translation key", () => {
     act(() => { mounted.board.clear(); });
   });
 
+  // G3-04 — «Eczane»: the sweep's answer is fresh, so the two past-tense twins and the «not fresh» alert are outside
+  // it; here the fresh page's words are anchored, and then a failed poll draws the rest.
+  it("the pharmacy page's keys resolve on its counters, its table and its notes — fresh and not fresh", async () => {
+    let fail = false;
+    const mounted = await openAt("/eczane", (api) => {
+      api.pharmacy.mockImplementation(() => (fail ? Promise.reject(new Error("kapsam şu anda okunamıyor")) : Promise.resolve(pharmacyAnswer())));
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Aptek" })).toBeInTheDocument();              // eczane.title
+    expect(screen.getByRole("table", { name: "Aptek siyahısı: 6 xəstə" })).toBeInTheDocument();         // eczane.caption
+    expect(screen.getByText("Müddət keçib · 25 dəq")).toBeInTheDocument();                               // eczane.ab.missed + eczane.dur.min
+    expect(screen.getByText("Müddət gedir · 20 dəq qalıb")).toBeInTheDocument();                         // eczane.ab.running
+    expect(screen.getByText("noradrenalin 0.12 mkq/kq/dəq · 20 dəq əvvəl")).toBeInTheDocument();         // patient.medsRunning, reused
+    expect(screen.getAllByText("Bu gün qeyd yoxdur").length).toBeGreaterThan(0);                         // eczane.fluid.none
+    expect(screen.getByText("sayılan tətbiq qeydi yoxdur: 2")).toBeInTheDocument();                          // eczane.count.noRecord
+    expect(rawKeys(document.body)).toEqual([]);
+    fail = true;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });   // the page reads again
+    expect(screen.getByText(/^Aptek siyahısı aktual deyil · son cavab /)).toBeInTheDocument();           // eczane.stale
+    expect(screen.getByText(/^Son cavabda müddət keçmişdi · bitmə /)).toBeInTheDocument();               // eczane.ab.staleMissed
+    expect(screen.getByText(/^Son cavabda müddət gedirdi · bitmə /)).toBeInTheDocument();                // eczane.ab.staleRunning
+    expect(screen.getByText(/^son cavab .* vəziyyətinə görə$/)).toBeInTheDocument();                     // eczane.asOf
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
   // G4-01 — «Cihaz & Veri Akışı»: the device page's sections on a ward with a silent, a vanished and a stale-channel
   // monitor, and a table row whose monitor was never seen — states the sweep's STRIP and MAPPING do not reach.
   it("the device page's feed keys resolve on every section", async () => {
@@ -512,6 +548,7 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Audit bütövlüyü" })).toBeInTheDocument();   // denetim.title
     // the label is also the filter's option, so ask for the events row's cell, not the first match
     expect(screen.getAllByText("Siqnalın təsdiqi").some((el) => el.tagName === "TD")).toBe(true);   // denetim.type.ack
+    expect(screen.getByText("istifadəçi ••••ad01")).toBeInTheDocument();                           // denetim.maskedUser
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
     expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
     expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed

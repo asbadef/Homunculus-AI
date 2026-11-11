@@ -44,6 +44,9 @@ export const PERMISSION_KEYS = freeze([
   // G4-02 — Yönetici özeti (spec D2, D3): the page and GET /handovers/pending; in no default group, the system one
   // holds it by rule
   "summary.view",
+
+  // G3-04 — Eczane (spec D2): the pharmacist's ward page and GET /pharmacy; the pharmacist and the physician groups
+  "pharmacy.view",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

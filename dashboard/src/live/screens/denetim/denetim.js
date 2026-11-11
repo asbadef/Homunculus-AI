@@ -1,7 +1,8 @@
 // src/live/screens/denetim/denetim.js — the «Denetim bütünlüğü» page's rules, apart from React (G2-B4, spec
 // docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md): the masked patient id (owner D2), who did it
 // (D6), what one `/audit/verify` answer reads as (D4), the event types the page names (§4), and the order
-// the events are shown in (D5).
+// the events are shown in (D5). Follow-up 2026-11-11 (docs/superpowers/specs/2026-11-11-g2b-b4-denetim-adlar-design.md):
+// a user id is masked (D2), and every type the engine writes has a label (D3).
 
 /** The newest events the page reads (D5). */
 export const EVENTS_LIMIT = 200;
@@ -14,18 +15,51 @@ export function maskPatient(id) {
   return text.length <= 4 ? MASK : `${MASK}${text.slice(-4)}`;
 }
 
+/** The engine's ids are UUIDs. Where one stands in for a person (a scope row written before the follow-up's D1
+ *  holds nothing else), the page masks it. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value) => typeof value === "string" && UUID.test(value.trim());
+
+/** G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a user id is never printed — «kullanıcı ••••» and its last
+ *  four characters, the patient id's mask with the word that says whose id it is. `t`, the page's translator, is
+ *  required; without one the plain mask is shown — the id still never is, and nothing throws. */
+export const maskUser = (t, id) => (typeof t === "function" ? t("denetim.maskedUser", { id: maskPatient(id) }) : maskPatient(id));
+
+const nameOrMask = (t, value) => (isUuid(value) ? maskUser(t, value) : value.trim());
+
 /** D6: the payload keys the engine's writers use for who did it, in the order they are read. */
 export const ACTOR_KEYS = Object.freeze([
   "actor", "charted_by", "read_by", "signed_by", "retracted_by", "by", "user", "device", "login",
 ]);
 
-export function actorOf(payload) {
+/** The actor key that names no person: a monitor. A UUID under it is masked as an id, without «kullanıcı». */
+const DEVICE_KEY = "device";
+
+/** Who did it: the first non-empty key's value — a name as it is, a UUID masked (follow-up D2): a person's with
+ *  «kullanıcı», a device's as an id. A scope row names its administrator in `actor` since D1, read before `by`, its
+ *  id; an older one shows the mask. `t` is required (see maskUser). */
+export function actorOf(payload, t) {
   const p = payload && typeof payload === "object" ? payload : {};
   for (const key of ACTOR_KEYS) {
     const value = p[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value !== "string" || !value.trim()) continue;
+    return key === DEVICE_KEY && isUuid(value) ? maskPatient(value) : nameOrMask(t, value);
   }
   return "—";
+}
+
+/** The «Konu» cell (follow-up D2). A scope row's subject is the id of the user whose access changed: the page shows
+ *  that user's name from the payload (written since D1), else the id masked as a user's. A UUID subject of any other
+ *  type is masked as an id, without the word — the page cannot tell whose id it is (a task's, say). Anything else
+ *  shows as it is. */
+export function subjectOf(rec, t) {
+  const subject = typeof rec?.subject === "string" ? rec.subject.trim() : "";
+  if (rec?.event_type === "scope") {
+    const user = rec?.payload?.user;
+    if (typeof user === "string" && user.trim()) return nameOrMask(t, user);
+    return subject ? maskUser(t, subject) : "—";
+  }
+  return isUuid(subject) ? maskPatient(subject) : rec?.subject || "—";
 }
 
 /** §4: the engine's event types the page has a label for. Any other code shows as itself and is not offered
@@ -49,6 +83,17 @@ export const EVENT_TYPES = Object.freeze([
   ["bed.out_of_service", "bedOutOfService"], ["bed.return_to_service", "bedReturnToService"],
   // G2-B3b (spec D8): «Vardiya devri» — opened, signed by the outgoing person, countersigned by the receiver.
   ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
+  // Follow-up 2026-11-11 D3: every other type the engine writes (engineTypes.test.js reads the engine and fails on
+  // one this list does not name). Yapı's four (tenant/router.py), in the Yapı tab's own words:
+  ["structure.create", "structureCreate"], ["structure.rename", "structureRename"],
+  ["structure.close", "structureClose"], ["structure.reopen", "structureReopen"],
+  // the admission's label and its board retry (admission/router.py, tenant/router.py):
+  ["admission.label_print", "labelPrint"], ["admission.discharge_board_retry", "dischargeBoardRetry"],
+  // the monitor–bed table: a bed's new label followed, and its one-time seed from the approved file (devicebeds/seed.py):
+  ["device_bed.relabel", "deviceRelabel"], ["device_bed.import", "deviceImport"],
+  // G3-02 «Görevlerim» (api/tasks.py), in its own words:
+  ["task_created", "taskCreated"], ["task_claimed", "taskClaimed"], ["task_done", "taskDone"],
+  ["task_skipped", "taskSkipped"], ["vital_skipped", "vitalSkipped"], ["task_settings_changed", "taskSettings"],
   // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
   ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));

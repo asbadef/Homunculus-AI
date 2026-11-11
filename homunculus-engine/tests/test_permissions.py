@@ -29,11 +29,12 @@ SPEC_KEYS = {
     "tasks.view",         # G3-02 Görevlerim (spec D8): open the queue, read /tasks
     "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
     "summary.view",       # G4-02 Yönetici özeti (spec D2, D3): the page, GET /handovers/pending
+    "pharmacy.view",      # G3-04 Eczane (spec D2): the page, GET /pharmacy
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_seven_keys():
-    assert len(SPEC_KEYS) == 27
+def test_the_catalogue_is_exactly_the_specified_twenty_eight_keys():
+    assert len(SPEC_KEYS) == 28
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -119,15 +120,15 @@ SPEC_GROUPS = {
                                 "admissions.sign_off", "admissions.move.initiate",
                                 "care_team.claim", "care_team.assign", "handover.sign",
                                 "break_glass.use", "clinical.chart", "scores.sign",
-                                "tasks.view", "tasks.manage"}),
+                                "tasks.view", "tasks.manage", "pharmacy.view"}),
     "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
                                      "admissions.view", "admissions.sign_off",
                                      "admissions.move.initiate", "handover.sign",
                                      "break_glass.use", "clinical.chart", "scores.sign",
-                                     "tasks.view", "tasks.manage"}),
+                                     "tasks.view", "tasks.manage", "pharmacy.view"}),
     "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                  "handover.sign", "break_glass.use", "clinical.chart",
-                                 "scores.sign", "tasks.view", "tasks.manage"}),
+                                 "scores.sign", "tasks.view", "tasks.manage", "pharmacy.view"}),
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
@@ -142,7 +143,7 @@ SPEC_GROUPS = {
                                       "tasks.view", "tasks.manage"}),
     "auditor": (False, False, {"board.view", "audit.view"}),
     "platform_support": (True, False, {"audit.view", "devices.manage"}),
-    "pharmacist": (False, False, {"board.view", "admissions.view"}),
+    "pharmacist": (False, False, {"board.view", "admissions.view", "pharmacy.view"}),
     "biomedical": (False, False, {"devices.manage"}),
 }
 
@@ -240,3 +241,15 @@ def test_the_summary_is_the_system_administrators_alone_by_default():
     admin = next(g for g in DEFAULT_GROUPS if g["slug"] == "hospital_admin")
     assert admin["permissions"] == tuple(PERMISSIONS)
     assert PERMISSIONS["summary.view"].startswith("Open the Yönetici özeti page")
+
+
+def test_the_pharmacy_page_is_the_pharmacists_and_the_physicians_by_default():
+    """G3-04 (spec D2): the carried rule — «eczacı ve sorumlu hekim görür, hemşire görmez». The pharmacist and
+    the three physician groups hold `pharmacy.view`; the system group holds every key by rule; the nurse, the
+    charge nurse, the rapid-response team, the auditor, biomedical and vendor support do not. Migration 0019
+    writes the same four groups' rows for the tenants seeded before it."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "pharmacy.view" in g["permissions"]}
+    assert holders == {"hospital_admin", "pharmacist", "attending", "unit_physician", "physician"}
+    assert PERMISSIONS["pharmacy.view"].startswith("Open the Eczane page")
+    assert PERMISSIONS["pharmacy.view"].endswith("read-only")
+    assert list(PERMISSIONS)[-1] == "pharmacy.view"          # appended after summary.view: the mirrors' order

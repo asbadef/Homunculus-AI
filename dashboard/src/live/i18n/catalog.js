@@ -90,6 +90,9 @@ import cihaz from "./strings/cihaz.js";
 // G4-02: «Yönetici özeti» — the hospital at a glance (screens/ozet).
 import ozet from "./strings/ozet.js";
 
+// G3-04: «Eczane» — the pharmacist's ward page (screens/eczane).
+import eczane from "./strings/eczane.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -145,6 +148,8 @@ export const NAMESPACES = {
   cihaz, // G4-01
 
   ozet, // G4-02
+
+  eczane, // G3-04
 };
 
 function flattenInto(out, prefix, entries) {

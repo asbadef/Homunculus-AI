@@ -1924,3 +1924,21 @@ describe("G3-03 Sıvı dengesi call", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/patients/S-001/fluids");
   });
 });
+
+// G3-04 — Eczane: the pharmacist's ward page, built by the engine (homunculus/api/pharmacy.py)
+describe("G3-04 Eczane call", () => {
+  it("reads the ward's pharmacy list with an authed GET /pharmacy, with nothing on the address", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const answer = { now: "2026-11-11T09:30:00+00:00", counts: { patients: 0 }, rows: [], scope: { unrestricted: true }, scope_note: null };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.pharmacy()).toEqual(answer);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/pharmacy");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+});

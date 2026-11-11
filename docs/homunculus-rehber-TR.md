@@ -353,8 +353,8 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 27 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
-  `summary.view`, «Yönetici özeti», §3.24).
+- *Homunculus'ta:* 28 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
+  `pharmacy.view`, «Eczane», §3.23).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -1773,6 +1773,11 @@ uydurmadır.
 - **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
   - Sütunlar: no, zaman, tür, kim, hasta, konu.
   - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
+  - **Kullanıcı kimliği de görünmez** (sahip kararı, 2026-11-11): kapsam ataması satırı bu sürümden beri değiştireni ve
+    erişimi değişeni adıyla yazar; daha eski satırlarda kimlik `kullanıcı ••••1a2b` olarak maskelenir. Başka satırlardaki
+    bir kimlik (örneğin görev satırlarında görevin kimliği, bir monitörün kimliği) «kullanıcı» demeden `••••a5b9` görünür.
+  - Motorun yazdığı her olay türünün bir adı vardır ve süzgeçte yer alır. Bir test motorun kaynağını okur: sayfanın adını
+    bilmediği bir tür yazılırsa ya da bir kaydın türünün nereden geldiğini okuyamazsa kırılır.
   - Olayın ayrıntısı (payload) ve mühürler gösterilmez.
   - «Tür» süzgeci seçilen türü sunucudan ister. Böylece seyrek bir tür, sayıca çok olan ölçüm kayıtlarının arasında
     kaybolmaz.
@@ -1784,7 +1789,8 @@ uydurmadır.
   - Renk tonu yalnız tablodaki en yüksek sayıya göredir; klinik bir eşik değildir.
   - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
   - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
-- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
+- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`; adlar ve türler:
+  `docs/superpowers/specs/2026-11-11-g2b-b4-denetim-adlar-design.md`.
 
 ### 3.14 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
 
@@ -2181,18 +2187,135 @@ adlar uydurmadır.
   ya da toplayıcı değişikliği.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-cihaz-veri-akisi-design.md`.
 
+### 3.23 «Eczane»: eczacının servis sayfası (Grup 3 · G3-04)
+
+- **Ne:** Sol raydaki **«Eczane»** sayfası (`/eczane`; Azerbaycanca «Aptek», Rusça «Аптека», İngilizce «Pharmacy»).
+  Kullanıcının kapsamındaki her yatan hasta tek tabloda: vazopresör ve inotroplar, antibiyotik durumu, kreatinin ve
+  bugünkü sıvı dengesi. Sayfa izleme içindir ve yalnız okur: buradan kayıt girilmez, sayfa doz önermez, order vermez,
+  tanı koymaz. Başlığın altında bunu söyler: «Bu ekran izleme içindir; doz önermez, order vermez.» Sistem yeni bir
+  veri toplamaz; sayfa, zaten tuttuklarını (panodaki ilaç bloğu ve sıvı defteri) bir araya getirir. Örneklerdeki
+  değerler uydurmadır.
+- **Durum:** main'de (11 Kasım 2026; göç 0019); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
+- **Kim görür:** yeni yetki `pharmacy.view` olan. Varsayılan olarak Eczacı, Sorumlu Hekim, Ünite Hekimi ve Hekim
+  gruplarında; Sistem Yöneticisi her yetkiyi kural gereği taşır. Hemşire, Sorumlu Hemşire, Hızlı Yanıt Ekibi,
+  Denetçi, Biyomedikal Teknisyen ve Üretici Destek görmez. Başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz
+  verilebilir. Eczacının birimleri herkesinki gibi Yönetim › Kullanıcılar'dan atanır; sayfa yalnız o birimlerin
+  hastalarını gösterir ve kapsam dışında kalan kart varsa bunu söyler. Rayda «Vardiya devri»nden sonra, «Yönetici
+  özeti»nden önce gelir; kimsenin giriş sayfası değişmedi. Yalnız bu yetkiyi taşıyan bir hesap bu sayfaya düşer.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **Başlık** «Eczane» ve tek cümlesi.
+  2. **Dört sayaç** (sayıları sunucu gönderir): «Süre işliyor», «Süre aştı», «Vazopresör / inotrop alan» ve «Sepsis
+     tanınan» (altında «sayılan uygulama kaydı yok: n»; n her zaman ilk iki sayacın toplamıdır, çünkü sepsisi tanınmış ve
+     sayılan bir uygulaması olmayan hasta tam olarak süresi işleyen ya da aşan hastadır).
+  3. **Not** (sayfada her durumda durur): «“Kayıt yok” ve “uygulama kaydı yok”, bu sisteme antibiyotik uygulaması
+     kaydedilmediğini söyler; verilmediği anlamına gelmez.» Yani bu sözler «verilmedi» demek değildir: antibiyotik
+     başka bir yerde verilmiş ve buraya yazılmamış olabilir. Sayfa hiçbir hücrede, sayaçta ya da notta böyle bir
+     hüküm vermez.
+  4. **Tablo.** Sıra sunucunundur: önce antibiyotik süresi işleyen ya da aşan hastalar (en çok aşan en üstte, sonra en
+     az süresi kalan), sonra vazopresör ya da inotrop alan diğer hastalar, sonra geri kalanlar; her grubun içinde
+     panonun yatak sırası (birim, sonra yatak adı; «YBU 1-2», «YBU 1-10»dan önce gelir ve Ç, Ö, Ş gibi harfler
+     işaretsiz harfiyle birlikte sıralanır). Sütunlar:
+     - **«Yatak · hasta»:** yatak ve ad. Panoyu görme yetkisi (`board.view`) olan için ikisi birlikte hasta ekranına
+       tek bağlantıdır; ayrıntı ve kayıt girişi oradadır. Bu yetkisi olmayan aynı yazıyı bağlantısız görür.
+     - **«Vazopresör / inotrop»:** hızı kaydedilmiş her ilaç, hızı ve ne kadar önce kaydedildiği («noradrenalin 0.12
+       µg/kg/dk · 12 dk önce»); hız 0 ise «durduruldu». İlaç kutusunun kendi cümleleridir (§3.6). Kayıt ne kadar
+       eski olursa olsun sayfa hızı yargılamaz. Hiç kayıt yoksa «Kayıt yok».
+     - **«Antibiyotik»:** altı durumdan biri, sayfanın kendi sözleriyle:
+       - «Süre işliyor · 35 dk kaldı»: sepsis tanındı, 1 saatlik süre henüz dolmadı, sayılan bir uygulama kaydı yok.
+       - «Süre aştı · 25 dk»: süre doldu, sayılan bir uygulama kaydı hâlâ yok.
+       - «Karşılandı · SS:DD»: sepsis tanındı, kayıtlı uygulama saati süre içinde.
+       - «Geç verildi · SS:DD»: sepsis tanındı, kayıtlı uygulama saati süre dolduktan sonra.
+       - «Verildi · SS:DD»: sepsis tanınmamış, ama bir uygulama kaydı var.
+       - «Kayıt yok»: sepsis tanınmamış ve sayılan bir uygulama kaydı yok.
+
+       «Karşılandı», «Geç verildi» ve «Verildi»deki saat, uygulamanın kaydedilen saatidir. İlk iki durumun («Süre
+       işliyor», «Süre aştı») altında ikinci bir satır durur. Hiçbir şey kaydedilmemişse «tanınma SS:DD · uygulama
+       kaydı yok». Bir şey kaydedilmiş, ama motorun kuralı onu saymıyorsa (tanınmadan **önce** damgalanmış bir doz
+       ya da «0» olarak girilmiş bir uygulama) «tanınma SS:DD · tanınmadan sonra sayılan uygulama kaydı yok». Bu
+       ikinci cümle bir kaydın var olduğunu, ama sepsis tanındıktan sonra sayılan bir uygulamanın kaydedilmediğini
+       söyler. Durum sözcüğü, renk, süre ve sayaçlar iki halde de aynıdır ve 3. maddedeki not ikisi için de
+       geçerlidir.
+     - **«Kreatinin»:** son değer ve saati («1.4 mg/dL · 06:10»). Renk, eşik, eğilim ya da eGFR yok. Hiç ölçüm yoksa
+       «Kayıt yok».
+     - **«Bugünkü sıvı dengesi»:** sıvı gününün dengesi işaretiyle («+250 mL»), altında aldığı, çıkardığı ve son
+       girişin saati («aldığı 850 mL · çıkardığı 600 mL · son giriş 09:00»). Sıvı günü takvim günü değildir:
+       Görevlerim'in ilk nöbet başlangıcında başlar (varsayılan 08:00, kurumun saatiyle; §3.17) ve 24 saat sürer.
+       Sütun başlığının altında günün ne zaman başladığı yazar: «gün başlangıcı 08:00» (gün dün başladıysa saat
+       tarihiyle yazılır). O gün hiç kayıt yoksa «Bugün kayıt yok» yazar, asla «0 mL» değil: kaydedilmemiş bir gün
+       sıfır denge demek değildir.
+  5. **Kaynak satırı:** «Antibiyotik süresi: motorun sepsis ya da septik şok kuralının ilk tetiklendiği andan
+     itibaren 1 saat — Surviving Sepsis Campaign 2026 (güçlü öneri, çok düşük kesinlikte kanıt).»
+  6. **Alt not:** «Bu sayfada yok: order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu, antibiyotik tedavi
+     günü, doz önerisi. Homunculus tanı koymaz, order vermez.»
+- **Antibiyotik süresi nasıl işler.** Sayfadaki tek kaynaklı sayı budur: 1 saat. Sıfır anı, motorun sepsis ya da
+  septik şok kuralının bu yatışta ilk tetiklendiği andır; saat o anda başlar (alarm panoda görünmese de işlemeye
+  devam eder). Kaynağı Surviving Sepsis Campaign 2026'dır ve iki yarısı vardır: kılavuz bunu **güçlü bir öneri**
+  olarak verir, ama dayandığı **kanıtın kesinliği çok düşüktür**. Bunlar iki ayrı şeydir ve sayfa ikisini de söyler.
+  Tanınmadan sonra kaydedilen bir uygulama saati yanıtlar: süre içindeyse «Karşılandı», sonraysa «Geç verildi».
+  Tanınmadan **önce** kaydedilmiş bir doz saati durdurmaz (motorun kuralı böyledir, alarm da aynı şekilde çalar): o
+  hasta burada «Süre işliyor» ya da «Süre aştı» okur ve altında «tanınmadan sonra sayılan uygulama kaydı yok»
+  yazar. «0» olarak kaydedilmiş bir uygulama da aynı şekilde okunur. Kimsenin yanıtlamadığı bir saat, enfeksiyon
+  şüphesi «yok» diye kaydedilene ya da hasta taburcu edilene kadar «Süre aştı» kalır ve listenin başında durur.
+- **Renkler.** Yalnız motorun iki alarm şiddeti: «Süre aştı» kritik, «Süre işliyor» yüksek; ilk iki sayaç da yalnız
+  sayısı sıfırdan büyükken bu renkleri alır. Başka hiçbir şey renkli değildir ve hiçbir şey yeşil değildir.
+  Kreatinin ve sıvı dengesi yalnız sayı ve saattir: kasada böbrek dozu eşiği ya da sıvı dengesi hedefi için kaynak
+  yok, bu yüzden sayfa ikisini de yargılamaz.
+- **Ne zaman okunur.** Her 30 saniyede bir. Sekme gizliyken okumaz; yeniden görünür olunca hemen okur. İki okuma
+  arasında süreler ve «… önce» yaşları sayfanın saatiyle ilerler. Bu saat her oturumda sunucunun saatine göre
+  düzeltilir; panoyu görme yetkisi olmayan, yalnız `pharmacy.view` taşıyan bir hesapta da (o zaman düzeltme sayfanın
+  kendi yanıtlarından ölçülür). İş istasyonunun saati ileri ya da geri olsa da dakikalar ve listenin güncel olup
+  olmadığı sunucunun saatiyle belirlenir. Durum sözcüğü ise her zaman sunucunundur: süresi iki okuma arasında dolan
+  bir satır, sunucu «aştı» diyene kadar «Süre işliyor · <1 dk kaldı» okur.
+- **Liste güncel değilse.** Okuma başarısız olursa (sunucu hatası, zaman aşımı, ağ kesintisi, kapsamın
+  okunamaması) ya da son yanıt 90 saniyeden eskiyse sayfanın başında «Eczane listesi güncel değil · son yanıt SS:DD»
+  ve varsa nedeni yazar. Satırlar son yanıttaki gibi kalır; sayaçlar «son yanıt SS:DD itibarıyla» notuyla durur;
+  süreler saymayı bırakıp geçmiş zamanla yazılır («Son yanıtta süre işliyordu · bitiş SS:DD», «Son yanıtta süre
+  aşılmıştı · bitiş SS:DD»); vazopresör yaşları kayıt saatine döner. Son yanıtta hiç hasta yoksa sayfa yalnız güncel
+  olmadığını söyler: sayaç da çizilmez, çünkü dört «0» sakin bir servis gibi okunurdu. «Görünümünüzde yatan hasta
+  yok.» cümlesini yalnız güncel bir yanıt söyler.
+- **Liste okunamazsa.** İlk okuma sürerken «Eczane listesi okunuyor…» yazar. Hiç yanıt alınamadıysa «Eczane listesi
+  okunamadı: {neden}» yazar; sayaç ve tablo çizilmez, asla sıfır yazılmaz.
+- **Yetki geri alınırsa ya da oturum biterse.** Sunucu okumayı reddederse (yetki oturum açıkken geri alındı ya da
+  oturum artık geçerli değil) sayfa elindeki listeyi hemen bırakır: yalnız «Eczane listesi okunamadı: …» ve nedeni
+  kalır (ör. «Bu işlem için yetkiniz yok (pharmacy.view).»); sayaç, tablo, hasta adı ve yatak ekranda kalmaz. Sunucu
+  hatası, zaman aşımı ya da ağ kesintisi böyle değildir: onlar kullanıcının hakkı için bir şey söylemez, liste
+  «güncel değil» uyarısıyla kalır.
+- **Sıvı okuması kesilirse.** Günün sıvı kayıtları sunucunun okuma sınırını (20 000 satır) aşarsa tablonun üstünde
+  «Sıvı toplamları gösterilemiyor: günün kayıtları okuma sınırını aştı.» yazar ve her satırın sıvı hücresi «—» olur:
+  ne denge, ne aldığı ve çıkardığı, ne de «Bugün kayıt yok». Kesilen okuma günün en eski kayıtlarını düşürür; o
+  zaman yazılacak bir denge eksik, «Bugün kayıt yok» ise yanlış olabilirdi. Sayfa bilmediği sayıyı yazmaz.
+- **Sunucuda.** Yeni `GET /pharmacy` (`pharmacy.view`): satırlar çağıranın kapsamındaki pano kartlarından kurulur
+  (`/patients` ile aynı kapsam kuralı; Kabul'den taburcu edilmiş hasta ikisinde de yoktur). Her satırın durumu,
+  satırların sırası, dört sayaç ve sıvı toplamları sunucuda hesaplanır; tarayıcı toplamaz, sıralamaz, yargılamaz.
+  Sıvı defteri istek başına bir kez okunur (hasta başına değil); kapsamda hiç hasta yoksa hiç okunmaz. Liste
+  okuması denetim kaydına yazılmaz (pano okuması gibi; 30 saniyede bir okuma kaydı gömerdi); bir hastayı satırdan
+  açmak her zamanki «görüntüleme» kaydını yazar. Pano kartının ilaç bloğuna kreatininin saati eklendi
+  (`creatinine_at`). Göç **0019** yalnız yetki satırları yazar (dört varsayılan gruba `pharmacy.view`; 0018'den
+  sonra gelir); tablo ya da sütun eklemez.
+- **Bu sayfada ve bu dilimde olmayanlar:** order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu,
+  antibiyotik tedavi günü sayımı, doz önerisi; bu sayfadan kayıt girme; bildirim ya da ray rozeti; yazdırma; son
+  tamamlanan günün sıvı dengesi (gün döndükten hemen sonra sütun boştur).
+- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor. Tanınmadan önceki bir dozun saati
+  durdurup durdurmayacağı kasada açık bir sorudur; kaynak olmadan değişmez. Yanıtsız kalan bir saatin «Süre aştı»
+  olarak en üstte kalması pilotun ilk haftasından sonra yeniden bakılacak. Kreatinin için böbrek dozu eşiği, sıvı
+  dengesi hedefi ve bir vazopresör hızının ne kadar eski olabileceği: her biri önce kasada bir kaynak ister.
+  Kurumun bütün sıvı kayıtlarını okuyan sorgunun maliyeti denetim kaydı büyüdükçe artar (bugün kayıt küçük);
+  sonraki bir dilimin işidir. Eczacı grubunun açıklama metni («Pano ve kabul kayıtlarını okuma.») değişmedi;
+  değiştirmek ayrı bir göç ister ve sahibin kararıdır.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g3-eczane-design.md`; plan
+  `docs/superpowers/plans/2026-11-11-g3-eczane.md`.
+
 ### 3.24 «Yönetici özeti»: hastane bir bakışta (Grup 4 · G4-02)
 
 - **Ne:** Sol raydaki **«Yönetici özeti»** sayfası (`/ozet`; Azerbaycanca «Rəhbər xülasəsi», Rusça «Сводка для
   руководства», İngilizce «Management summary»; telefonun dar rayında «Özet»). Hastanenin şu anki durumu ve alarm
   kalitesi tek sayfada, yalnız gerçek verilerden. Sayfa yalnız okur ve hiçbir yerde hasta adı ya da kimliği göstermez.
-  (§3.23 Eczane dilimine ayrıldı; bu yüzden numara atlıyor.)
 - **Durum:** main'de (11 Kasım 2026; göç yok); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
 - **Kim görür:** yeni yetki `summary.view` («Yönetici özetini görür») olan. Varsayılan gruplardan hiçbirinde yok;
   Sistem Yöneticisi her yetkiyi kural gereği taşıdığından yalnız o görür, göç (migration) gerekmedi. Başka bir gruba
   (ör. başhekim) Yönetim › Roller ve yetkiler'den kodsuz verilebilir; o grup bir kaynağın kendi yetkisini taşımıyorsa
   o sütun ya da kart sayı yerine «yetki yok» der (yapıyı okuma yetkisi yoksa birim tablosunun yerinde «Birim
-  satırları yazılamıyor · yetki yok» yazar). Rayda «Vardiya devri»nden sonra gelir; kimsenin giriş sayfası
+  satırları yazılamıyor · yetki yok» yazar). Rayda «Eczane»den (§3.23) sonra gelir; kimsenin giriş sayfası
   değişmedi (Sistem Yöneticisi yine «Yataklar»a düşer). Bir çalışma ekranı değildir: yalnız `summary.view` taşıyan
   bir hesap bununla oturum açamaz (giriş ekranı «Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini
   açmıyor…» der, §3.5); ona bir çalışma yetkisi de (ör. panoyu görme, `board.view`) verilmelidir.

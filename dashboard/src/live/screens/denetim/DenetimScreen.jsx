@@ -5,7 +5,8 @@
 //     was taken, in this component only — a verdict from an earlier visit shown as current is the one thing this
 //     page must never do; a failed run replaces it rather than sitting beside it;
 //   - the alarm heatmap (G2-B6, HeatBox.jsx), also on its button: masked patients by hour of day, last 7 days;
-//   - the newest events, newest first, the patient id MASKED (owner D2), a type filter that asks the server (D7).
+//   - the newest events, newest first, the patient id MASKED (owner D2) and a user id too (follow-up 2026-11-11 D2),
+//     a type filter that asks the server (D7).
 //     No payload, no hashes (D5). Nothing here writes.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -14,7 +15,7 @@ import { readErrorText } from "../../apiErrors.js";
 import { ddmmhhmm } from "../../i18n/dates.js";
 import { Alert, Announce, Box, Button, Field, Note, Select, Table } from "../../ui/index.js";
 import {
-  EVENTS_LIMIT, EVENT_TYPES, actorOf, maskPatient, newestFirst, typeKey, verdictOf,
+  EVENTS_LIMIT, EVENT_TYPES, actorOf, maskPatient, newestFirst, subjectOf, typeKey, verdictOf,
 } from "./denetim.js";
 import { HeatBox } from "./HeatBox.jsx";
 
@@ -173,9 +174,9 @@ function EventsBox() {
                 <td className="font-data">{rec?.id != null ? `#${rec.id}` : "—"}</td>
                 <td className="font-data">{timeText(rec?.ts)}</td>
                 <td>{label ? t(label) : <code>{rec?.event_type || "—"}</code>}</td>
-                <td>{actorOf(rec?.payload)}</td>
+                <td>{actorOf(rec?.payload, t)}</td>
                 <td className="font-data">{maskPatient(rec?.patient_id)}</td>
-                <td>{rec?.subject || "—"}</td>
+                <td>{subjectOf(rec, t)}</td>
               </tr>
             );
           })}

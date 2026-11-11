@@ -75,6 +75,11 @@ PERMISSIONS: dict[str, str] = {
     # group holds it by rule, so no migration; a hospital may give it to another group on the Roles screen.
     "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a "
                     "countersignature (GET /handovers/pending), as counts and times only",
+
+    # G3-04 — Eczane (spec D2): the pharmacist's ward page, read-only. Held by default by the pharmacist
+    # and the physician groups; migration 0019 gives it to the tenants seeded before it.
+    "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the "
+                     "antibiotic clock, creatinine and the day's fluid balance; read-only",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -117,6 +122,7 @@ _ATTENDING = (
     "board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.sign_off",
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
     "break_glass.use", "clinical.chart", "scores.sign", "tasks.view", "tasks.manage",
+    "pharmacy.view",
 )
 
 
@@ -163,7 +169,7 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "handover.sign", "break_glass.use", "clinical.chart", "scores.sign",
-                     "tasks.view", "tasks.manage")},
+                     "tasks.view", "tasks.manage", "pharmacy.view")},
     # G2-B1c (D7): no `care_team.claim`. The care team is physicians' (T1), and a charge nurse's
     # claim could only be refused. Migration 0018 takes the key, and «bakım ekibi» from the default
     # description, from the tenants seeded before it.
@@ -194,7 +200,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "mfa_required": True, "is_system": False, "permissions": ("audit.view", "devices.manage")},
     {"slug": "pharmacist", "kind": "role", "name": "Eczacı",
      "description": "Pano ve kabul kayıtlarını okuma.",
-     "mfa_required": False, "is_system": False, "permissions": ("board.view", "admissions.view")},
+     "mfa_required": False, "is_system": False,
+     "permissions": ("board.view", "admissions.view", "pharmacy.view")},
     {"slug": "biomedical", "kind": "role", "name": "Biyomedikal Teknisyen",
      "description": "Cihaz ve araştırma uç noktaları.",
      "mfa_required": False, "is_system": False, "permissions": ("devices.manage",)},

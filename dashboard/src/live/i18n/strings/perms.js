@@ -55,6 +55,8 @@ export default {
       manage_state: "Boş bir yatağı beklenen bir hasta için rezerve eder ya da kullanım dışı bırakır ve bunları geri alır — kendi birimlerinde, Doluluk ekranında" },
     // G4-02 — Yönetici özeti
     summary: { view: "Yönetici özetini görür" },
+    // G3-04 — Eczane
+    pharmacy: { view: "“Eczane” sayfasını açar: kendi birimlerindeki hastaların vazopresörlerini, antibiyotik süresini, kreatininini ve günün sıvı dengesini salt okunur görür" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -96,6 +98,8 @@ export default {
       manage_state: "Boş çarpayını gözlənilən xəstə üçün rezerv edir və ya istifadədən çıxarır və bunları geri qaytarır — öz şöbələrində, Doluluq ekranında" },
     // G4-02 — Yönetici özeti
     summary: { view: "Rəhbər xülasəsini görür" },
+    // G3-04 — Eczane
+    pharmacy: { view: "“Aptek” səhifəsini açır: öz şöbələrindəki xəstələrin vazopressorlarını, antibiotik müddətini, kreatininini və günün maye balansını yalnız oxumaq üçün görür" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -137,6 +141,8 @@ export default {
       manage_state: "Резервирует свободную койку для ожидаемого пациента или выводит её из использования и отменяет это — в своих отделениях, на экране «Занятость коек»" },
     // G4-02 — Yönetici özeti
     summary: { view: "Видит сводку для руководства" },
+    // G3-04 — Eczane
+    pharmacy: { view: "Открывает страницу «Аптека»: видит вазопрессоры, срок для антибиотика, креатинин и суточный баланс жидкости пациентов своих отделений — только чтение" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -178,5 +184,7 @@ export default {
       manage_state: "Reserve a free bed for an expected patient or take it out of service, and undo either — in their own units, on the Occupancy screen" },
     // G4-02 — Yönetici özeti
     summary: { view: "See the management summary" },
+    // G3-04 — Eczane
+    pharmacy: { view: "Open the “Pharmacy” page: see the vasopressors, the antibiotic window, creatinine and the day's fluid balance of the patients in one's own units, read-only" },
   },
 };
