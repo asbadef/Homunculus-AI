@@ -89,6 +89,16 @@ def reach_clause(scope: Scope, *, unit_id: ColumnElement,
     return or_(unit_id.in_(_grant_uuids(scope.unit_ids)), bed_id.in_(_grant_uuids(scope.bed_ids)))
 
 
+def unit_clause(scope: Scope, *, unit_id: ColumnElement) -> ColumnElement | None:
+    """`reach_clause` for a row that belongs to a unit and to no bed — a handover (G4-02, spec D4): None
+    when the scope is unrestricted (no filter), else "the unit granted". A bed grant reaches no such row:
+    it names one bed, not the unit around it. The column must be the row's own unit, proven this
+    tenant's by the query (see the module's docstring)."""
+    if scope.unrestricted:
+        return None
+    return unit_id.in_(_grant_uuids(scope.unit_ids))
+
+
 def require_reach(scope: Scope, *, unit_id: uuid.UUID | str | None,
                   bed_id: uuid.UUID | str | None) -> None:
     """403 `out_of_scope` unless the scope reaches the bed. Not a 404: the caller picked the bed

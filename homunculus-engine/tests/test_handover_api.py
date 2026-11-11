@@ -23,7 +23,8 @@ from sqlalchemy import func, select, update
 from homunculus.admission import service as adm_service
 from homunculus.admission.models import Handover, HandoverStatus
 from homunculus.auth.groups import ensure_default_groups, set_manual_groups
-from homunculus.auth.models import Group, TenantMembership, User
+from homunculus.auth.models import Group, GroupPermission, TenantMembership, User
+from homunculus.scope.models import StaffScope
 from homunculus.escalation import service as esc_service
 from homunculus.escalation.models import AlertTier
 from homunculus.tenant.models import Site, Tenant, Unit, UnitType
@@ -647,3 +648,148 @@ async def test_only_the_named_receiver_countersigns(ward):
     r = await client.post(url, headers=w.auth["charge"])
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "COMPLETED"
+
+
+# ---------------------------------------------------------------- G4-02: waiting for the countersignature
+async def waiting(db_session, w, unit: str, *, signed_at: datetime | None = None,
+                  status: HandoverStatus = HandoverStatus.OUTGOING_SIGNED) -> Handover:
+    """A handover of `unit` as the outgoing signature leaves it (`status` for the other states), written
+    straight into the database: counting one needs no patient and no live board (G4-02)."""
+    handover = await adm_service.open_handover(db_session, unit_id=w.units[unit].id,
+                                               outgoing_user_id=w.users["nurse"].id,
+                                               incoming_user_id=w.users["charge"].id, admission_ids=[])
+    handover.status = status
+    handover.outgoing_signed_at = signed_at
+    await db_session.commit()
+    return handover
+
+
+async def pending(client, headers: dict[str, str]) -> dict:
+    r = await client.get("/handovers/pending", headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def summary_reader(db_session, w, *, unit: str | None = None,
+                         bed: str | None = None) -> dict[str, str]:
+    """A member of a group the hospital made, holding `summary.view` alone (spec D2: the key can be given
+    on the Roles screen later), granted one unit or one bed. Her Authorization header."""
+    tag = uuid.uuid4().hex[:8]
+    group = Group(tenant_id=w.tenant.id, slug=f"ozet-{tag}", name=f"Sentetik özet {tag}",
+                  permissions=[GroupPermission(permission="summary.view")])
+    db_session.add(group)
+    await db_session.flush()
+    user = await add_user(db_session, username=f"ozet-{tag}@kabul.example.com",
+                          tenant_id=w.tenant.id, group=group)
+    db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=user.id,
+                              unit_id=str(w.units[unit].id) if unit else "",
+                              bed_id=str(w.beds[bed].id) if bed else ""))
+    await db_session.commit()
+    return await bearer(db_session, user)
+
+
+async def test_the_waiting_handovers_need_summary_view(ward):
+    """Spec D2: the summary is the system administrator's. A nurse signs handovers and reads none of it."""
+    w, client, _ = ward
+    for who in ("nurse", "charge", "doctor", "auditor"):
+        r = await client.get("/handovers/pending", headers=w.auth[who])
+        assert r.status_code == 403, (who, r.text)
+    body = await pending(client, w.auth["admin"])
+    assert body["units"] == []                      # a unit with none is left out
+    assert body["generated_at"]
+
+
+async def test_each_unit_counts_its_waiting_handovers_and_names_the_oldest(ward, db_session):
+    """Per unit, by name: how many wait, and when the oldest was signed — days ago if need be, since
+    OUTGOING_SIGNED never expires (service.py)."""
+    w, client, _ = ward
+    now = datetime.now(timezone.utc)
+    oldest = now - timedelta(days=3)
+    await waiting(db_session, w, "rea", signed_at=now - timedelta(hours=2))
+    await waiting(db_session, w, "rea", signed_at=oldest)
+    await waiting(db_session, w, "neo", signed_at=now - timedelta(minutes=5))
+
+    body = await pending(client, w.auth["admin"])
+    assert [(u["unit_name"], u["pending"]) for u in body["units"]] == [("Neonatal", 1), ("Reanimasiya", 2)]
+    rea = body["units"][1]
+    assert rea["unit_id"] == str(w.units["rea"].id)
+    assert datetime.fromisoformat(rea["oldest_outgoing_signed_at"]) == oldest
+    assert abs(datetime.fromisoformat(body["generated_at"]) - now) < timedelta(minutes=1)
+
+
+async def test_only_a_handover_waiting_for_its_countersignature_counts(ward, db_session):
+    """OPEN (not signed yet, or past its bridge), COMPLETED and EXPIRED wait for nobody."""
+    w, client, _ = ward
+    now = datetime.now(timezone.utc)
+    await waiting(db_session, w, "rea", status=HandoverStatus.OPEN)
+    await waiting(db_session, w, "rea", signed_at=now, status=HandoverStatus.COMPLETED)
+    await waiting(db_session, w, "rea", status=HandoverStatus.EXPIRED)
+    assert (await pending(client, w.auth["admin"]))["units"] == []
+
+    await waiting(db_session, w, "rea", signed_at=now)
+    assert [u["pending"] for u in (await pending(client, w.auth["admin"]))["units"]] == [1]
+
+
+async def test_the_answer_names_no_patient_note_or_person(ward):
+    """Spec D4: counts and times only. A handover made the ward's way — a patient, the D-Ö-D-Ö note, two
+    people — is counted, and nothing of it is told."""
+    w, client, _ = ward
+    admission = await signed(w, client)
+    handover = await handed(w, client, admission)
+
+    r = await client.get("/handovers/pending", headers=w.auth["admin"])
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body) == {"units", "generated_at"}
+    (unit,) = body["units"]
+    assert set(unit) == {"unit_id", "unit_name", "pending", "oldest_outgoing_signed_at"}
+    assert unit["pending"] == 1
+    for told in (NAME, *NOTE.values(), admission["id"], admission["board_key"], handover["id"],
+                 str(w.users["nurse"].id), str(w.users["charge"].id), "nurse@kabul", "charge@kabul"):
+        assert told not in r.text, told
+
+
+async def test_a_reader_given_the_key_sees_her_own_units_only(ward, db_session):
+    """Spec D4: the scope is the caller's units. A group given the key later (D2), granted one unit, sees
+    that unit's; granted a bed alone, none — a handover belongs to a unit, not to a bed."""
+    w, client, _ = ward
+    now = datetime.now(timezone.utc)
+    await waiting(db_session, w, "rea", signed_at=now)
+    await waiting(db_session, w, "neo", signed_at=now)
+    neo_reader = await summary_reader(db_session, w, unit="neo")
+    bed_reader = await summary_reader(db_session, w, bed="1")
+
+    assert [u["unit_name"] for u in (await pending(client, neo_reader))["units"]] == ["Neonatal"]
+    assert (await pending(client, bed_reader))["units"] == []
+    assert [u["unit_name"] for u in (await pending(client, w.auth["admin"]))["units"]] == \
+        ["Neonatal", "Reanimasiya"]
+
+
+async def test_another_hospitals_waiting_handovers_are_not_counted(ward, db_session):
+    """Tenant isolation: each administrator counts her own hospital's units only."""
+    w, client, _ = ward
+    other = Tenant(name="Sentetik Omega Hastanesi", slug="omega-hastane", country_code="AZ")
+    db_session.add(other)
+    await db_session.flush()
+    groups = await ensure_default_groups(db_session, other.id)
+    site = Site(tenant_id=other.id, name="Omega bina")
+    db_session.add(site)
+    await db_session.flush()
+    unit = Unit(site_id=site.id, name="Omega YBÜ", unit_type=UnitType.ADULT_ICU)
+    db_session.add(unit)
+    await db_session.commit()
+    sender = await add_user(db_session, username="gonderen@omega.example.com", tenant_id=other.id,
+                            group=groups["nurse"])
+    receiver = await add_user(db_session, username="alan@omega.example.com", tenant_id=other.id,
+                              group=groups["nurse"])
+    their_admin = await add_user(db_session, username="yonetici@omega.example.com", tenant_id=other.id,
+                                 group=groups["hospital_admin"])
+    theirs = await adm_service.open_handover(db_session, unit_id=unit.id, outgoing_user_id=sender.id,
+                                             incoming_user_id=receiver.id, admission_ids=[])
+    theirs.status, theirs.outgoing_signed_at = HandoverStatus.OUTGOING_SIGNED, datetime.now(timezone.utc)
+    await db_session.commit()
+    await waiting(db_session, w, "rea", signed_at=datetime.now(timezone.utc))
+
+    assert [u["unit_name"] for u in (await pending(client, w.auth["admin"]))["units"]] == ["Reanimasiya"]
+    assert [u["unit_name"] for u in (await pending(client, await bearer(db_session, their_admin)))["units"]] \
+        == ["Omega YBÜ"]

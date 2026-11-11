@@ -66,6 +66,7 @@ from homunculus.admission.schemas import (
     AlertRetire, CareTeamAdd, CareTeamMemberResponse, Colleague, DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
+    PendingHandovers, PendingUnit,
     LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse,
     ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
@@ -1153,6 +1154,8 @@ HANDOVER_BOX_WINDOW = timedelta(hours=24)
 HANDOVER_BOX_CAP = 100
 #: G2-B3b (D7): the permission a colleague holds to be handed over to.
 HANDOVER_SIGN = "handover.sign"
+#: G4-02 (spec D3, D4): the Yönetici özeti's key — the page, and the units' handovers waiting for a countersignature.
+SUMMARY_VIEW = "summary.view"
 #: The D-Ö-D-Ö note's parts, in their order (D5).
 _NOTE_PARTS = ("situation", "background", "assessment", "recommendation")
 
@@ -1374,6 +1377,37 @@ async def handover_colleagues(
     people = [Colleague(id=user_id, name=full_name or username)
               for user_id, full_name, username in rows]
     return sorted(people, key=lambda person: (person.name.casefold(), str(person.id)))
+
+
+@handover_router.get("/pending", response_model=PendingHandovers)
+async def pending_handovers(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(SUMMARY_VIEW)),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    """G4-02 (spec D4): per unit, the handovers the outgoing person signed that wait for the
+    countersignature (OUTGOING_SIGNED) — how many, and when the oldest was signed; then the server's
+    time. Units with none are left out; the rest by name. In the caller's tenant (the unit's site) and
+    the caller's units (`unitscope.unit_clause`: a handover belongs to a unit, so a bed grant alone
+    reaches none) — today only an unrestricted administrator holds the key, the rule is written for the
+    group a hospital may give it to later. Counts and times only: no patient, no note, no person.
+    OUTGOING_SIGNED never expires (service.py), so the oldest can be days old."""
+    reach = await unitscope.caller_scope(db, user.id, caller_tenant)
+    stmt = (select(Unit.id, Unit.name, func.count(Handover.id), func.min(Handover.outgoing_signed_at))
+            .select_from(Handover)
+            .join(Unit, Unit.id == Handover.unit_id)
+            .join(Site, Site.id == Unit.site_id)
+            .where(Site.tenant_id == caller_tenant, Handover.status == HandoverStatus.OUTGOING_SIGNED)
+            .group_by(Unit.id, Unit.name)
+            .order_by(Unit.name, Unit.id))
+    within = unitscope.unit_clause(reach, unit_id=Unit.id)
+    if within is not None:
+        stmt = stmt.where(within)
+    rows = (await db.execute(stmt)).all()
+    return PendingHandovers(
+        units=[PendingUnit(unit_id=unit_id, unit_name=name, pending=count, oldest_outgoing_signed_at=oldest)
+               for unit_id, name, count, oldest in rows],
+        generated_at=_now())
 
 
 @handover_router.get("", response_model=list[HandoverRow])
