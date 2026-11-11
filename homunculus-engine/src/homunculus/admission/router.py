@@ -63,7 +63,8 @@ from homunculus.admission.models import (
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
     AdmitResponse,
-    AlertRetire, CareTeamAdd, CareTeamMemberResponse, Colleague, DischargeConfirmResponse,
+    AlertRetire, CareTeamAdd, CareTeamCandidate, CareTeamMemberResponse, Colleague,
+    DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
     LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse,
@@ -894,8 +895,21 @@ async def admission_label(
 
 
 # ---------------------------------------------------------------------------
-# Care team (§4.2–4.3)
+# Care team (§4.2–4.3; Group 2 · B1c, spec §5.2)
 # ---------------------------------------------------------------------------
+def _member_out(member: CareTeamMember, people: dict, now: datetime) -> CareTeamMemberResponse:
+    """G2-B1c (§5.2): a row as the box shows it, its people by name (`_people`) and whether it is
+    in force now (`service.in_force`)."""
+    by = people.get(member.granted_by_id) if member.granted_by_id is not None else None
+    return CareTeamMemberResponse(
+        id=member.id, admission_id=member.admission_id, user_id=member.user_id,
+        full_name=people[member.user_id][1], role=member.role,
+        granted_by_id=member.granted_by_id, granted_by_name=by[1] if by else None,
+        window_start=member.window_start, window_end=member.window_end,
+        is_active=member.is_active, in_force=service.in_force(member, now),
+        created_at=member.created_at, closed_at=member.closed_at)
+
+
 @router.post("/{admission_id}/care-team/claim", response_model=CareTeamMemberResponse)
 async def claim_attending(
     admission_id: uuid.UUID,
@@ -909,9 +923,9 @@ async def claim_attending(
     member = await service.claim_attending(
         db, admission, attending_id=user.id, granted_by_id=user.id,
     )
+    answer = _member_out(member, await _people(db, member.user_id), _now())
     await db.commit()
-    await db.refresh(member)
-    return member
+    return answer
 
 
 @router.post("/{admission_id}/care-team", response_model=CareTeamMemberResponse, status_code=201)
@@ -932,22 +946,56 @@ async def add_care_team_member(
         )
     except WorkflowError as exc:
         raise _wf(exc)
+    answer = _member_out(member, await _people(db, member.user_id, user.id), _now())
     await db.commit()
-    await db.refresh(member)
-    return member
+    return answer
 
 
-@router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse],
-            dependencies=[Depends(require_permission("admissions.view"))])
+@router.get("/{admission_id}/care-team", response_model=list[CareTeamMemberResponse])
 async def list_care_team(
     admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("admissions.view")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    await _get_admission_or_404(db, admission_id, caller_tenant)
-    result = await db.execute(
-        select(CareTeamMember).where(CareTeamMember.admission_id == admission_id)
-    )
-    return list(result.scalars().all())
+    """G2-B1c (§5.2): every row of the admission's team, the active ones first and each group
+    newest first, by name. For a caller whose units hold the bed, or who holds an active row on
+    this admission herself (an on-call colleague from another unit reads the team she is on: D6,
+    X10); anyone else 403 `out_of_scope`."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    me = user.id
+    if not any(m.user_id == me for m in await service.active_rows(db, admission.id)):
+        await _reach_admission(db, me, caller_tenant, admission)
+    rows = list((await db.execute(
+        select(CareTeamMember).where(CareTeamMember.admission_id == admission.id)
+        .order_by(CareTeamMember.is_active.desc(), CareTeamMember.created_at.desc(),
+                  CareTeamMember.id))).scalars().all())
+    people = await _people(db, *(m.user_id for m in rows), *(m.granted_by_id for m in rows))
+    now = _now()
+    return [_member_out(m, people, now) for m in rows]
+
+
+@router.get("/{admission_id}/care-team/candidates", response_model=list[CareTeamCandidate])
+async def care_team_candidates(
+    admission_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission("care_team.assign")),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    """G2-B1c (§5.2, D8): whom «Ekibe ekle» offers. Every physician of the tenant (T1), from every
+    unit: an on-call colleague of another unit is the one the own-patient rule matters most for.
+    Left out: a physician whose active row here is in force or still to come. An EXPIRED on-call
+    row does not count, because the add renews it (T8, X4). Names only, sorted by name. Reach as
+    for the writes."""
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    await _reach_admission(db, user.id, caller_tenant, admission)
+    now = _now()
+    taken = {m.user_id for m in await service.active_rows(db, admission.id)
+             if not service.expired(m, now)}
+    rows = (await db.execute(
+        select(User.id, User.full_name)
+        .where(User.id.in_(service.physician_ids(caller_tenant)))
+        .order_by(User.full_name, User.id))).all()
+    return [CareTeamCandidate(user_id=uid, full_name=name) for uid, name in rows
+            if uid not in taken]
 
 
 # ---------------------------------------------------------------------------

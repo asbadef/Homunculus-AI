@@ -246,6 +246,8 @@ BY_ID: dict[str, ById] = {
     "care-team add": ById(
         "POST", lambda s: f"/admissions/{s.admission}/care-team",
         lambda a: {"user_id": a.member, "role": "ASSOCIATE_PHYSICIAN"}, 201),
+    # G2-B1c (D8): the picker's candidates; the caller's own admission is read (200).
+    "care-team candidates": ById("GET", lambda s: f"/admissions/{s.admission}/care-team/candidates"),
     # A-37: the transfer routes are closed — the caller's own admission gets past the tenant
     # check to the 409 `transfer_unavailable`.
     "transfer initiate": ById(
