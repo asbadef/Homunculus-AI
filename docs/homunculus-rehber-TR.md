@@ -1960,7 +1960,7 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 ### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
 
 Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
-main'de (11 Kasım 2026; göç 0018); hastane sunucusuna sahibin sözüyle, ayrı bir çıkışla gelir. Örneklerdeki
+11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç 0018). Örneklerdeki
 adlar uydurmadır.
 
 - **Yalnız hekimler.** Ekipte üç rol var: **sorumlu hekim** (her an tek kişi), **yardımcı hekim** ve
@@ -2195,7 +2195,7 @@ adlar uydurmadır.
   tanı koymaz. Başlığın altında bunu söyler: «Bu ekran izleme içindir; doz önermez, order vermez.» Sistem yeni bir
   veri toplamaz; sayfa, zaten tuttuklarını (panodaki ilaç bloğu ve sıvı defteri) bir araya getirir. Örneklerdeki
   değerler uydurmadır.
-- **Durum:** main'de (11 Kasım 2026; göç 0019); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç 0019).
 - **Kim görür:** yeni yetki `pharmacy.view` olan. Varsayılan olarak Eczacı, Sorumlu Hekim, Ünite Hekimi ve Hekim
   gruplarında; Sistem Yöneticisi her yetkiyi kural gereği taşır. Hemşire, Sorumlu Hemşire, Hızlı Yanıt Ekibi,
   Denetçi, Biyomedikal Teknisyen ve Üretici Destek görmez. Başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz
@@ -2310,7 +2310,7 @@ adlar uydurmadır.
 - **Ne:** Sol raydaki **«Yönetici özeti»** sayfası (`/ozet`; Azerbaycanca «Rəhbər xülasəsi», Rusça «Сводка для
   руководства», İngilizce «Management summary»; telefonun dar rayında «Özet»). Hastanenin şu anki durumu ve alarm
   kalitesi tek sayfada, yalnız gerçek verilerden. Sayfa yalnız okur ve hiçbir yerde hasta adı ya da kimliği göstermez.
-- **Durum:** main'de (11 Kasım 2026; göç yok); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç yok).
 - **Kim görür:** yeni yetki `summary.view` («Yönetici özetini görür») olan. Varsayılan gruplardan hiçbirinde yok;
   Sistem Yöneticisi her yetkiyi kural gereği taşıdığından yalnız o görür, göç (migration) gerekmedi. Başka bir gruba
   (ör. başhekim) Yönetim › Roller ve yetkiler'den kodsuz verilebilir; o grup bir kaynağın kendi yetkisini taşımıyorsa
