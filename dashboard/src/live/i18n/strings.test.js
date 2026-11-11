@@ -218,6 +218,10 @@ const AZ_SAME_AS_TR = new Set([
   // G4-01 (cihaz) · az = tr
   "cihaz.wordOk", //         normal — the same word in Azerbaijani (a link's state word on the device page)
 
+  // G4-02 (ozet) · az = tr — «gün» (day), «saat» (hour) and «son» (last) are Azerbaijani words too
+  "ozet.period.d7", "ozet.period.d30", //               7 gün · 30 gün
+  "ozet.period.text1", "ozet.period.text7", "ozet.period.text30", // son 24 saat · son 7 gün · son 30 gün
+
 ]);
 
 describe("live UI dictionaries", () => {

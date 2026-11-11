@@ -224,12 +224,16 @@ const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", 
     vital: { state: "late", anchor_at: "2026-10-07T21:00:00Z", due_at: "2026-10-08T09:00:00Z", band: "b0", interval_min: 720, partial: false, skipped_until: null, entries: ["2026-10-08T05:00:00Z"] },
     tasks: [{ id: "t1", patient_id: "S-001", title: "Pansuman", due_at: "2026-10-08T12:00:00Z", target_role: "nurse", state: "open", late: false, created_by: "hem.ayse", created_at: "2026-10-08T09:00:00Z", claimed_by: null, claimed_at: null, closed_by: null, closed_at: null }] }] };
 const TASK_SETTINGS_SWEEP = { configured: false, shift_start_a: 8, shift_start_b: 20, grace_min: 30, intervals: { b0: 720, b1_4: null, b3_single: null, b5_6: null, b7: null }, updated_at: null, updated_by: null, default_source: { b0: "news2-rcp-2017" } };
-/** G2-B4: the audit page's newest events (a labelled type, an unlabelled one, a masked id) and a broken chain. */
+/** G2-B4: the audit page's newest events (a labelled type, a code no version names, a masked id) and a broken chain. */
 const AUDIT_ROWS = { records: [
   { id: 1, ts: "2026-11-09T10:01:00+00:00", tenant: "demo-hastanesi", event_type: "ack", patient_id: "260109004821",
     subject: "news2_high", payload: { actor: "ayse" }, prev_hash: "", hash: "" },
-  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "structure.create", patient_id: "",
+  { id: 2, ts: "2026-11-09T10:02:00+00:00", tenant: "demo-hastanesi", event_type: "legacy.made_up", patient_id: "",
     subject: "", payload: { actor: "admin" }, prev_hash: "", hash: "" },
+  // G2-B4 follow-up D2: a scope row written before the engine wrote names — both its user ids masked
+  { id: 3, ts: "2026-11-09T10:03:00+00:00", tenant: "demo-hastanesi", event_type: "scope", patient_id: "",
+    subject: "22222222-2222-4222-8222-2222222261a2", payload: { by: "11111111-1111-4111-8111-11111111ad01", before: [], after: [] },
+    prev_hash: "", hash: "" },
 ] };
 const BROKEN_CHAIN = { ok: false, checked: 1, unsealed: 1, broken_at: 2, reason: "önceki kayda bağlanmıyor — arada kayıt silinmiş olabilir",
   records: 2, complete: true };
@@ -256,6 +260,11 @@ const HANDOVERS = {
     outgoing: { id: "u-ayse", name: "Ayşe Sentetik" }, incoming: { id: "u-leyla", name: "Leyla Sentetik" } })],
 };
 const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", name: "Murad Sentetik" }];
+
+/** G4-02: «Yönetici özeti» — one unit of the ward with a handover waiting since three hours before the answer, so the
+ *  card's and the cell's «oldest» words are drawn. Counts and times only, as the API sends them. */
+const PENDING_SWEEP = { generated_at: "2026-10-08T10:00:00+00:00", units: [{ unit_id: WARD.sites[0].units[0].id,
+  unit_name: WARD.sites[0].units[0].name, pending: 1, oldest_outgoing_signed_at: "2026-10-08T07:00:00+00:00" }] };
 
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path, extra) {
@@ -302,6 +311,9 @@ async function openAt(path, extra) {
       // G2-B3b: «Vardiya devri» (screens/devir) — the two boxes and the dialog's colleagues.
       api.handovers.mockImplementation((box) => Promise.resolve(HANDOVERS[box] ?? []));
       api.handoverColleagues.mockResolvedValue(COLLEAGUES);
+
+      // G4-02: «Yönetici özeti» (screens/ozet) — the units' waiting handovers.
+      api.pendingHandovers.mockResolvedValue(PENDING_SWEEP);
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -458,6 +470,24 @@ describe("no screen shows a reader a translation key", () => {
     act(() => { mounted.board.clear(); });
   });
 
+  // G4-02 — «Yönetici özeti»: the sweep's report is the heatmap's (no figures, no days, no kinds); here a whole one, so
+  // the quality box's figures, its daily bars and its kinds are drawn, beside the cards and the units table.
+  it("the summary page's keys resolve on its cards, its quality box and its units table", async () => {
+    const mounted = await openAt("/ozet", (api) => {
+      api.alarmQuality.mockResolvedValue({ episodes: 3, answered: 2, unanswered: 1, escalated: 1, pending: 0,
+        answered_rate: 0.6667, median_response_sec: 75, p90_response_sec: 75, days: 7, truncated: false, window_from: null,
+        per_kind: [{ kind: "news2", episodes: 3, answered: 2, escalated: 1, median_response_sec: 75 }],
+        per_day: [{ date: "2026-10-07", episodes: 3 }], noisiest_beds: [], per_patient_hour: [] });
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Unudulan işlər" })).toBeInTheDocument();     // ozet.cards.title
+    expect(screen.getByRole("table", { name: "Şöbələr, indi" })).toBeInTheDocument();                 // ozet.units.caption
+    expect(screen.getByText("07.10: 3 epizod")).toBeInTheDocument();                                  // ozet.q.dayCount
+    expect(screen.getByText("Şöbəsi bəlli olmayan")).toBeInTheDocument();                            // ozet.units.unplaced
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
   // G4-01 — «Cihaz & Veri Akışı»: the device page's sections on a ward with a silent, a vanished and a stale-channel
   // monitor, and a table row whose monitor was never seen — states the sweep's STRIP and MAPPING do not reach.
   it("the device page's feed keys resolve on every section", async () => {
@@ -486,6 +516,7 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Audit bütövlüyü" })).toBeInTheDocument();   // denetim.title
     // the label is also the filter's option, so ask for the events row's cell, not the first match
     expect(screen.getAllByText("Siqnalın təsdiqi").some((el) => el.tagName === "TD")).toBe(true);   // denetim.type.ack
+    expect(screen.getByText("istifadəçi ••••ad01")).toBeInTheDocument();                           // denetim.maskedUser
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Zənciri yoxla" })); await settle(); });
     expect(screen.getByText(/Zəncir qırılıb/)).toBeInTheDocument();                                 // denetim.verdictBroken
     expect(screen.getByText(/möhürdən əvvəl yazılıb/)).toBeInTheDocument();                         // denetim.unsealed

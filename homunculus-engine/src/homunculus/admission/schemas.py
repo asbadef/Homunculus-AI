@@ -578,6 +578,22 @@ class Colleague(BaseModel):
     name: str
 
 
+class PendingUnit(BaseModel):
+    """G4-02 (spec D4): one unit's handovers signed by the outgoing person and waiting for the
+    countersignature — how many, and when the oldest was signed. Nothing else: no patient, no note,
+    no person."""
+    unit_id: uuid.UUID
+    unit_name: str
+    pending: int
+    oldest_outgoing_signed_at: datetime | None
+
+
+class PendingHandovers(BaseModel):
+    """G4-02 (spec D4): `GET /handovers/pending` — the units with at least one, and the server's time."""
+    units: list[PendingUnit]
+    generated_at: datetime
+
+
 class HandoverResponse(BaseModel):
     id: uuid.UUID
     unit_id: uuid.UUID

@@ -28,11 +28,12 @@ SPEC_KEYS = {
     "beds.manage_state",  # G2-B3a Doluluk: reserve / out of service (spec D4)
     "tasks.view",         # G3-02 Görevlerim (spec D8): open the queue, read /tasks
     "tasks.manage",       # G3-02: write a task, claim, close, skip; skip a vital measurement
+    "summary.view",       # G4-02 Yönetici özeti (spec D2, D3): the page, GET /handovers/pending
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_six_keys():
-    assert len(SPEC_KEYS) == 26
+def test_the_catalogue_is_exactly_the_specified_twenty_seven_keys():
+    assert len(SPEC_KEYS) == 27
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -228,3 +229,14 @@ def test_legacy_pharmacist_and_biomedical_convert():
 
     assert LEGACY_ROLE_TO_GROUP["PHARMACIST"] == "pharmacist"
     assert LEGACY_ROLE_TO_GROUP["BIOMEDICAL"] == "biomedical"
+
+
+def test_the_summary_is_the_system_administrators_alone_by_default():
+    """G4-02 (spec D2): `summary.view` is in no default group; the system group holds it by rule (it holds
+    the whole catalogue at token issuance), so no migration seeds it. A hospital can give it to another
+    group later on the Roles screen."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "summary.view" in g["permissions"]}
+    assert holders == {"hospital_admin"}
+    admin = next(g for g in DEFAULT_GROUPS if g["slug"] == "hospital_admin")
+    assert admin["permissions"] == tuple(PERMISSIONS)
+    assert PERMISSIONS["summary.view"].startswith("Open the Yönetici özeti page")

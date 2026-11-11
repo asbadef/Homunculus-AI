@@ -68,8 +68,8 @@ from homunculus.admission.schemas import (
     DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
-    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse,
-    ShiftScheduleCreate, ShiftScheduleResponse,
+    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, PendingHandovers,
+    PendingUnit, ShiftScheduleCreate, ShiftScheduleResponse,
     TRANSFER_NOTE_MAX, TransferRequest, TransferResponse,
 )
 from homunculus.admission.errors import (
@@ -699,11 +699,13 @@ async def get_admission_patient(
 # Sign-off and discharge: what the three routes share (Group 2 · B1a, spec §3.2, §3.3)
 # ---------------------------------------------------------------------------
 async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: uuid.UUID,
-                           admission: Admission) -> None:
+                           admission: Admission) -> uuid.UUID:
     """403 `out_of_scope` unless the admission's bed is in the caller's units (spec §4.5). The
     unit is the bed's room's, read here — never the row's `admitting_unit_id` (A-12: the closed
     transfer routes set it from their body; G2-B1b's sets it from the bed, and the rule stands).
-    The admission is the caller's tenant's already (`_get_admission_or_404`), and so is its bed."""
+    The admission is the caller's tenant's already (`_get_admission_or_404`), and so is its bed.
+    Returns that unit: the one a handover of the admission is stored under (G4-02 review), so the
+    rule has one reader."""
     unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
                                 .where(Bed.id == admission.bed_id))).scalar_one()
     try:
@@ -711,6 +713,7 @@ async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: 
                                 unit_id=unit_id, bed_id=admission.bed_id)
     except Refusal as exc:
         raise exc.http() from None
+    return unit_id
 
 
 async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> Admission:
@@ -1470,6 +1473,8 @@ HANDOVER_BOX_WINDOW = timedelta(hours=24)
 HANDOVER_BOX_CAP = 100
 #: G2-B3b (D7): the permission a colleague holds to be handed over to.
 HANDOVER_SIGN = "handover.sign"
+#: G4-02 (spec D3, D4): the Yönetici özeti's key — the page, and the units' handovers waiting for a countersignature.
+SUMMARY_VIEW = "summary.view"
 #: The D-Ö-D-Ö note's parts, in their order (D5).
 _NOTE_PARTS = ("situation", "background", "assessment", "recommendation")
 
@@ -1564,7 +1569,14 @@ async def open_handover(
       tenant whose groups grant `handover.sign`), never the caller herself: otherwise 422
       `field_invalid:incoming_user_id`. The server holds the rule, not only the screen's list;
     * D4 — each admission's bed is in the caller's units (403 `out_of_scope`) and the admission is
-      open and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`).
+      open and signed off (`HANDOVER_STATES`; otherwise 409 `invalid_transition`);
+    * G4-02 review — the handover's unit is its admissions' beds' (bed → room → unit, as
+      `_reach_admission` reads it, A-12), never the body's: the body's `unit_id` is still checked
+      to be the tenant's (404) and a different unit there is not refused — a stale unit on the
+      screen never stops a nurse handing over — but it is not stored. `GET /handovers/pending`
+      groups and scopes by the stored unit, so it is the one the patients lie in. Admissions whose
+      beds lie in more than one unit are not one handover: 422 `field_invalid:admission_ids`.
+      Handovers opened before this rule keep the unit they were opened with.
 
     The body is the one it always was, a list of admissions — at least one (422) — which the
     screen fills with one (D1). Audited `handover.open` after the commit, under the first
@@ -1582,18 +1594,23 @@ async def open_handover(
                             "hospital (handover.sign).").http()
     admissions = [await _get_admission_or_404(db, admission_id, caller_tenant)
                   for admission_id in dict.fromkeys(payload.admission_ids)]
+    units: set[uuid.UUID] = set()
     for admission in admissions:
-        await _reach_admission(db, user.id, caller_tenant, admission)
+        units.add(await _reach_admission(db, user.id, caller_tenant, admission))
         if admission.state not in HANDOVER_STATES:
             raise Refusal(409, INVALID_TRANSITION,
                           f"Only an open admission is handed over (ACTIVE, PENDING_DISCHARGE or "
                           f"PENDING_TRANSFER); this one is {admission.state.value}.").http()
+    if len(units) > 1:
+        raise field_invalid("admission_ids", f"A handover is of one unit; these admissions' beds lie "
+                            f"in {len(units)} units. Hand each unit's patients over separately.").http()
+    (unit_id,) = units
     keys = [await _key_of(db, admission) for admission in admissions]
     hospital = await trail.hospital_of(db, caller_tenant)
     admission_ids = [str(admission.id) for admission in admissions]
     actor = user.username
     handover = await service.open_handover(
-        db, unit_id=payload.unit_id, outgoing_user_id=user.id,
+        db, unit_id=unit_id, outgoing_user_id=user.id,
         incoming_user_id=payload.incoming_user_id, admission_ids=payload.admission_ids,
     )
     await db.commit()
@@ -1691,6 +1708,37 @@ async def handover_colleagues(
     people = [Colleague(id=user_id, name=full_name or username)
               for user_id, full_name, username in rows]
     return sorted(people, key=lambda person: (person.name.casefold(), str(person.id)))
+
+
+@handover_router.get("/pending", response_model=PendingHandovers)
+async def pending_handovers(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_permission(SUMMARY_VIEW)),
+    caller_tenant: uuid.UUID = _tenant,
+):
+    """G4-02 (spec D4): per unit, the handovers the outgoing person signed that wait for the
+    countersignature (OUTGOING_SIGNED) — how many, and when the oldest was signed; then the server's
+    time. Units with none are left out; the rest by name. In the caller's tenant (the unit's site) and
+    the caller's units (`unitscope.unit_clause`: a handover belongs to a unit, so a bed grant alone
+    reaches none) — today only an unrestricted administrator holds the key, the rule is written for the
+    group a hospital may give it to later. Counts and times only: no patient, no note, no person.
+    OUTGOING_SIGNED never expires (service.py), so the oldest can be days old."""
+    reach = await unitscope.caller_scope(db, user.id, caller_tenant)
+    stmt = (select(Unit.id, Unit.name, func.count(Handover.id), func.min(Handover.outgoing_signed_at))
+            .select_from(Handover)
+            .join(Unit, Unit.id == Handover.unit_id)
+            .join(Site, Site.id == Unit.site_id)
+            .where(Site.tenant_id == caller_tenant, Handover.status == HandoverStatus.OUTGOING_SIGNED)
+            .group_by(Unit.id, Unit.name)
+            .order_by(Unit.name, Unit.id))
+    within = unitscope.unit_clause(reach, unit_id=Unit.id)
+    if within is not None:
+        stmt = stmt.where(within)
+    rows = (await db.execute(stmt)).all()
+    return PendingHandovers(
+        units=[PendingUnit(unit_id=unit_id, unit_name=name, pending=count, oldest_outgoing_signed_at=oldest)
+               for unit_id, name, count, oldest in rows],
+        generated_at=_now())
 
 
 @handover_router.get("", response_model=list[HandoverRow])

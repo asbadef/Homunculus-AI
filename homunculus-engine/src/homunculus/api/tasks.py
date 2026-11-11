@@ -468,7 +468,11 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         return {"from": _iso(since), "to": _iso(until), "shift": {"start": _iso(start), "end": _iso(end)},
                 "now": _iso(now),
                 "settings": {"grace_min": settings.grace_min, "intervals": dict(settings.intervals)},
-                "patients": [{"patient_id": c["patient_id"], "bed_key": c.get("bed_key"), "unit_id": c.get("unit_id"),
+                # G4-02 (spec D4): the card keeps its bed key and unit under `identity` (api/board.py
+                # `_bed_resolution`), null on a card with no identity; an empty text is no unit either.
+                "patients": [{"patient_id": c["patient_id"],
+                              "bed_key": (c.get("identity") or {}).get("bed_key") or None,
+                              "unit_id": (c.get("identity") or {}).get("unit_id") or None,
                               "vital": _vital(hospital, c, settings, now, since, until,
                                               stamps=stamps.get(c["patient_id"], []), skip=skips.get(c["patient_id"])),
                               "tasks": by_patient[c["patient_id"]]} for c in cards]}

@@ -90,6 +90,18 @@ async def test_sse_notification_frames_end_past_their_age_with_one_rotate_event(
 
 
 @pytest.mark.anyio
+async def test_sse_notification_frames_rotate_when_the_life_bound_wait_wakes_a_tick_early():
+    # Windows' timer wakes a wait up to a tick (~15 ms) early, so after a wait cut to the end of the
+    # life the clock can still read a little short of max_age. A frozen clock is that, every time:
+    # the wait ran to the end of the life, so the stream rotates — never a keep-alive first.
+    q = asyncio.Queue()
+    gen = sse_notification_frames(q, keepalive=5.0, max_age=0.05, clock=lambda: 0.0)
+    assert await asyncio.wait_for(gen.__anext__(), timeout=1.0) == ROTATE
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+
+
+@pytest.mark.anyio
 async def test_sse_notification_frames_rotate_a_busy_stream_by_its_clock():
     now = [0.0]
     q = asyncio.Queue()
