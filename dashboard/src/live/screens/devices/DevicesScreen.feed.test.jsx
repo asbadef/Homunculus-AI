@@ -303,6 +303,22 @@ describe("«Tabloda var, hiç görülmedi»", () => {
     expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.unreadable"]);
   });
 
+  // The API's own refusals of the list (backendApi.js `failure`): a 403 naming the route's rights, a 503 scope.
+  for (const [status, detail] of [[403, "permission required: devices.manage or devices.map_beds"], [503, "kapsam şu anda okunamıyor"]]) {
+    it(`keeps the rows of a list the API answered with ${status}, says so, and from the first read never says none`, async () => {
+      const mounted = await open(WARD, ["devices.manage"], LIST);
+      mounted.api.deviceBeds.mockRejectedValue(refusal(status, detail));
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+      expect(items("Cədvəldə var, heç görünməyib")).toHaveLength(2);
+      expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.unreadable"]);
+      cleanup();
+      await open(WARD, ["devices.manage"], refusal(status, detail));
+      expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.unreadable"]);
+      expect(region("Cədvəldə var, heç görünməyib")).not.toHaveTextContent(NEVER_NONE);
+      expect(region("Cədvəldə var, heç görünməyib")).not.toHaveTextContent(detail);
+    });
+  }
+
   it("is absent for a session that holds neither key, and nothing asks for the list", async () => {
     const mounted = await open(WARD, ["board.view"]);
     expect(screen.queryByRole("region", { name: "Cədvəldə var, heç görünməyib" })).toBeNull();
@@ -426,9 +442,59 @@ describe("a board that is not fresh (Decision 18)", () => {
 
   it("marks a failed poll the same way", async () => {
     const mounted = await open(WARD);
-    mounted.api.shadowBoard.mockRejectedValue(new Error("down"));
+    mounted.api.shadowBoard.mockRejectedValue(new Error("down"));                // a network failure: no status at all
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.getByText(LEAD)).toBeInTheDocument();
     expect(screen.getAllByText(MARK)).toHaveLength(3);
+  });
+
+  // The API's own refusals (backendApi.js `failure`): 403 names the rights the route takes, 503 is a scope that
+  // could not be read (app.py). Either keeps the last answer, marked; neither's words reach the page.
+  for (const [status, detail] of [[403, "permission required: board.view or devices.manage"], [503, "kapsam şu anda okunamıyor"]]) {
+    it(`marks a poll the API answered with ${status} the same way, and keeps the last answer`, async () => {
+      const mounted = await open(WARD);
+      mounted.api.shadowBoard.mockRejectedValue(refusal(status, detail));
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+      expect(screen.getByText(LEAD)).toBeInTheDocument();
+      expect(screen.getAllByText(MARK)).toHaveLength(3);
+      expect(items("Səssiz monitorlar")).toHaveLength(2);
+      expect(screen.queryByText("Səssiz monitor yoxdur")).toBeNull();
+      expect(document.body).not.toHaveTextContent(detail);
+    });
+  }
+});
+
+// The durations tick between polls on the page's own clock while the answer is fresh: a silence crosses its minute,
+// a channel the list's 60 s and another its hour without a new answer. Times in seconds before AT (14:00 in Baku).
+describe("durations on the page's clock, between polls", () => {
+  const secondsBefore = (s) => new Date(Date.parse(AT) - s * 1000).toISOString();
+  const CLOCK = withLedger(strip({ beds: [
+    bed("REA-01 · 2", [param("hr", 72)], { last_packet_at: secondsBefore(0), channels_seen: [
+      { parameter: "hr", last_value_at: secondsBefore(0) },
+      { parameter: "spo2", last_value_at: secondsBefore(55) },                   // 5 s short of the list
+      { parameter: "art_systolic", last_value_at: secondsBefore(3595) },         // 5 s short of the hour
+    ] }),
+    bed("REA-01 · 5", [], { status: "silent", last_packet_at: secondsBefore(175), channels_seen: [] }),
+    bed("REA-01 · 6", [], { status: "silent", last_packet_at: secondsBefore(30), channels_seen: [] }),
+  ] }));
+
+  it("says «<1 dk» for a silence under a minute", async () => {
+    await open(CLOCK);
+    expect(items("Səssiz monitorlar")).toContain("REA-01 · 6 · <1 dəqiqədir məlumat yoxdur · son məlumat 13:59");
+  });
+
+  it("ticks between polls: a silence crosses its minute, one channel crosses 59→60 s into the list, another 3599→3600 s out of it", async () => {
+    const mounted = await open(CLOCK);
+    expect(items("Səssiz monitorlar")).toEqual([
+      "REA-01 · 5 · 2 dəqiqədir məlumat yoxdur · son məlumat 13:57",
+      "REA-01 · 6 · <1 dəqiqədir məlumat yoxdur · son məlumat 13:59",
+    ]);
+    expect(items("Köhnələn kanallar")).toEqual(["REA-01 · 2 · ART S · 59 dəqiqədir dəyər yoxdur"]);
+    expect(region("Köhnələn kanallar")).not.toHaveTextContent("çıxarılmış ola bilər");
+    await later(mounted, 10_000);                                              // no new answer: the page's clock alone
+    expect(screen.queryByText(/Lövhə yenilənməyib/)).toBeNull();               // still fresh
+    expect(items("Səssiz monitorlar")[0]).toBe("REA-01 · 5 · 3 dəqiqədir məlumat yoxdur · son məlumat 13:57");
+    expect(items("Köhnələn kanallar")).toEqual(["REA-01 · 2 · SpO₂ · 1 dəqiqədir dəyər yoxdur"]);
+    expect(region("Köhnələn kanallar")).toHaveTextContent("1 kanal 1 saatdan çox dəyər göndərmir (çıxarılmış ola bilər)");
   });
 });
