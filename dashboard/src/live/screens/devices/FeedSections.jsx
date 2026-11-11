@@ -4,8 +4,13 @@
 // (DevicesScreen.jsx). The rules are deviceFeed.js's; this file only words them.
 //
 // Decision 18: only a fresh answer — the last poll answered, no longer ago than the display limit — may say a
-// list is empty; one that is not keeps what it said, marked «Pano güncel değil · {HH:MM}», and says nothing is
-// empty. No patient anywhere: monitors, channels and times. Nothing here alarms, sounds or counts on the rail.
+// list is empty. One that is not is measured at its own generated_at and frozen there (no silence it did not carry
+// appears); the verdict section leads with «Pano güncel değil · son yanıt {HH:MM}» and says the last verdict in the
+// past tense, the chain's links keep their values with the state «bilinmiyor», the other sections are marked
+// «Pano güncel değil · {HH:MM}», and nothing is called empty. A list that cannot be drawn — a broken chain, an
+// unknown state or count, an empty hub, no ledger, no time — says why, never «yok». A polite status tells a screen
+// reader the verdict and the freshness only, so it speaks when they change. No patient anywhere: monitors, channels
+// and times. Nothing here alarms, sounds or counts on the rail.
 import React, { useId } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
