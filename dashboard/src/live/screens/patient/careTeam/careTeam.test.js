@@ -55,6 +55,12 @@ describe("the team and its history", () => {
     expect(expired(oncall(NOW + HOUR), NOW)).toBe(false);
     expect(expired(row({ window_end: new Date(NOW - HOUR).toISOString() }), NOW)).toBe(false);
   });
+
+  it("says it only after the end, as the server does: a window ending exactly now has not passed", () => {
+    const at = (endMs) => row({ role: "ONCALL_PHYSICIAN", window_end: new Date(endMs).toISOString() });
+    expect(expired(at(NOW), NOW)).toBe(false);
+    expect(expired(at(NOW - 1), NOW)).toBe(true);
+  });
 });
 
 describe("the buttons (§4)", () => {
@@ -96,6 +102,11 @@ describe("the on-call window (§5.2)", () => {
     expect(windowProblem(NOW, NOW + 49 * HOUR, NOW)).toBe("long");
     expect(windowProblem(NOW, NOW + 48 * HOUR, NOW)).toBeNull();
   });
+
+  it("takes an end only after now: an end exactly now is not in the future", () => {
+    expect(windowProblem(NOW - HOUR, NOW, NOW)).toBe("future");
+    expect(windowProblem(NOW - HOUR, NOW + 1, NOW)).toBeNull();
+  });
 });
 
 describe("the picker's search", () => {
@@ -105,5 +116,19 @@ describe("the picker's search", () => {
     expect(matchesName("Ilkin Qasımov", "qasim")).toBe(true);
     expect(matchesName("Sentetik Həkim", "  ")).toBe(true);
     expect(matchesName("Sentetik Həkim", "köm")).toBe(false);
+  });
+
+  it("reads the schwa as e, in either case, so a keyboard without it still finds the name", () => {
+    expect(matchesName("Sentetik Həkim", "hekim")).toBe(true);
+    expect(matchesName("Sentetik Həkim", "HEKİM")).toBe(true);
+    expect(matchesName("Əli Sentetik", "eli")).toBe(true);
+    expect(matchesName("Sentetik Həkim", "həkim")).toBe(true);
+    expect(matchesName("Sentetik Həkim", "hakim")).toBe(false);
+  });
+
+  it("makes a run of spaces one, in the query and in the name", () => {
+    expect(matchesName("Sentetik Həkim", "sentetik   hekim")).toBe(true);
+    expect(matchesName("Sentetik  Həkim", "sentetik hekim")).toBe(true);
+    expect(matchesName("Sentetik Həkim", "sentetik\thekim")).toBe(true);
   });
 });

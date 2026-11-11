@@ -63,13 +63,15 @@ export function windowProblem(startMs, endMs, nowMs) {
   return null;
 }
 
-/** A name folded for the picker's search: lower case, accents off, and the dotless ı read as i, so
- *  «ilkin» finds «İlkin» and «qasim» finds «Qasımov». */
+/** A name folded for the picker's search: lower case, accents off (the combining marks U+0300–U+036F
+ *  that NFD splits off), the dotless ı read as i and the schwa ə read as e, and runs of spaces made one,
+ *  so «ilkin» finds «İlkin», «qasim» finds «Qasımov» and «hekim» finds «Həkim». ə has no NFD
+ *  decomposition, so it is folded by hand; Ə is already ə once lower-cased. */
 const fold = (text) => String(text ?? "").toLowerCase().normalize("NFD")
-  .replace(/[̀-ͯ]/g, "").replace(/ı/g, "i");
+  .replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").replace(/ə/g, "e").replace(/\s+/g, " ").trim();
 
 /** Whether a name holds what was typed in the picker's search. An empty search holds every name. */
 export function matchesName(name, query) {
-  const wanted = fold(query).trim();
+  const wanted = fold(query);
   return wanted === "" || fold(name).includes(wanted);
 }

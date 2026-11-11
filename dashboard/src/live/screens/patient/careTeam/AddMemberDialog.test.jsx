@@ -24,11 +24,12 @@ const dialog = () => screen.getByRole("dialog");
 const submit = () => act(async () => { fireEvent.click(within(dialog()).getByRole("button", { name: "Əlavə et" })); });
 const pick = (name) => fireEvent.click(within(dialog()).getByRole("radio", { name }));
 
-async function open({ candidates = CANDIDATES, setup } = {}) {
+async function open({ candidates = CANDIDATES, attending = ATTENDING, setup } = {}) {
   const done = vi.fn(async () => {});
   const refused = vi.fn();
+  const closed = vi.fn();
   const mounted = await mount(
-    <AddMemberDialog admissionId={ADM} subject={SUBJECT} attending={ATTENDING} onClose={() => {}} onDone={done}
+    <AddMemberDialog admissionId={ADM} subject={SUBJECT} attending={attending} onClose={closed} onDone={done}
       onRefused={refused} />,
     {
       access: token({ perms: ASSIGN }), me: profile({ perms: ASSIGN }),
@@ -39,8 +40,15 @@ async function open({ candidates = CANDIDATES, setup } = {}) {
       },
     });
   await settle();
-  return { ...mounted, done, refused };
+  return { ...mounted, done, refused, closed };
 }
+
+const search = () => within(dialog()).getByLabelText("Həkim axtar");
+const typeSearch = (value) => fireEvent.change(search(), { target: { value } });
+const START_LABEL = /^Başlanğıc/;
+const END_LABEL = /^Son/;
+const setWindow = (label, ms) => fireEvent.change(within(dialog()).getByLabelText(label),
+  { target: { value: ms === null ? "" : localInput(ms) } });
 
 describe("AddMemberDialog", () => {
   it("lists the candidates by name, narrows them as the search is typed, and shows no id", async () => {
@@ -137,5 +145,190 @@ describe("AddMemberDialog", () => {
   it("says when nobody can be added", async () => {
     await open({ candidates: [] });
     expect(within(dialog()).getByText("Əlavə edilə biləcək həkim yoxdur.")).toBeTruthy();
+  });
+
+  // ── The review of Tasks 14–15 ────────────────────────────────────────────────────────────────────────
+
+  it("keeps the physician she picked on the list when the search would hide her, and Enter in the search sends nothing", async () => {
+    const { api } = await open({ setup: (a) => a.addCareTeamMember.mockResolvedValue({}) });
+    pick("Sentetik Köməkçi");
+    typeSearch("növ");
+    // What is sent is always what is seen: the picked row stays, checked, beside the name that matches.
+    expect(within(dialog()).getByRole("radio", { name: "Sentetik Köməkçi" })).toBeChecked();
+    expect(within(dialog()).getByRole("radio", { name: "Sentetik Növbətçi" })).not.toBeChecked();
+    // Enter in a text box submits its form in a browser; fireEvent returns false when the default was stopped.
+    expect(fireEvent.keyDown(search(), { key: "Enter" })).toBe(false);
+    await settle();
+    expect(api.addCareTeamMember).not.toHaveBeenCalled();
+  });
+
+  it("clears the search on Escape, and closes the dialog on Escape only when the search is empty", async () => {
+    const { closed } = await open();
+    typeSearch("növ");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(search()).toHaveValue("");
+    expect(closed).not.toHaveBeenCalled();
+    expect(within(dialog()).getByRole("radio", { name: "Sentetik Köməkçi" })).toBeTruthy();
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds «Həkim» when «hekim» is typed", async () => {
+    await open({ candidates: [{ user_id: ASC, full_name: "Sentetik Həkim" }, CANDIDATES[1]] });
+    typeSearch("hekim");
+    expect(within(dialog()).getByRole("radio", { name: "Sentetik Həkim" })).toBeTruthy();
+    expect(within(dialog()).queryByRole("radio", { name: "Sentetik Növbətçi" })).toBeNull();
+  });
+
+  it("names only the new attending when nobody is the attending now", async () => {
+    await open({ attending: null });
+    pick("Sentetik Köməkçi");
+    pick("Məsul həkim");
+    expect(within(dialog()).getByText("Sentetik Köməkçi məsul həkim olur.")).toBeTruthy();
+    expect(within(dialog()).queryByText(/komandadan çıxır/)).toBeNull();
+  });
+
+  it("ties the sentence about who leaves to the button that answers it", async () => {
+    await open();
+    pick("Sentetik Köməkçi");
+    const button = within(dialog()).getByRole("button", { name: "Əlavə et" });
+    expect(button).not.toHaveAttribute("aria-describedby");
+    pick("Məsul həkim");
+    const note = document.getElementById(button.getAttribute("aria-describedby"));
+    expect(note.textContent).toContain("Sentetik Köməkçi məsul həkim olur; Sentetik Həkim komandadan çıxır.");
+    pick("Köməkçi həkim");
+    expect(button).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("says a missing start, marks that field alone and moves the focus to it", async () => {
+    await open();
+    pick("Sentetik Növbətçi");
+    pick("Növbətçi həkim");
+    setWindow(START_LABEL, null);
+    setWindow(END_LABEL, Date.now() + 12 * HOUR);
+    await submit();
+    expect(within(dialog()).getByText("Başlanğıcı seçin.")).toBeTruthy();
+    const start = within(dialog()).getByLabelText(START_LABEL);
+    expect(start).toHaveAttribute("aria-invalid", "true");
+    expect(within(dialog()).getByLabelText(END_LABEL)).not.toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(start);
+  });
+
+  it("marks a bad end, and moves the focus to it", async () => {
+    await open();
+    pick("Sentetik Növbətçi");
+    pick("Növbətçi həkim");
+    await submit();
+    const end = within(dialog()).getByLabelText(END_LABEL);
+    expect(end).toHaveAttribute("aria-invalid", "true");
+    expect(within(dialog()).getByLabelText(START_LABEL)).not.toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(end);
+  });
+
+  it("moves the focus to the first physician when none is picked, and to the search when none is listed", async () => {
+    await open();
+    await submit();
+    expect(document.activeElement).toBe(within(dialog()).getByRole("radio", { name: "Sentetik Köməkçi" }));
+    typeSearch("xyz");
+    await submit();
+    expect(document.activeElement).toBe(search());
+  });
+
+  it("checks the window at the moment of the press, not at the last draw", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now");
+    try {
+      const { api } = await open({ setup: (a) => a.addCareTeamMember.mockResolvedValue({}) });
+      pick("Sentetik Növbətçi");
+      pick("Növbətçi həkim");
+      setWindow(START_LABEL, now);
+      setWindow(END_LABEL, now + 5 * 60_000);       // still ahead at the last draw
+      clock.mockReturnValue(now + 10 * 60_000);     // …and behind by the time she presses
+      await submit();
+      expect(within(dialog()).getByText("Son gələcəkdə olmalıdır.")).toBeTruthy();
+      expect(api.addCareTeamMember).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("sends no window when the role is changed back from on-call, whatever was typed in it", async () => {
+    const { api } = await open({ setup: (a) => a.addCareTeamMember.mockResolvedValue({}) });
+    pick("Sentetik Köməkçi");
+    pick("Növbətçi həkim");
+    setWindow(START_LABEL, Date.now());
+    setWindow(END_LABEL, Date.now() - 5 * HOUR);   // a bad end: it must not hold an associate back
+    pick("Köməkçi həkim");
+    expect(within(dialog()).queryByLabelText(END_LABEL)).toBeNull();
+    await submit();
+    await settle();
+    expect(api.addCareTeamMember).toHaveBeenCalledTimes(1);
+    expect(api.addCareTeamMember.mock.calls[0][1]).toStrictEqual({ user_id: ASC, role: "ASSOCIATE_PHYSICIAN" });
+  });
+
+  it("sends once however often it is pressed while the add is in flight", async () => {
+    let finish;
+    const pending = new Promise((resolve) => { finish = resolve; });
+    const { api, done } = await open({ setup: (a) => a.addCareTeamMember.mockReturnValue(pending) });
+    pick("Sentetik Köməkçi");
+    const button = within(dialog()).getByRole("button", { name: "Əlavə et" });
+    await act(async () => { fireEvent.click(button); });
+    expect(button).toHaveAttribute("aria-busy", "true");
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.submit(dialog().querySelector("form"));
+    });
+    expect(api.addCareTeamMember).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({}); });
+    await settle();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the add landed even when the box's own re-read is slow, and tells the box of no refusal", async () => {
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    const refused = vi.fn();
+    await mount(
+      <AddMemberDialog admissionId={ADM} subject={SUBJECT} attending={ATTENDING} onClose={() => {}} onDone={slow}
+        onRefused={refused} />,
+      {
+        access: token({ perms: ASSIGN }), me: profile({ perms: ASSIGN }),
+        setup: (api) => {
+          api.careTeamCandidates.mockResolvedValue(CANDIDATES);
+          api.addCareTeamMember.mockResolvedValue({});
+        },
+      });
+    await settle();
+    pick("Sentetik Köməkçi");
+    await submit();
+    await settle();
+    // The success is on the toast before the box has finished reading, and the buttons are held until it has.
+    expect(toasts().getAllByText(`${SUBJECT} · Sentetik Köməkçi komandaya əlavə edildi.`).length).toBeGreaterThan(0);
+    expect(within(dialog()).getByRole("button", { name: "Əlavə et" })).toHaveAttribute("aria-busy", "true");
+    await act(async () => { release(); });
+    await settle();
+    expect(within(dialog()).getByRole("button", { name: "Əlavə et" })).not.toHaveAttribute("aria-busy", "true");
+    expect(refused).not.toHaveBeenCalled();
+  });
+
+  it("reads the physicians again after a refusal that is not about a field, and not after one that is", async () => {
+    const { api, refused } = await open({ setup: (a) => {
+      a.careTeamCandidates.mockResolvedValueOnce(CANDIDATES).mockResolvedValue([CANDIDATES[1]]);
+      a.addCareTeamMember.mockRejectedValue(refusal(409, "English words", { apiCode: "care_team_conflict" }));
+    } });
+    pick("Sentetik Köməkçi");
+    await submit();
+    await settle();
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(api.careTeamCandidates).toHaveBeenCalledTimes(2);
+    // She is no longer a candidate: her row is gone and nobody is picked.
+    expect(within(dialog()).queryByRole("radio", { name: "Sentetik Köməkçi" })).toBeNull();
+    expect(within(dialog()).getByRole("radio", { name: "Sentetik Növbətçi" })).not.toBeChecked();
+
+    api.addCareTeamMember.mockRejectedValue(refusal(422, "Unprocessable"));
+    pick("Sentetik Növbətçi");
+    await submit();
+    await settle();
+    expect(api.careTeamCandidates).toHaveBeenCalledTimes(2);
   });
 });
