@@ -9,10 +9,11 @@
 import React, { useId } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
-import { StatusPill } from "../../ui/index.js";
+import { Note, StatusPill } from "../../ui/index.js";
 import { stripOn } from "../common/MonitorStrip.jsx";
 import { ageText } from "../common/monitor.js";
-import { chainLines, countsOf, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
+import { bedText, monitorName } from "./deviceMap.js";
+import { chainLines, countsOf, neverSeenRows, serverNowMs, silentRows, staleLongCount, staleRows, verdictOf } from "./deviceFeed.js";
 
 const WORD = Object.freeze({ ok: "cihaz.wordOk", down: "cihaz.wordDown", warn: "cihaz.wordWarn", unknown: "cihaz.wordUnknown" });
 const TONE = Object.freeze({ ok: "ok", down: "att", warn: "att", unknown: "neutral" });
@@ -109,7 +110,32 @@ function ChainList({ t, lines }) {
   );
 }
 
-export function FeedSections({ shadow }) {
+/** Section 5: the table's rows whose monitor the API has never had a report of, from the editor's own list
+ *  (MappingSection's `onList`: the page asks for it once). Its own Decision 18: «none» only from a list that
+ *  answered; a list that could not be read keeps its last rows and says so. */
+function NeverSeen({ t, mapping }) {
+  const rows = neverSeenRows(mapping.body);
+  const unread = mapping.phase === "unreadable" ? <Note>{t("esleme.unreadable")}</Note> : null;
+  if (rows.length === 0) {
+    return mapping.phase === "ok" ? <p className="m-0 text-13 text-mute">{t("cihaz.neverNone")}</p> : unread;
+  }
+  return (
+    <>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {rows.map((d) => (
+          <li key={d.source} data-source={d.source} className="text-13">
+            <span className="font-semibold">{bedText(t, d)}</span>
+            {" · "}
+            <span className="font-data">{monitorName(d)}</span>
+          </li>
+        ))}
+      </ul>
+      {unread}
+    </>
+  );
+}
+
+export function FeedSections({ shadow, mapping = null }) {
   const { t } = useI18n();
   const { data, nowMs, fetchedAtMs } = shadow;
   if (!stripOn(data)) return null;
@@ -144,6 +170,11 @@ export function FeedSections({ shadow }) {
         <ChainList t={t} lines={chainLines(data, nowMs, fetchedAtMs)} />
         {mark}
       </Section>
+      {mapping ? (
+        <Section title={t("cihaz.neverTitle")}>
+          <NeverSeen t={t} mapping={mapping} />
+        </Section>
+      ) : null}
     </div>
   );
 }

@@ -11,7 +11,7 @@
 // The values are UNVALIDATED research decoding, labelled so on every strip (MonitorStrip.jsx), and
 // feed nothing. A count is printed only from a read the screen can vouch for (the last poll
 // answered); an unreadable or not-yet-read strip says so in its own words.
-import React from "react";
+import React, { useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { SHADOW_PHASE } from "../../data/shadowStore.js";
@@ -102,6 +102,7 @@ export function DevicesScreen() {
   const { user, store: session } = useSession();
   const waveFeed = waveFeedFor(session);       // I1: the waves get this one GET, never the session
   const shadow = useShadow();
+  const [mapping, setMapping] = useState(null);    // G4-01: the editor's list, for «Tabloda var, hiç görülmedi»
   const { data, phase } = shadow;
   let body = null;
   if (stripOn(data)) body = <Strip shadow={shadow} feed={waveFeed} />;
@@ -115,8 +116,8 @@ export function DevicesScreen() {
         <h1 className="m-0 font-display text-23 font-bold">{t("nav.devices")}</h1>
         <p className="m-0 text-13 text-mute">{t("monitor.devicesSub")}</p>
       </div>
-      <FeedSections shadow={shadow} />
-      {canSeeMapping(user?.perms) ? <MappingSection /> : null}
+      <FeedSections shadow={shadow} mapping={mapping} />
+      {canSeeMapping(user?.perms) ? <MappingSection onList={setMapping} /> : null}
       {body}
     </div>
   );

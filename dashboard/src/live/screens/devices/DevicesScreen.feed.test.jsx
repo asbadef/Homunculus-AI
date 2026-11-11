@@ -57,8 +57,8 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
   it("puts its questions first, in the spec's order, above the editor and the strips", async () => {
     await open(WARD);
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings.slice(0, 5)).toEqual(["Məlumat gəlirmi?", "Səssiz monitorlar", "Köhnələn kanallar", "Məlumat zənciri",
-      "Monitor–çarpayı uyğunlaşdırması"]);
+    expect(headings.slice(0, 6)).toEqual(["Məlumat gəlirmi?", "Səssiz monitorlar", "Köhnələn kanallar", "Məlumat zənciri",
+      "Cədvəldə var, heç görünməyib", "Monitor–çarpayı uyğunlaşdırması"]);
   });
 
   it("says the data flows, with the counts above zero and since when it has watched", async () => {
@@ -143,5 +143,48 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
   it("draws none of it while the strip is off", async () => {
     await open({ stage: "off" });
     expect(screen.queryByRole("region", { name: "Məlumat gəlirmi?" })).toBeNull();
+  });
+});
+
+// Section 5 reads the editor's own list (GET /infinity-shadow/device-beds, `status` null: never reported since the
+// API started) — devices.manage or devices.map_beds, the page's own two keys. Synthetic monitors (esleme.testutil.js).
+describe("«Tabloda var, hiç görülmedi»", () => {
+  const LIST = mappingList([
+    device("192.0.2.11", { device_bed_label: "BED05", row_id: 1, bed: onBed(1, "1") }),
+    device("192.0.2.21", { device_bed_label: "BED09", row_id: 6, seen: false, status: null, last_seen_at: null, bed: onBed(9, "9") }),
+    device("192.0.2.22", { row_id: 7, seen: false, status: null, last_seen_at: null }),
+    device("192.0.2.20", { row_id: 5, seen: false, status: "unknown", last_seen_at: null }),   // seen once: not here
+  ]);
+
+  it("lists the table's rows whose monitor was never reported, with the bed and the device's address", async () => {
+    await open(WARD, ["devices.manage"], LIST);
+    expect(items("Cədvəldə var, heç görünməyib")).toEqual(["9 · Otaq 1 · Reanimasiya · 192.0.2.21 (BED09)", "qoşulmayıb · 192.0.2.22"]);
+  });
+
+  it("is there for a charge nurse too, whose devices.map_beds reads the same list", async () => {
+    await open(WARD, ["devices.map_beds", "board.view"], LIST);
+    expect(items("Cədvəldə var, heç görünməyib")).toHaveLength(2);
+  });
+
+  it("says none only from a list that answered", async () => {
+    await open(WARD);
+    expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent("Cədvəldə olub heç görünməyən monitor yoxdur");
+    cleanup();
+    await open(WARD, ["devices.manage"], new Error("down"));
+    expect(region("Cədvəldə var, heç görünməyib")).not.toHaveTextContent("Cədvəldə olub heç görünməyən monitor yoxdur");
+  });
+
+  it("keeps the rows of a list it can no longer read, and says so", async () => {
+    const mounted = await open(WARD, ["devices.manage"], LIST);
+    mounted.api.deviceBeds.mockRejectedValue(new Error("down"));
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(items("Cədvəldə var, heç görünməyib")).toHaveLength(2);
+    expect(region("Cədvəldə var, heç görünməyib")).toHaveTextContent(DICTIONARIES.az["esleme.unreadable"]);
+  });
+
+  it("is absent for a session that holds neither key, and nothing asks for the list", async () => {
+    const mounted = await open(WARD, ["board.view"]);
+    expect(screen.queryByRole("region", { name: "Cədvəldə var, heç görünməyib" })).toBeNull();
+    expect(mounted.api.deviceBeds).not.toHaveBeenCalled();
   });
 });
