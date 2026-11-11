@@ -1,8 +1,13 @@
 // Test-only: synthetic answers of GET /quality for «Kalite göstergeleri» (G4-03) — the engine's own answer for the
-// synthetic trail of homunculus-engine/tests/test_quality_indicators.py (Reanimasiya, Neonatal, two unplaced keys), a
-// scoped caller's (Reanimasiya alone) and one who reaches nothing. Unit ids and names are the kabul ward's; no patient
-// key, no person and no free text, as the API sends none.
+// synthetic trail of homunculus-engine/tests/test_quality_indicators.py (Reanimasiya, Neonatal, a quiet Kardiyoloji,
+// two unplaced keys), a scoped caller's (Reanimasiya alone), periods with no alarm episode, and a caller who reaches
+// nothing. Every active unit in the caller's reach is listed, a quiet one with zeros (G4-03 review); `units: []` for a
+// scoped caller means her reach is empty. Unit ids and names are the kabul ward's (Kardiyoloji's id is this file's);
+// no patient key, no person and no free text, as the API sends none.
 import { NEO, REA } from "../kabul/kabul.testutil.js";
+
+/** A third unit of the ward, active and quiet all week. */
+export const KARDIO = "33333333-3333-4333-8333-333333333303";
 
 const REASONS = { ARTEFACT_OR_SIGNAL_NOISE: 0, CLINICAL_DECISION_MADE: 0, OTHER: 0, PATIENT_BASELINE: 0, PROCEDURE_IN_PROGRESS: 0 };
 
@@ -18,6 +23,10 @@ export const handovers = (over = {}) => ({ opened: 0, countersigned: 0, waiting:
   median_countersign_sec: null, p90_countersign_sec: null, ...over });
 const kind = (name, episodes, answered, escalated, unanswered, median) => ({ kind: name, episodes, answered, escalated,
   unanswered, median_response_sec: median });
+/** A block with nothing in it: the engine's own zeros and nulls. */
+const zeros = () => ({ alarms: alarms(), snoozes: snoozes(), rrt: { count: 0 }, handovers: handovers() });
+/** A unit in reach that had nothing in the period: listed, with zeros. */
+export const quiet = (unitId, unitName) => ({ unit_id: unitId, unit_name: unitName, ...zeros() });
 
 const REA_BLOCK = {
   alarms: alarms({ episodes: 6, answered: 3, answered_rate: 0.6, median_response_sec: 180, p90_response_sec: 600,
@@ -35,6 +44,7 @@ export const ANSWER = Object.freeze({
   truncated: false, scoped: false,
   coverage: { episodes: 9, placed: 7, unplaced: 2 },
   units: [
+    quiet(KARDIO, "Kardiyoloji"),
     { unit_id: NEO, unit_name: "Neonatal",
       alarms: alarms({ episodes: 1, answered: 1, answered_rate: 1, median_response_sec: 240, p90_response_sec: 240,
         per_kind: [kind("news2", 1, 1, 0, 0, 240)] }),
@@ -67,16 +77,29 @@ export const SCOPED = Object.freeze({
   units: [{ unit_id: REA, unit_name: "Reanimasiya", ...REA_BLOCK }], unplaced: null, hospital: REA_BLOCK,
 });
 
-/** A caller whose grants reach no unit (a bed grant alone): nothing, and zeros that are the answer's own. */
+/** An unrestricted caller's quiet period: every unit listed with zeros, and the unplaced row's zeros. */
+export const QUIET = Object.freeze({
+  ...ANSWER, coverage: { episodes: 0, placed: 0, unplaced: 0 },
+  units: [quiet(KARDIO, "Kardiyoloji"), quiet(NEO, "Neonatal"), quiet(REA, "Reanimasiya")],
+  unplaced: { alarms: alarms(), snoozes: snoozes(), rrt: { count: 0 } }, hospital: zeros(),
+});
+
+/** A caller granted Reanimasiya alone, in a quiet period: her unit is listed, with zeros. */
+export const QUIET_SCOPED = Object.freeze({
+  ...SCOPED, coverage: { episodes: 0, placed: 0, unplaced: 0 }, units: [quiet(REA, "Reanimasiya")], hospital: zeros(),
+});
+
+/** A caller whose grants reach no unit (a bed grant alone): no unit at all, and zeros that are the answer's own. */
 export const NOTHING = Object.freeze({
   ...ANSWER, scoped: true, coverage: { episodes: 0, placed: 0, unplaced: 0 }, units: [], unplaced: null,
-  hospital: { alarms: alarms(), snoozes: snoozes(), rrt: { count: 0 }, handovers: handovers() },
+  hospital: zeros(),
 });
 
 export function deferred() {
   let resolve;
-  const promise = new Promise((yes) => { resolve = yes; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
 }
 
 export { NEO, REA };

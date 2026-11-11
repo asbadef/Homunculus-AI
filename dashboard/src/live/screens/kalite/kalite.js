@@ -7,13 +7,15 @@
 // the wrong shape (one malformed figure is enough) is a failed read, never a partial table.
 //
 // THE ROWS are the answer's units in its order (by name), then «Birimi belli olmayan» (an unrestricted caller's only),
-// then «Toplam» (the answer's `hospital`: the whole hospital, or a scoped caller's units' sum). A row is selected by its
-// key; the snooze reasons and the alarms by kind are drawn for the selection.
+// then «Toplam» (the answer's `hospital`: the whole hospital, or a scoped caller's units' sum). Every active unit in the
+// caller's reach is in the answer, a quiet one with its zeros; so a scoped answer with no unit at all is an empty
+// reach (`noReach`), never a quiet week (G4-03 review). A row is selected by its key; the snooze reasons and the
+// alarms by kind are drawn for the selection.
 //
 // No patient anywhere: the answer carries unit ids and names, counts, times and the engine's alert kinds.
 import { normId } from "../../data/structure.js";
 import { SNOOZE_REASONS } from "../../data/snooze.js";
-import { durationOf } from "../ozet/ozet.js";
+import { WHY, durationOf, wholePercent } from "../ozet/ozet.js";
 
 /** The «Toplam» row's key and the «Birimi belli olmayan» row's; a unit's own key is its id (normId). */
 export const TOTAL = "total";
@@ -45,7 +47,7 @@ function msOf(iso) {
 
 function isAlarms(a) {
   return isObject(a) && counts(a, ["episodes", "answered", "escalated", "unanswered", "unanswered_resolved", "pending"])
-    && isRate(a.answered_rate) && isSeconds(a.median_response_sec) && isSeconds(a.p90_response_sec)
+    && a.unanswered_resolved <= a.unanswered && isRate(a.answered_rate) && isSeconds(a.median_response_sec) && isSeconds(a.p90_response_sec)
     && Array.isArray(a.per_kind) && a.per_kind.every((k) => isObject(k) && typeof k.kind === "string"
       && counts(k, ["episodes", "answered", "escalated", "unanswered"]) && isSeconds(k.median_response_sec));
 }
@@ -59,24 +61,25 @@ const isHandovers = (h) => isObject(h) && counts(h, ["opened", "countersigned", 
 const isBlock = (b, withHandovers) => isObject(b) && isAlarms(b.alarms) && isSnoozes(b.snoozes) && isObject(b.rrt)
   && isCount(b.rrt.count) && (!withHandovers || isHandovers(b.handovers));
 
-/** `GET /quality`'s answer as this page reads it (spec D4). Anything else is a failed read. */
+/** `GET /quality`'s answer as this page reads it (spec D4). Anything else is a failed read. A scoped caller is never
+ *  sent the unplaced row, and the self-resolved are some of the unanswered (G4-03 review). */
 export function isQualityAnswer(answer) {
   return isObject(answer) && DAYS.includes(answer.days) && msOf(answer.generated_at) !== null
     && msOf(answer.window_from) !== null && typeof answer.truncated === "boolean" && typeof answer.scoped === "boolean"
     && isObject(answer.coverage) && counts(answer.coverage, ["episodes", "placed", "unplaced"])
     && Array.isArray(answer.units) && answer.units.every((u) => isBlock(u, true) && typeof u.unit_id === "string"
       && u.unit_id.trim() !== "" && typeof u.unit_name === "string")
-    && (answer.unplaced === null || isBlock(answer.unplaced, false))
+    && (answer.unplaced === null || (!answer.scoped && isBlock(answer.unplaced, false)))
     && isBlock(answer.hospital, true);
 }
 
-const pctOf = (rate) => (rate === null ? null : Math.round(rate * 100));
-
-/** One row's alarm figures: counts as sent; the rate as a whole percent, null when nothing settled; times as minutes
- *  and seconds (ozet.js `durationOf`), null over nothing. */
+/** One row's alarm figures: counts as sent; the rate as a whole percent, null when nothing settled — 100 only when
+ *  every settled one was answered, 0 only when none was (ozet.js `wholePercent`); times as minutes and seconds
+ *  (ozet.js `durationOf`), null over nothing. */
 export function alarmsView(a) {
+  const settled = a.answered + a.unanswered;
   return {
-    episodes: a.episodes, answered: a.answered, settled: a.answered + a.unanswered, pct: pctOf(a.answered_rate),
+    episodes: a.episodes, answered: a.answered, settled, pct: wholePercent(a.answered_rate, a.answered, settled),
     median: durationOf(a.median_response_sec), p90: durationOf(a.p90_response_sec), escalated: a.escalated,
     unanswered: a.unanswered, selfResolved: a.unanswered_resolved, pending: a.pending,
     perKind: a.per_kind.map((k) => ({ kind: k.kind, episodes: k.episodes, answered: k.answered, escalated: k.escalated,
@@ -99,13 +102,16 @@ export function handoversView(h) {
 const rowOf = (key, name, block) => ({ key, name, alarms: alarmsView(block.alarms), snoozes: snoozesView(block.snoozes),
   rrt: block.rrt.count, handovers: handoversView(block.handovers) });
 
-/** The page from its one source: `{ok: false, why}` while there is no answer to count from; else the rows, the
- *  unplaced row (null for a scoped caller), the total row (the cards' figures), the coverage, and the read's flags. */
-export function qualityPage(source) {
+/** The page from its one source, for the period on the switch: `{ok: false, why}` while there is no answer to count
+ *  from, and a failed read for another period's answer (G4-03 review); else the rows, the unplaced row (null for a
+ *  scoped caller), the total row (the cards' figures), the coverage, and the read's flags — `noReach`: a scoped
+ *  caller reaches no unit at all. */
+export function qualityPage(source, period) {
   if (!source.ok) return { ok: false, why: source.why };
   const answer = source.data;
+  if (answer.days !== period) return { ok: false, why: WHY.failed };
   return {
-    ok: true, scoped: answer.scoped, truncated: answer.truncated,
+    ok: true, scoped: answer.scoped, noReach: answer.scoped && answer.units.length === 0, truncated: answer.truncated,
     windowFromMs: msOf(answer.window_from), generatedAtMs: msOf(answer.generated_at),
     coverage: { episodes: answer.coverage.episodes, placed: answer.coverage.placed, unplaced: answer.coverage.unplaced },
     rows: answer.units.map((unit) => rowOf(normId(unit.unit_id), unit.unit_name, unit)),

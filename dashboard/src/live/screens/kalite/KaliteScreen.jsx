@@ -51,9 +51,15 @@ function Card({ title, value, extra = null }) {
   );
 }
 
+/** The cards' heading names whose sum they are only once an answer says so: without one, a neutral heading — never
+ *  «Hastane geneli» over a scoped caller's «—» (G4-03 review). */
+function cardsTitleKey(page) {
+  if (!page.ok) return "kalite.cards.titleUnknown";
+  return page.scoped ? "kalite.cards.titleScoped" : "kalite.cards.title";
+}
+
 function Cards({ t, page, period }) {
-  const title = t(page.ok && page.scoped ? "kalite.cards.titleScoped" : "kalite.cards.title",
-    { period: t(PERIOD_KEYS[period].text) });
+  const title = t(cardsTitleKey(page), { period: t(PERIOD_KEYS[period].text) });
   let cards;
   if (!page.ok) {
     cards = CARDS.map((key) => <Card key={key} title={t(key)} value={<Missing t={t} why={page.why} big />} />);
@@ -84,12 +90,19 @@ function Cards({ t, page, period }) {
 }
 
 /** How many alarm episodes could be tied to a unit, and why the rest could not — or, for a scoped caller, that these
- *  are her units' only. A truncated read says so, and from when its alarms are counted. */
-function Coverage({ t, page }) {
-  if (!page.ok) return null;
+ *  are her units' only; a period with none says so in words, never «0 of 0» (G4-03 review). An empty reach has no
+ *  line: the units box says «Kapsamınızda birim yok» once. A truncated read says so, and from when its alarms are
+ *  counted. */
+function coverageLine(t, page) {
   const { episodes, placed } = page.coverage;
-  const line = page.scoped ? t("kalite.coverageScoped", { placed })
+  if (episodes === 0) return t(page.scoped ? "kalite.noEpisodesScoped" : "kalite.noEpisodes");
+  return page.scoped ? t("kalite.coverageScoped", { placed })
     : `${t("kalite.coverage", { episodes, placed })} ${t("kalite.coverageWhy")}`;
+}
+
+function Coverage({ t, page }) {
+  if (!page.ok || page.noReach) return null;
+  const line = coverageLine(t, page);
   return (
     <div className="flex flex-col gap-2" data-coverage>
       <p className="m-0 text-13">{line}</p>
@@ -117,8 +130,9 @@ function UnitRow({ t, row, name, on, onSelect }) {
       <td className="font-data">{`${alarms.unanswered} (${alarms.selfResolved})`}</td>
       <td className="font-data">{snoozes.count}</td>
       <td className="font-data">{row.rrt}</td>
-      <td className="font-data">{handovers ? `${handovers.opened} / ${handovers.countersigned} / ${handovers.waiting}` : null}</td>
-      <td className="font-data">{handovers ? time(handovers.median) : null}</td>
+      {/* The unplaced row has no handovers (every handover has a unit): «—», never a blank or a 0. */}
+      <td className="font-data">{handovers ? `${handovers.opened} / ${handovers.countersigned} / ${handovers.waiting}` : <None />}</td>
+      <td className="font-data">{handovers ? time(handovers.median) : <None />}</td>
     </tr>
   );
 }
@@ -128,7 +142,8 @@ function UnitsBox({ t, page, selectedKey, onSelect }) {
   if (!page.ok) {
     body = page.why === WHY.loading ? <p className="m-0 text-13 text-mute">{t("kalite.units.loading")}</p>
       : <Note tone="warn">{t("kalite.units.missing", { why: t(`ozet.why.${page.why}`) })}</Note>;
-  } else if (page.scoped && page.rows.length === 0) {
+  } else if (page.noReach) {
+    // Only an empty reach: a unit in reach is listed even when quiet, with its zeros.
     body = <p className="m-0 text-13 text-mute">{t("kalite.noReach")}</p>;
   } else {
     const line = (row, name) => (
@@ -234,7 +249,7 @@ export function KaliteScreen() {
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
   const [selected, setSelected] = useState(TOTAL);
   const read = usePeriodRead({ store, may, period, read: readQuality, valid: isQualityAnswer });
-  const page = qualityPage(readSource(read, may));
+  const page = qualityPage(readSource(read, may), period);
   const selection = selectionOf(page, selected);
   let selectionName = null;
   if (selection?.key === TOTAL) selectionName = t(page.scoped ? "kalite.snoozes.colScoped" : "kalite.snoozes.colHospital");
@@ -266,7 +281,7 @@ export function KaliteScreen() {
       <Coverage t={t} page={page} />
       <Cards t={t} page={page} period={period} />
       <UnitsBox t={t} page={page} selectedKey={selection?.key ?? null} onSelect={setSelected} />
-      {page.ok ? (
+      {page.ok && !page.noReach ? (
         <div className="grid gap-3 lg:grid-cols-2">
           <SnoozeBox t={t} lang={lang} page={page} selection={selection} selectionName={selectionName} />
           <KindsBox t={t} selection={selection} selectionName={selectionName} />

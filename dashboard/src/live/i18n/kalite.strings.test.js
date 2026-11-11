@@ -24,6 +24,10 @@ describe("the quality page's words (kalite)", () => {
     expect(tr["kalite.units.colUnanswered"]).toBe("Yanıtsız (kendiliğinden düzelen)");
     expect(tr["kalite.units.colHandovers"]).toBe("Devir (açılan / karşı imzalı / bekleyen)");
     expect(fill(tr["kalite.pct"], { pct: 82 })).toBe("%82");
+    // G4-03 review: a period with no alarm episode says so — never «0 alarm olayından 0 tanesi».
+    expect([tr["kalite.noEpisodes"], tr["kalite.noEpisodesScoped"]]).toEqual(["Bu dönemde alarm olayı yok.",
+      "Yalnız kapsamınızdaki birimler: bu dönemde bu birimlerde alarm olayı yok."]);
+    expect(DICTIONARIES.ru["kalite.units.unplaced"]).toBe("Отделение неизвестно");
   });
 
   it("leaves out the prototype's figures that have no source", () => {
@@ -45,7 +49,7 @@ describe("the quality page's words (kalite)", () => {
 
   it("names the period on the cards and the selection on the kinds, in every language", () => {
     for (const lang of LANG_CODES) {
-      for (const key of ["kalite.cards.title", "kalite.cards.titleScoped"]) {
+      for (const key of ["kalite.cards.title", "kalite.cards.titleScoped", "kalite.cards.titleUnknown"]) {
         expect(DICTIONARIES[lang][key], `${lang} ${key}`).toContain("{period}");
       }
       expect(DICTIONARIES[lang]["kalite.kinds.title"], lang).toContain("{unit}");
