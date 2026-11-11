@@ -1940,6 +1940,11 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   - Üç liste var: «Karşı imzanızı bekleyenler», «Benim devrettiklerim» ve «Son 24 saat».
   - Liste kendiliğinden yenilenmez; «Yenile» düğmesi ve son okuma saati vardır.
   - Açık bir devrin 30 dakikalık süresi dolarsa devir «Süresi doldu» olur; yeni devir açılır.
+- **Devrin birimi** (G4-02 incelemesiyle): sunucu devri hastanın yatağının birimine yazar (yatak → oda → birim);
+  ekranın gönderdiği birim yalnız aynı hastaneye ait mi diye denetlenir, kayda geçmez. Yönetici özetinin
+  «Karşı imzası bekleyen devir» sütunu bu birimle sayar (§3.24). Bir devirdeki hastalar farklı birimlerde yatıyorsa
+  sunucu devri açmaz: her birimin hastaları ayrı devredilir (ekran zaten hasta başına tek devir açar). Bu
+  değişiklikten önce açılmış devirler açıldıkları birimde kalır.
 - **Denetim kaydı:** açma, imza ve karşı imza denetim kaydına yazılır. Notun metni kayda yazılmaz.
 - **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
