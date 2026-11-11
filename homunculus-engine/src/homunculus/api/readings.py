@@ -201,11 +201,10 @@ class InMemoryReadingStore:
                 self._rows[r.id] = replace(r, state=STATE_REJECTED, resolve_reason=reason)
 
     def void(self, tenant: str, entry_id: int, *, by: str, at: datetime, reason: str) -> bool:
-        for r in self._of(tenant):
-            if r.entry_id == entry_id and r.voided_at is None:
-                self._rows[r.id] = replace(r, voided_at=at, voided_by=by, void_reason=reason)
-                return True
-        return False
+        hit = [r for r in self._of(tenant) if r.entry_id == entry_id and r.voided_at is None]
+        for r in hit:
+            self._rows[r.id] = replace(r, voided_at=at, voided_by=by, void_reason=reason)
+        return bool(hit)
 
     def admission_of(self, tenant: str, key: str) -> str | None:
         return self._admitted.get((tenant, key))

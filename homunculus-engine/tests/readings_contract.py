@@ -43,6 +43,22 @@ def unmatched(code="spo2", value=97.0, *, key=TYPO, at=T0, audit_id=None, reason
                   reason=reason)
 
 
+def rejected(store, code="heart_rate", value=88.0, *, audit_id) -> Reading:
+    """A reading a person rejected: filed as unmatched, claimed, then closed with its reason (tenant h1)."""
+    row = store.add(unmatched(code, value, audit_id=audit_id))
+    store.claim("h1", [row.id], by="hem.ayse", at=T0)
+    store.reject("h1", [row.id], reason="hasta taburcu, ölçüm başkasının")
+    return store.get("h1", [row.id])[0]
+
+
+def linked(store, code="temperature", value=37.1, *, audit_id, entry_id=40) -> Reading:
+    """A reading a person linked: filed as unmatched, claimed, then finalized under KEY (tenant h1)."""
+    row = store.add(unmatched(code, value, audit_id=audit_id))
+    store.claim("h1", [row.id], by="hem.ayse", at=T0)
+    store.finalize("h1", row.id, patient_key=KEY, admission_id=None, entry_id=entry_id)
+    return store.get("h1", [row.id])[0]
+
+
 class ReadingStoreContract:
     """Inherit, and provide `store`: an empty ReadingStore."""
 
@@ -103,6 +119,24 @@ class ReadingStoreContract:
         assert rows == [early, late]
         assert store.for_patient("h2", KEY, since=T0 - timedelta(hours=24), until=T0) == []
 
+    def test_rows_measured_at_one_instant_come_back_in_id_order(self, store):
+        """ORDER BY observed_at, id: one device set (one instant) keeps the order its rows were filed in."""
+        a = store.add(device("spo2", 97.0, audit_id=1))
+        b = store.add(device("heart_rate", 88.0, audit_id=2))
+        c = store.add(device("temperature", 37.1, audit_id=3))
+        rows = store.for_patient("h1", KEY, since=T0 - timedelta(hours=1), until=T0 + timedelta(hours=1))
+        assert [r.id for r in rows] == [a.id, b.id, c.id]
+        assert [r.code for r in rows] == ["spo2", "heart_rate", "temperature"]
+
+    def test_a_patients_window_includes_both_of_its_ends(self, store):
+        """`observed_at >= since AND observed_at <= until` (plan B2's SQL): a row on either bound is in."""
+        since, until = T0 - timedelta(hours=24), T0
+        first = store.add(device("spo2", 97.0, at=since, audit_id=1))
+        last = store.add(device("heart_rate", 88.0, at=until, audit_id=2))
+        store.add(device("temperature", 37.1, at=since - timedelta(seconds=1), audit_id=3))
+        store.add(device("resp_rate", 16.0, at=until + timedelta(seconds=1), audit_id=4))
+        assert store.for_patient("h1", KEY, since=since, until=until) == [first, last]
+
     def test_the_unmatched_list_is_the_waiting_rows_by_arrival(self, store):
         b = store.add(unmatched("heart_rate", 88.0, at=T0, audit_id=2))
         a = store.add(unmatched("spo2", 97.0, at=T0 - timedelta(minutes=1), audit_id=1))
@@ -110,6 +144,13 @@ class ReadingStoreContract:
         store.add(device(audit_id=4))                                               # matched: not listed
         assert store.unmatched("h1", since=T0 - timedelta(days=7)) == [a, b]
         assert store.unmatched("h2", since=T0 - timedelta(days=7)) == []
+
+    def test_the_unmatched_window_includes_the_instant_it_starts_at(self, store):
+        """`received_at >= since` (plan B2's SQL): a row received exactly at `since` is still listed."""
+        on = store.add(unmatched("spo2", 97.0, at=T0, audit_id=1))
+        before = store.add(unmatched("heart_rate", 88.0, at=T0 - timedelta(seconds=1), audit_id=2))
+        assert store.unmatched("h1", since=on.received_at) == [on]
+        assert store.unmatched("h1", since=before.received_at) == [before, on]
 
     def test_a_discharged_reason_travels_with_the_row(self, store):
         row = store.add(unmatched(key=KEY, reason=REASON_DISCHARGED, audit_id=1))
@@ -140,6 +181,28 @@ class ReadingStoreContract:
         with pytest.raises(ReadingNotUnmatched):
             store.claim("h1", [], by="hem.ayse", at=T0)
         assert store.get("h1", [a.id])[0].state == STATE_UNMATCHED
+
+    def test_a_claim_refuses_a_row_that_is_not_waiting(self, store):
+        """Only `unmatched` rows are claimable: not a matched row, not a rejected one, not one already linked."""
+        waiting = store.add(unmatched("spo2", 97.0, audit_id=1))
+        recorded = store.add(device("heart_rate", 88.0, audit_id=2))
+        closed = rejected(store, audit_id=3)
+        done = linked(store, audit_id=4)
+        every = [waiting.id, recorded.id, closed.id, done.id]
+        before = store.get("h1", every)
+        for row in (recorded, closed, done):
+            with pytest.raises(ReadingNotUnmatched):
+                store.claim("h1", [row.id], by="hem.zeynep", at=T0)
+            with pytest.raises(ReadingNotUnmatched):
+                store.claim("h1", [waiting.id, row.id], by="hem.zeynep", at=T0)    # all or none: `waiting` stays
+            assert store.get("h1", every) == before
+        assert store.claims("h1") == []
+
+    def test_naming_a_row_twice_claims_it_once(self, store):
+        a = store.add(unmatched(audit_id=1))
+        claimed = store.claim("h1", [a.id, a.id], by="hem.ayse", at=T0)
+        assert [r.id for r in claimed] == [a.id]
+        assert [r.id for r in store.claims("h1")] == [a.id]
 
     def test_a_released_claim_is_waiting_again(self, store):
         a = store.add(unmatched(audit_id=1))
@@ -181,6 +244,44 @@ class ReadingStoreContract:
         a = store.add(unmatched(audit_id=1))
         store.reject("h1", [a.id], reason="on karakterden uzun")                    # never claimed: nothing happens
         assert store.get("h1", [a.id]) == [a]
+
+    def test_reject_leaves_a_linked_row_as_it_is(self, store):
+        """A linked row has its patient: a late rejection (a second desk) must not take it back."""
+        done = linked(store, audit_id=1)
+        store.reject("h1", [done.id], reason="ikinci masadan gelen ret")
+        assert store.get("h1", [done.id]) == [done]
+
+    def test_finalize_touches_only_a_claim(self, store):
+        waiting = store.add(unmatched("spo2", 97.0, audit_id=1))
+        closed = rejected(store, audit_id=2)
+        done = linked(store, audit_id=3)
+        every = [waiting.id, closed.id, done.id]
+        before = store.get("h1", every)
+        store.finalize("h1", waiting.id, patient_key=KEY, admission_id=None, entry_id=41)   # never claimed
+        store.finalize("h1", closed.id, patient_key=KEY, admission_id=None, entry_id=42)    # rejected: closed
+        store.finalize("h1", done.id, patient_key="202600000002", admission_id=None, entry_id=43)  # linked already
+        assert store.get("h1", every) == before
+
+    # ------------------------------------------------------------------ another hospital
+    def test_another_hospitals_calls_leave_a_claim_alone(self, store):
+        a = store.add(unmatched(audit_id=1))
+        store.claim("h1", [a.id], by="hem.ayse", at=T0)
+        claimed = store.get("h1", [a.id])
+        assert store.claims("h2") == []
+        store.release("h2", [a.id])
+        store.finalize("h2", a.id, patient_key=KEY, admission_id=None, entry_id=40)
+        store.reject("h2", [a.id], reason="başka hastanenin kaydı")
+        assert store.get("h1", [a.id]) == claimed
+        assert store.claims("h1") == claimed
+
+    def test_another_hospital_may_file_the_same_audit_row_and_the_same_reading(self, store):
+        """Both unique indexes begin with the tenant: h2's reading is no duplicate of h1's."""
+        one = store.add(device(audit_id=5))
+        other = store.add(device(audit_id=5, tenant="h2"))
+        assert one is not None and other is not None and other.id != one.id
+        assert store.get("h1", [one.id, other.id]) == [one]
+        assert store.get("h2", [one.id, other.id]) == [other]
+        assert store.seen("h2", KEY, "spo2", T0, "CONNEX-3A", 97.0) is True
 
     # ------------------------------------------------------------------ void
     def test_void_marks_the_row_of_an_entry_once(self, store):
