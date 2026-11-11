@@ -1877,32 +1877,40 @@ def create_app(
             raise HTTPException(status_code=429, detail={"reason": "too_soon"}) from None
         except (ShadowRejected, ValueError, RecursionError):
             raise HTTPException(status_code=400, detail={"reason": "rejected"}) from None
-        _note_seen(parsed)
+        now = shadow_clock()
+        views = _note_seen(parsed, now)
         if shadow.rules:
-            await _sample_and_publish()
+            await _sample_and_publish(now, views)
         return result
 
-    def _note_seen(body: dict) -> None:
+    def _note_seen(body: dict, now: float) -> dict | None:
         """G4-01 (D2): the ledger notes what the store now shows for the devices this accepted body
         listed. Display memory only: a failure here is logged and never refuses the body, which the
-        store has already taken."""
+        store has already taken. Returns the store's devices at `now`, built once for the ledger and
+        the sampling pass alike — None if they could not be built, and the pass builds its own."""
         try:
-            shadow_ledger.observe(shadow_store.devices(), reported_sources(body))
+            views = shadow_store.devices(now)
+        except Exception:                      # noqa: BLE001 — the body is accepted; the page only loses a time
+            log.exception("G4-01: the shadow store's devices could not be read for the device ledger")
+            return None
+        try:
+            shadow_ledger.observe(views, reported_sources(body))
         except Exception:                      # noqa: BLE001 — the body is accepted; the page only loses a time
             log.exception("G4-01: the device ledger could not note a shadow body")
+        return views
 
-    async def _sample_and_publish() -> None:
+    async def _sample_and_publish(now: float, views: dict | None) -> None:
         """Aşama B (D4, D5): one sampling pass per accepted body, then a frame per patient whose
         shadow picture changed. The bed cards come from `board_view` with the hospital's own
         occupants — the link the strip shows — so a sample goes only where a card says `link: one`;
         with no valid table the pass is skipped (`cards` None), never read as every link ending.
-        Guarded throughout: the body is already accepted, and nothing here may answer otherwise."""
+        Guarded throughout: the body is already accepted, and nothing here may answer otherwise.
+        `now` and `views` are the POST's own (`_note_seen`): the store's devices are built once per body."""
         hospital = shadow.hospital
-        now = shadow_clock()
 
         def _pass() -> list[str]:
             engine = _engine(hospital)
-            devices = shadow_store.devices(now)
+            devices = views if views is not None else shadow_store.devices(now)
             table = shadow_table.current()
             cards = None
             if table.status == "ok":

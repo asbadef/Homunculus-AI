@@ -67,13 +67,14 @@ def _iso(epoch):
     return datetime.fromtimestamp(epoch, timezone.utc).isoformat()
 
 
-def _app(tmp_path, *, identities=None):
+def _app(tmp_path, *, identities=None, stage="shadow"):
     path = tmp_path / "device-beds.json"
     path.write_text(json.dumps(TABLE), encoding="utf-8")
     clock = Clock()
+    parameters = ("hr",) if stage == "rules" else ()
     app = create_app({DEVICE: HOSPITAL}, run_escalation_loop=False, resolve_jwt=_resolve_jwt,
                      resolve_scope=_resolve_scope,
-                     shadow=ShadowSettings("shadow", "shadow", None, SHADOW, HOSPITAL, str(path)),
+                     shadow=ShadowSettings(stage, stage, None, SHADOW, HOSPITAL, str(path), parameters),
                      shadow_clock=clock, bedmap=BedMap({"YB^1^1": BedRef("bed-b1", "unit-1", "B-1")}),
                      identities=identities if identities is not None else InMemoryIdentityStore())
     return TestClient(app), clock
@@ -232,3 +233,23 @@ def test_a_packet_age_at_the_wire_bound_is_still_a_time_and_whole_seconds(tmp_pa
     one = _cards(board)["192.0.2.10"]
     assert (one["status"], one["last_packet_at"], one["silent_for_s"]) == ("silent", _iso(T0 - 1e9), 1_000_000_000)
     assert json.loads(json.dumps(board)) == board
+
+
+def test_a_post_reads_the_stores_devices_once_for_the_ledger_and_the_shadow_engine(tmp_path, monkeypatch):
+    # Review 6: under the stage `rules` the ledger and the sampling pass read one and the same picture.
+    client, clock = _app(tmp_path, stage="rules")
+    store = client.app.state.shadow_store
+    real, built = store.devices, []
+
+    def spy(now=None):
+        built.append(real(now))
+        return built[-1]
+
+    monkeypatch.setattr(store, "devices", spy)
+    _post(client, clock, _device("192.0.2.10"))
+    assert len(built) == 1
+    monkeypatch.undo()
+    clock.t = T0 + 2
+    board = _board(client)
+    assert board["stage"] == "rules"
+    assert _cards(board)["192.0.2.10"]["channels_seen"] == [{"parameter": "hr", "last_value_at": _iso(T0 - 0.4)}]
