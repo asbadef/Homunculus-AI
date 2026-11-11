@@ -1003,6 +1003,11 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  and how the patient's alarms were retired. Sent again for a DISCHARGED admission, it takes a
      *  card that did not leave the board off it again (A-32). */
     confirmDischarge(id) { return authed(`/admissions/${seg(id)}/discharge/confirm`, { method: "POST" }); },
+    /** G2-B1b — Nakil: {target_bed_id, reason, note, confirm_reserved?} → {…the arriving
+     *  admission, board: ok|failed, critical_alarm_open}. Sent again unchanged after `board: failed`,
+     *  it moves the card again (spec T9). Refuses with `err.apiCode` (`bed_reserved`,
+     *  `bed_not_available`, `bed_closed`, `out_of_scope`, `invalid_transition`, `field_invalid:note`…). */
+    transfer(id, body) { return authed(`/admissions/${seg(id)}/transfer`, { method: "POST", body }); },
     releaseBed(id) { return authed(`/tenant/beds/${seg(id)}/release`, { method: "POST" }); },
     // G2-B3a — Doluluk (tenant/router.py). Names and notes come from their own read, never the
     // structure (spec R1); the four moves answer the bed as BedResponse, and refuse with

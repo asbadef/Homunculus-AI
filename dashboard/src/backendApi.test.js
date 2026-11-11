@@ -1770,6 +1770,14 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
   });
 
+  it("moves a patient by the one transfer route (G2-B1b)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.transfer("a/1", { target_bed_id: "b-2", reason: "OTHER", note: "Sentetik nakil notu" });
+    expect([sent(fetchMock, 0).method, sent(fetchMock, 0).url]).toEqual(["POST", "/admissions/a%2F1/transfer"]);
+    expect(sent(fetchMock, 0).body).toEqual({ target_bed_id: "b-2", reason: "OTHER", note: "Sentetik nakil notu" });
+  });
+
   it("reads the beds' names and notes and moves a bed by its own routes (G2-B3a)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     const api = signedIn(fetchMock);

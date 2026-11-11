@@ -91,6 +91,7 @@ export function fakeApi(vi, { access = null } = {}) {
     signOffAdmission: vi.fn(),
     startDischarge: vi.fn(),
     confirmDischarge: vi.fn(),
+    transfer: vi.fn(),            // G2-B1b: Nakil
     releaseBed: vi.fn(),
     // G2-B3a: Doluluk — the names read and the four moves
     occupancy: vi.fn(),
