@@ -81,6 +81,9 @@ export function fakeApi(vi, { access = null } = {}) {
     // G3-03: Sıvı dengesi — the patient screen's fluid box (screens/patient/fluids)
     patientFluids: vi.fn(),
 
+    // G3-04: Eczane — the pharmacist's ward page (screens/eczane)
+    pharmacy: vi.fn(),
+
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),
     admissions: vi.fn(),
