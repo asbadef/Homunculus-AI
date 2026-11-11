@@ -120,10 +120,17 @@ class ReadingStoreContract:
         assert store.for_patient("h2", KEY, since=T0 - timedelta(hours=24), until=T0) == []
 
     def test_rows_measured_at_one_instant_come_back_in_id_order(self, store):
-        """ORDER BY observed_at, id: one device set (one instant) keeps the order its rows were filed in."""
-        a = store.add(device("spo2", 97.0, audit_id=1))
+        """ORDER BY observed_at, id: one device set (one instant) keeps the order its rows were filed in — even
+        after the first row has been rewritten. In Postgres an update moves a row's tuple to the end of the heap
+        and, when it changes an indexed column, its index entry too (ties in a btree are in heap order), so a store
+        that sorted by `observed_at` alone would now return that row last. A link does that: it files the claimed
+        row under the patient (`patient_key`, `entry_id`). A withdrawal would not: its columns are unindexed, the
+        update is HOT, and the index still lists the row first."""
+        a = store.add(unmatched("spo2", 97.0, audit_id=1))                          # waiting; a person links it below
         b = store.add(device("heart_rate", 88.0, audit_id=2))
         c = store.add(device("temperature", 37.1, audit_id=3))
+        store.claim("h1", [a.id], by="hem.ayse", at=T0)
+        store.finalize("h1", a.id, patient_key=KEY, admission_id=None, entry_id=40)
         rows = store.for_patient("h1", KEY, since=T0 - timedelta(hours=1), until=T0 + timedelta(hours=1))
         assert [r.id for r in rows] == [a.id, b.id, c.id]
         assert [r.code for r in rows] == ["spo2", "heart_rate", "temperature"]
