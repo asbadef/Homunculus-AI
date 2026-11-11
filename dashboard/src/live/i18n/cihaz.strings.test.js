@@ -31,7 +31,15 @@ describe("the device page's words (cihaz)", () => {
   it("never says the data flows on a zero, and says why a list cannot be drawn rather than calling it empty", () => {
     const tr = DICTIONARIES.tr;
     expect(tr["cihaz.verdictNoneSending"]).toBe("Zincir çalışıyor, ama hiçbir monitör veri göndermiyor");
-    expect(tr["cihaz.verdictNoMonitors"]).toBe("Hub hiç monitör bildirmiyor");
+    expect(tr["cihaz.verdictNoMonitors"]).toBe("Bu görünümde monitör yok");
+    expect(tr["cihaz.pastNoMonitors"]).toBe("Son yanıtta bu görünümde monitör yoktu");
+    // The board's counts are the caller's own and it carries no hub-wide count: an empty view never claims the hub
+    // reports none (a unit-scoped nurse's beds may have no monitor while the hub reports others).
+    for (const lang of LANG_CODES) {
+      for (const key of ["cihaz.verdictNoMonitors", "cihaz.pastNoMonitors", "cihaz.listNoMonitors"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).not.toMatch(/hub|хаб/i);
+      }
+    }
     expect(tr["cihaz.verdictCountsUnknown"]).toBe("Zincir çalışıyor; monitör sayıları okunamıyor");
     expect(tr["cihaz.listNoLedger"]).toBe("Bu sürüm «ne zamandan beri» bilgisini vermiyor");
     for (const lang of LANG_CODES) {

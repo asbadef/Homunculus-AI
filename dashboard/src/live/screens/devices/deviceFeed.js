@@ -86,7 +86,10 @@ function cardsOf(data) {
  *                  is silent for that one reason, and none is listed as a fault;
  *    "unknown"     a feed state this build does not know, or a count the answer does not carry — a count it was
  *                  not told is no count, never a zero (chipCounts): nothing is listed, and nothing called fine;
- *    "noMonitors"  the hub reports no monitor: there is nothing to list, which is not «none silent».
+ *    "noMonitors"  this view holds no monitor: there is nothing to list, which is not «none silent». The board's
+ *                  counts are the caller's own (board_view counts only the cards it shows) and it carries no
+ *                  hub-wide count, so this never claims the hub reports none — a unit-scoped nurse's beds may have
+ *                  no monitor while the hub reports others.
  *  «The data flows» only while a monitor sends: a working chain with none sending says so. */
 export function verdictOf(data, now) {
   const feed = data?.feed ?? {};

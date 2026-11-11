@@ -190,15 +190,31 @@ describe("«Cihaz & Veri Akışı» — is data arriving?", () => {
     expect(items("Səssiz monitorlar")).toEqual(["REA-01 · 5 · 12 dəqiqədir məlumat yoxdur · son məlumat 13:47"]);
   });
 
-  it("says the hub reports no monitor, and calls neither list empty", async () => {
+  // The board's counts are the caller's own (board_view counts only the cards it shows) and it carries no hub-wide
+  // device count and no word that the view is scoped: an empty view says only that, true for a hub with no monitor
+  // and for a unit-scoped nurse whose beds have none while the hub reports monitors elsewhere.
+  it("says this view has no monitor — never that the hub reports none — and calls neither list empty", async () => {
     await open(withLedger(strip()));
-    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Hub heç bir monitor bildirmir");
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Bu görünüşdə monitor yoxdur");
     expect(region("Məlumat gəlirmi?")).not.toHaveTextContent("Məlumat axır");
     for (const name of ["Səssiz monitorlar", "Köhnələn kanallar"]) {
-      expect(region(name)).toHaveTextContent(DICTIONARIES.az["cihaz.listNoMonitors"]);
+      expect(region(name)).toHaveTextContent("Bu görünüşdə monitor olmadığı üçün qiymətləndirilə bilmir");
     }
     expect(region("Səssiz monitorlar")).not.toHaveTextContent("Səssiz monitor yoxdur");
     expect(region("Köhnələn kanallar")).not.toHaveTextContent("Köhnələn kanal yoxdur");
+    expect(document.querySelector("[data-feed-sections]")).not.toHaveTextContent(/hub/i);
+  });
+
+  it("tells a unit-scoped nurse whose beds have no monitor that this view has none, not that the hub reports none", async () => {
+    // The hub is busy (1000 packets accepted), but none of its monitors is on a bed this caller's scope reaches.
+    const mounted = await open(withLedger(strip()), ["board.view"]);
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Bu görünüşdə monitor yoxdur");
+    expect(document.querySelector("[data-feed-sections]")).not.toHaveTextContent(/hub/i);
+    mounted.api.shadowBoard.mockReturnValue(new Promise(() => {}));             // and once that answer is old:
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 18_000);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
+    expect(region("Məlumat gəlirmi?")).toHaveTextContent("Son cavabda bu görünüşdə monitor yox idi");
+    expect(document.querySelector("[data-feed-sections]")).not.toHaveTextContent(/hub/i);
   });
 
   it("reads a count the answer does not carry as unknown: no «flowing», no counts, no list called empty", async () => {

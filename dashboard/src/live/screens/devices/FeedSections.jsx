@@ -8,7 +8,7 @@
 // appears); the verdict section leads with «Pano güncel değil · son yanıt {HH:MM}» and says the last verdict in the
 // past tense, the chain's links keep their values with the state «bilinmiyor», the other sections are marked
 // «Pano güncel değil · {HH:MM}», and nothing is called empty. A list that cannot be drawn — a broken chain, an
-// unknown state or count, an empty hub, no ledger, no time — says why, never «yok». A polite status tells a screen
+// unknown state or count, a view with no monitor, no ledger, no time — says why, never «yok». A polite status tells a screen
 // reader the verdict and the freshness only, so it speaks when they change. No patient anywhere: monitors, channels
 // and times. Nothing here alarms, sounds or counts on the rail.
 import React, { useId } from "react";
@@ -101,7 +101,7 @@ function Verdict({ t, data, verdict, counts, fresh }) {
   // and the verdict follows in the past tense, as what that answer said.
   const text = verdictText(t, verdict, fresh ? verdict.key : PAST[verdict.key]);
   // Only the counts above zero: a «0» would be a list called empty, which is Decision 18's to allow; and none at all
-  // under a verdict that does not list (a broken chain, an unknown state or count, an empty hub).
+  // under a verdict that does not list (a broken chain, an unknown state or count, a view with no monitor).
   const parts = counts === null ? []
     : COUNTS.filter(([name]) => counts[name] > 0).map(([name, key]) => t(key, { count: counts[name] }));
   return (
