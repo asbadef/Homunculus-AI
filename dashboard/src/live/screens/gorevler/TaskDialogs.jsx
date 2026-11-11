@@ -85,8 +85,11 @@ export function VitalDialog({ item, patient, nowMs, canManage, canChart = false,
     <Modal open title={t("gorevler.vitalTitle", { bed })} onClose={onClose} busy={busy}>
       <div className="grid gap-2 text-13">
         <p className="m-0"><StatusPill tone={TONE[item.state]}>{stateLabel(t, item.state)}</StatusPill>{v.due_at ? <> · {t("gorevler.vitalDue", { time: dayStamp(Date.parse(v.due_at), nowMs) })}</> : null}{v.partial ? <> · {t("gorevler.vitalPartial")}</> : null}</p>
-        {/* the anchor is the server's (the last hand set, or the admission when there is none): one neutral word */}
+        {/* the anchor is the server's (the last measurement — by hand or, since G3-05, by a device — or the admission
+            when there is none): one neutral word */}
         <p className="m-0 text-mute">{t("gorevler.vitalBand", { band: BAND_KEY[v.band] ? t(BAND_KEY[v.band]) : String(v.band ?? "—"), minutes: v.interval_min })}{v.anchor_at ? ` · ${t("gorevler.vitalAnchor", { time: dayStamp(Date.parse(v.anchor_at), nowMs) })}` : ""}</p>
+        {/* G3-05 (D15, Q4): a device round resets the timer and leaves the score partial — say what the hand owes. */}
+        {v.partial ? <p className="m-0 text-12.5 text-mute">{t("gorevler.vitalPartialNote")}</p> : null}
         {patient && canManage && canChart ? <VitalsEntry patientId={patient.patient_id} bed={bed} nowMs={nowMs} onWritten={() => refresh()} /> : null}
         {canSkip && !skipping ? <div><Button variant="ghost" onClick={() => setSkipping(true)}>{t("gorevler.skipVitalConfirm")}</Button></div> : null}
         {skipping ? <ReasonForm label={t("gorevler.skipReason")} confirm={t("gorevler.skipVitalConfirm")} busy={busy} onCancel={() => setSkipping(false)} onConfirm={skip} /> : null}

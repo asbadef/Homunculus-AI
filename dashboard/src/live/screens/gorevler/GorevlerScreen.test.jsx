@@ -155,6 +155,18 @@ describe("dialogs", () => {
     expect(m.api.skipVitalTask).toHaveBeenCalledWith("S-001", "görüntüləmədə");
     expect(toasted(/Vital ölçmə .* qədər ötürüldü\./)).toHaveLength(1);
   });
+  // G3-05 (D15, Q4): a device round resets the timer and leaves the NEWS2 partial — the dialog says what the hand owes.
+  it("says, on a partial score, that respiration and consciousness are entered by hand — and nothing on a complete one", async () => {
+    const partial = { ...TASKS, patients: [{ ...TASKS.patients[0], vital: { ...TASKS.patients[0].vital, partial: true } }, TASKS.patients[1]] };
+    await open({ tasks: partial });
+    await press(screen.getByRole("button", { name: /gecikdi/ }));
+    const dialog = screen.getByRole("dialog", { name: "Vital ölçmə · REA-01 · 2" });
+    expect(within(dialog).getByText("NEWS2 natamamdır: cihaz tənəffüs sayını və şüuru göndərmir; bunlar əl ilə daxil edilir.")).toBeInTheDocument();
+    cleanup();
+    await open();
+    await press(screen.getByRole("button", { name: /gecikdi/ }));
+    expect(within(screen.getByRole("dialog", { name: "Vital ölçmə · REA-01 · 2" })).queryByText(/NEWS2 natamamdır/)).toBeNull();
+  });
   it("creates a task for a chosen patient", async () => {
     const m = await open();
     m.api.createTask.mockResolvedValue({ id: "t9", state: "open" });

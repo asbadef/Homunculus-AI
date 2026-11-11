@@ -1,6 +1,7 @@
 // src/live/screens/gorevler/GorevlerScreen.jsx — Görevlerim (G3-02): the ward's task queue for this shift.
 // Two sources: tasks written by hand, and the vital measurement the server derives from the patient's last
-// hand-entered NEWS2 set and the hospital's interval for the band. The grid (wide) and the list (narrow) read
+// measurement of a NEWS2 input — typed by hand or, since G3-05 (D15), sent by a device — and the hospital's
+// interval for the band. The grid (wide) and the list (narrow) read
 // the same items; nothing here scores or decides — the server says the state, the screen paints it.
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
