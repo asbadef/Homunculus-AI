@@ -317,6 +317,7 @@ export const INVALID_FIELD_KEYS = new Map([
   ["comorbidities_text", "kabul.invalid.comorbiditiesText"],
   ["consent", "kabul.invalid.consent"],
   ["admitting_unit_id", "kabul.invalid.unit"],
+  ["attending_physician_id", "kabul.invalid.attending"],   // G2-B1c, T1: a form naming a non-physician attending
   ["institution", "kabul.invalid.institution"],
   ["reported_by", "kabul.invalid.reportedBy"],
   ["discharge_at", "kabul.invalid.dischargeAt"],
