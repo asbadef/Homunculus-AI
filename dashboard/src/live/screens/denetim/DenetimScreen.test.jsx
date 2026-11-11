@@ -18,7 +18,7 @@ const rec = (id, over = {}) => ({
 const ROWS = [
   rec(1, { event_type: "chart", payload: { charted_by: "dr.kerimov" } }),
   rec(2),
-  rec(3, { event_type: "structure.create", patient_id: "", subject: "", payload: { actor: "admin" } }),
+  rec(3, { event_type: "legacy.made_up", patient_id: "", subject: "", payload: { actor: "admin" } }),   // a code the page does not name
 ];
 const INTACT = { ok: true, checked: 3, unsealed: 0, broken_at: null, reason: "", records: 3, complete: true };
 
@@ -53,7 +53,7 @@ describe("the audit page's events", () => {
     expect(api.alarmQuality).not.toHaveBeenCalled();                  // G2-B6 D4: the heatmap waits for its button
     const [first, second, third] = bodyRows();
     expect(first).toHaveTextContent("#3");
-    expect(first).toHaveTextContent("structure.create");               // no label: the code itself
+    expect(first).toHaveTextContent("legacy.made_up");                 // no label: the code itself
     expect(second).toHaveTextContent("Siqnalın təsdiqi");
     expect(second).toHaveTextContent("ayse");
     expect(second).toHaveTextContent("••••4821");
@@ -95,6 +95,49 @@ describe("the audit page's events", () => {
     for (const [code, label] of MOVES) {
       expect(offered.find((o) => o.value === code)?.textContent, code).toBe(label);
     }
+  });
+
+  // G2-B4 follow-up D2 (owner «Ad yaz, eskiyi maskele»): a scope row names who changed it and whose access changed;
+  // one written before the engine wrote names shows both ids masked. No user id is ever printed.
+  it("shows a scope row's two names, and masks the two ids of a row written before the names", async () => {
+    const ADMIN_ID = "11111111-1111-4111-8111-11111111ad01";
+    const NURSE_ID = "22222222-2222-4222-8222-2222222261a2";
+    await open((a) => a.audit.mockResolvedValue({ records: [
+      rec(1, { event_type: "scope", patient_id: "", subject: NURSE_ID,
+        payload: { by: ADMIN_ID, before: [], after: ["unit-adult"] } }),
+      rec(2, { event_type: "scope", patient_id: "", subject: NURSE_ID,
+        payload: { actor: "admin", user: "ayse.sentetik", by: ADMIN_ID, before: ["unit-adult"], after: [] } }),
+    ] }));
+    const [named, old] = bodyRows();                                   // newest first
+    const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells(named)[2]).toBe("Əhatə təyinatı");
+    expect(cells(named)[3]).toBe("admin");
+    expect(cells(named)[5]).toBe("ayse.sentetik");
+    expect(cells(old)[3]).toBe("istifadəçi ••••ad01");
+    expect(cells(old)[5]).toBe("istifadəçi ••••61a2");
+    expect(document.body).not.toHaveTextContent(ADMIN_ID);
+    expect(document.body).not.toHaveTextContent(NURSE_ID);
+  });
+
+  // Follow-up D3: a type the engine writes is named, never its code, and offered in the filter; a task's id (a UUID
+  // that is not a person's) is masked as an id, without «istifadəçi».
+  it("names Yapı's and «Görevlerim»'s rows, offers them in the filter, and masks a task's id as an id", async () => {
+    const TASK_ID = "33333333-3333-4333-8333-33333333a5b9";
+    await open((a) => a.audit.mockResolvedValue({ records: [
+      rec(1, { event_type: "structure.create", patient_id: "", subject: "", payload: { kind: "bed", actor: "admin" } }),
+      rec(2, { event_type: "task_done", subject: TASK_ID, payload: { task: TASK_ID, actor: "ayse.sentetik" } }),
+    ] }));
+    const [task, structure] = bodyRows();                              // newest first
+    const cells = (row) => within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells(structure)[2]).toBe("Struktur: əlavə edildi");
+    expect(cells(task)[2]).toBe("Tapşırıq tamamlandı");
+    expect(cells(task)[3]).toBe("ayse.sentetik");
+    expect(cells(task)[5]).toBe("••••a5b9");
+    expect(document.body).not.toHaveTextContent("structure.create");
+    expect(document.body).not.toHaveTextContent(TASK_ID);
+    const offered = within(screen.getByLabelText("Növ")).getAllByRole("option");
+    expect(offered.find((o) => o.value === "structure.create")?.textContent).toBe("Struktur: əlavə edildi");
+    expect(offered.find((o) => o.value === "task_done")?.textContent).toBe("Tapşırıq tamamlandı");
   });
 
   it("asks the server for the chosen type, and reads again on «Yenilə»", async () => {

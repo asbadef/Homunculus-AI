@@ -36,6 +36,8 @@ export default {
     retry: "Yeniden dene",
     caption: "Denetim olayları, yeniden eskiye",
     colNo: "No", colTime: "Zaman", colType: "Tür", colActor: "Kim", colPatient: "Hasta", colSubject: "Konu",
+    // follow-up 2026-11-11 D2: a user id in «Kim» or «Konu», masked ({id} is «••••1a2b»)
+    maskedUser: "kullanıcı {id}",
     type: {
       auth: "Oturum açma", admin: "Yönetim", scope: "Kapsam ataması", scopeDenied: "Kapsam reddi",
       ack: "Alarm onayı", view: "Hasta açıldı",
@@ -53,6 +55,15 @@ export default {
       bedOutOfService: "Yatak kullanım dışı bırakıldı", bedReturnToService: "Yatak kullanıma açıldı",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Devir açıldı", handoverSign: "Devir imzalandı", handoverCountersign: "Devir karşı imzalandı",
+      // follow-up 2026-11-11 D3: every other type the engine writes — Yapı's four in the Yapı tab's words (kabul.js),
+      // the label in Protokol ve etiket's (protokol.js), the board retry in the discharge's (kabul.retryBoard), the
+      // monitor table in Monitör–yatak eşleme's (esleme.js), «Görevlerim» in its own (gorevler.js)
+      structureCreate: "Yapı: eklendi", structureRename: "Yapı: adı değişti",
+      structureClose: "Yapı: kapatıldı", structureReopen: "Yapı: yeniden açıldı",
+      labelPrint: "Etiket yazdırıldı", dischargeBoardRetry: "Kart panodan yeniden kaldırılmaya çalışıldı",
+      deviceRelabel: "Monitör eşlemesi yatağın yeni adını aldı", deviceImport: "Monitör–yatak eşlemesi içe aktarıldı",
+      taskCreated: "Görev eklendi", taskClaimed: "Görev üstlenildi", taskDone: "Görev tamamlandı",
+      taskSkipped: "Görev «uygulanmadı» olarak kapandı", vitalSkipped: "Vital ölçüm atlandı", taskSettings: "Görev ayarları değişti",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
     },
@@ -102,6 +113,7 @@ export default {
     retry: "Yenidən cəhd et",
     caption: "Audit hadisələri, yenidən köhnəyə",
     colNo: "№", colTime: "Vaxt", colType: "Növ", colActor: "İcraçı", colPatient: "Xəstə", colSubject: "Mövzu",
+    maskedUser: "istifadəçi {id}",
     type: {
       auth: "Sistemə giriş", admin: "İdarəetmə", scope: "Əhatə təyinatı", scopeDenied: "Əhatədən imtina",
       ack: "Siqnalın təsdiqi", view: "Xəstə açıldı",
@@ -118,6 +130,12 @@ export default {
       bedOutOfService: "Çarpayı istifadədən çıxarıldı", bedReturnToService: "Çarpayı istifadəyə verildi",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
+      structureCreate: "Struktur: əlavə edildi", structureRename: "Struktur: adı dəyişdi",
+      structureClose: "Struktur: bağlandı", structureReopen: "Struktur: yenidən açıldı",
+      labelPrint: "Etiket çap edildi", dischargeBoardRetry: "Kartın paneldən yenidən götürülməsinə cəhd edildi",
+      deviceRelabel: "Monitorun uyğunlaşdırması çarpayının yeni adını aldı", deviceImport: "Monitor–çarpayı uyğunlaşdırması idxal edildi",
+      taskCreated: "Tapşırıq əlavə edildi", taskClaimed: "Tapşırıq öhdəyə götürüldü", taskDone: "Tapşırıq tamamlandı",
+      taskSkipped: "Tapşırıq «tətbiq edilmədi» kimi bağlandı", vitalSkipped: "Vital ölçmə ötürüldü", taskSettings: "Tapşırıq ayarları dəyişdi",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
     },
@@ -167,6 +185,7 @@ export default {
     retry: "Повторить",
     caption: "События аудита, от новых к старым",
     colNo: "Номер", colTime: "Время", colType: "Тип", colActor: "Кто", colPatient: "Пациент", colSubject: "Объект",
+    maskedUser: "пользователь {id}",
     type: {
       auth: "Вход в систему", admin: "Администрирование", scope: "Назначение области", scopeDenied: "Отказ по области",
       ack: "Подтверждение тревоги", view: "Пациент открыт",
@@ -183,6 +202,12 @@ export default {
       bedOutOfService: "Койка выведена из использования", bedReturnToService: "Койка возвращена в использование",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
+      structureCreate: "Структура: добавлено", structureRename: "Структура: переименовано",
+      structureClose: "Структура: закрыто", structureReopen: "Структура: открыто снова",
+      labelPrint: "Этикетка напечатана", dischargeBoardRetry: "Повторная попытка снять карточку с панели",
+      deviceRelabel: "Привязка монитора получила новое название койки", deviceImport: "Привязка мониторов к койкам импортирована",
+      taskCreated: "Задача добавлена", taskClaimed: "Задача взята", taskDone: "Задача выполнена",
+      taskSkipped: "Задача закрыта как «не выполнено»", vitalSkipped: "Измерение витальных пропущено", taskSettings: "Настройки задач изменены",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
     },
@@ -232,6 +257,7 @@ export default {
     retry: "Try again",
     caption: "Audit events, newest first",
     colNo: "No.", colTime: "Time", colType: "Type", colActor: "Who", colPatient: "Patient", colSubject: "Subject",
+    maskedUser: "user {id}",
     type: {
       auth: "Sign-in", admin: "Administration", scope: "Scope assignment", scopeDenied: "Scope refusal",
       ack: "Alarm acknowledged", view: "Patient opened",
@@ -248,6 +274,12 @@ export default {
       bedOutOfService: "Bed taken out of service", bedReturnToService: "Bed returned to service",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
+      structureCreate: "Structure: added", structureRename: "Structure: renamed",
+      structureClose: "Structure: closed", structureReopen: "Structure: reopened",
+      labelPrint: "Label printed", dischargeBoardRetry: "Removing the card from the board retried",
+      deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",
+      taskCreated: "Task added", taskClaimed: "Task claimed", taskDone: "Task finished",
+      taskSkipped: "Task closed as not done", vitalSkipped: "Vital measurement skipped", taskSettings: "Task settings changed",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
     },

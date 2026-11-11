@@ -306,7 +306,9 @@ async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
 
     Held to the same `max_age` (G2 borç 1b): its scope, too, is the ticket's, read once at open.
     Its keep-alive is still a comment on an idle queue; a wait cut short by the end of the life is
-    no keep-alive, only the way to the ROTATE_FRAME."""
+    no keep-alive, only the way to the ROTATE_FRAME. Which wait it was is decided by the timeout
+    asked for, not by reading the clock afterwards: a timer may wake a tick early (Windows, ~15 ms),
+    and a life-bound wait read that way would send one keep-alive too many before its rotate."""
     now = clock or asyncio.get_running_loop().time
     opened = now()
     while True:
@@ -314,11 +316,14 @@ async def sse_notification_frames(queue: asyncio.Queue, keepalive: float = 15.0,
         if left <= 0:
             yield ROTATE_FRAME
             return
+        to_life = left <= keepalive
         try:
-            note = await asyncio.wait_for(queue.get(), timeout=min(keepalive, left))
+            note = await asyncio.wait_for(queue.get(), timeout=left if to_life else keepalive)
         except asyncio.TimeoutError:
-            if now() - opened < max_age:
-                yield ": keep-alive\n\n"
+            if to_life:
+                yield ROTATE_FRAME
+                return
+            yield ": keep-alive\n\n"
             continue
         if allow is not None and not allow(note):
             continue

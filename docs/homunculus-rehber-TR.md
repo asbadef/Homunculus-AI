@@ -1773,6 +1773,11 @@ uydurmadır.
 - **Son olaylar:** en yeni 200 olay, yeniden eskiye doğru sıralı.
   - Sütunlar: no, zaman, tür, kim, hasta, konu.
   - **Hasta kimliği maskelidir** (sahip kararı): yalnız son dört karakter görünür, örneğin `••••4821`.
+  - **Kullanıcı kimliği de görünmez** (sahip kararı, 2026-11-11): kapsam ataması satırı bu sürümden beri değiştireni ve
+    erişimi değişeni adıyla yazar; daha eski satırlarda kimlik `kullanıcı ••••1a2b` olarak maskelenir. Başka satırlardaki
+    bir kimlik (örneğin görev satırlarında görevin kimliği, bir monitörün kimliği) «kullanıcı» demeden `••••a5b9` görünür.
+  - Motorun yazdığı her olay türünün bir adı vardır ve süzgeçte yer alır. Bir test motorun kaynağını okur: sayfanın adını
+    bilmediği bir tür yazılırsa ya da bir kaydın türünün nereden geldiğini okuyamazsa kırılır.
   - Olayın ayrıntısı (payload) ve mühürler gösterilmez.
   - «Tür» süzgeci seçilen türü sunucudan ister. Böylece seyrek bir tür, sayıca çok olan ölçüm kayıtlarının arasında
     kaybolmaz.
@@ -1784,7 +1789,8 @@ uydurmadır.
   - Renk tonu yalnız tablodaki en yüksek sayıya göredir; klinik bir eşik değildir.
   - En çok alarmlı 30 hasta gösterilir. Satırlar yatak değil hastadır: denetim kaydı o anki yatağı tutmaz.
   - Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b6-alarm-isi-haritasi-design.md`.
-- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`.
+- Kaynak: `docs/superpowers/specs/2026-11-09-g2b-b4-denetim-design.md`; adlar ve türler:
+  `docs/superpowers/specs/2026-11-11-g2b-b4-denetim-adlar-design.md`.
 
 ### 3.14 Doluluk: yatakların durumu, rezerv ve kullanım dışı (Grup 2 · B3a)
 
