@@ -44,36 +44,44 @@ function Missing({ t, why, big = false }) {
   );
 }
 
-function Card({ t, icon, title, what, cell, extra, atMs }) {
+/** `caveat`: a short line saying the number is not the whole of what the card names — a truncated read, or a scoped
+ *  caller's counts (only what her reach was sent, not the hospital's). Shown only under a number. */
+function Card({ t, icon, title, what, cell, extra, caveat, atMs }) {
+  const counted = "value" in cell;
   return (
     <li className="flex min-w-[220px] flex-1 flex-col gap-1 rounded-box border border-line bg-card px-[14px] py-3">
       <h3 className="m-0 flex items-center gap-2 font-text text-13 font-semibold"><Icon name={icon} size={16} />{title}</h3>
       <p className="m-0" data-card-value>
-        {"value" in cell ? <span className="font-data text-23 font-bold">{cell.value}</span> : <Missing t={t} why={cell.why} big />}
+        {counted ? <span className="font-data text-23 font-bold">{cell.value}</span> : <Missing t={t} why={cell.why} big />}
       </p>
       {extra ? <p className="m-0 text-13">{extra}</p> : null}
+      {counted && caveat ? <p className="m-0 text-12 font-semibold" data-caveat>{caveat}</p> : null}
       <p className="m-0 text-12 text-mute">{what}</p>
-      {"value" in cell && Number.isFinite(atMs) ? <p className="m-0 text-12 text-mute">{t("ozet.readAt", { time: hhmm(atMs) })}</p> : null}
+      {counted && Number.isFinite(atMs) ? <p className="m-0 text-12 text-mute">{t("ozet.readAt", { time: hhmm(atMs) })}</p> : null}
     </li>
   );
 }
 
-function Cards({ t, cards, period, atMs }) {
+function Cards({ t, cards, scoped, period, atMs }) {
   const { unanswered, pending, late, silent } = cards;
   const oldest = "value" in pending && pending.value > 0 ? ageText(t, pending.age) : null;
   let silentExtra = null;
   if ("value" in silent && silent.noMonitors) silentExtra = t("ozet.cards.silentNoMonitors");
   else if ("value" in silent && silent.value > 0 && silent.longest !== null) silentExtra = t("ozet.cards.silentLongest", { for: forText(t, silent.longest) });
+  // Card 1 is the server's whole-hospital report (it refuses a scoped caller); the other three count what her reach sent.
+  const reach = scoped ? t("ozet.cards.scoped") : null;
   return (
     <section aria-labelledby="ozet-cards" className="flex flex-col gap-2">
       <h2 id="ozet-cards" className="m-0 font-display text-17 font-bold">{t("ozet.cards.title")}</h2>
       <ul className="m-0 flex list-none flex-wrap gap-2.5 p-0">
         <Card t={t} icon="bell" cell={unanswered} atMs={atMs.quality}
+          caveat={unanswered.truncated ? t("ozet.cards.truncated") : null}
           title={t("ozet.cards.unansweredTitle", { period: t(PERIOD[period].text) })} what={t("ozet.cards.unansweredWhat")} />
-        <Card t={t} icon="clip" cell={pending} atMs={atMs.pending} title={t("ozet.cards.pendingTitle")}
+        <Card t={t} icon="clip" cell={pending} atMs={atMs.pending} title={t("ozet.cards.pendingTitle")} caveat={reach}
           what={t("ozet.cards.pendingWhat")} extra={oldest ? t("ozet.cards.pendingOldest", { age: oldest }) : null} />
-        <Card t={t} icon="clock" cell={late} atMs={atMs.tasks} title={t("ozet.cards.lateTitle")} what={t("ozet.cards.lateWhat")} />
-        <Card t={t} icon="plug" cell={silent} atMs={atMs.shadow} title={t("ozet.cards.silentTitle")}
+        <Card t={t} icon="clock" cell={late} atMs={atMs.tasks} title={t("ozet.cards.lateTitle")} caveat={reach}
+          what={t("ozet.cards.lateWhat")} />
+        <Card t={t} icon="plug" cell={silent} atMs={atMs.shadow} title={t("ozet.cards.silentTitle")} caveat={reach}
           what={t("ozet.cards.silentWhat")} extra={silentExtra} />
       </ul>
     </section>
@@ -108,7 +116,12 @@ function QualityFigures({ t, view, atMs }) {
             {view.perDay.map((day) => (
               <li key={day.date} className="flex items-center gap-2 text-12.5">
                 <span className="w-[120px] shrink-0 font-data">{t("ozet.q.dayCount", { date: dayOf(day.date), n: day.episodes })}</span>
-                <span aria-hidden="true" className="h-2 rounded-full bg-pri" style={{ width: `${Math.max(2, Math.round(day.share * 100))}%`, maxWidth: "60%" }} />
+                {/* The track takes the rest of the row; the bar is its exact share of the busiest day — not rounded,
+                    not capped — so a busier day is always drawn longer. A day with any episode is at least 2 px. */}
+                <span aria-hidden="true" className="h-2 min-w-0 max-w-[480px] flex-1">
+                  <span data-bar className={`block h-2 rounded-full bg-pri${day.episodes > 0 ? " min-w-[2px]" : ""}`}
+                    style={{ width: `${day.share * 100}%` }} />
+                </span>
               </li>
             ))}
           </ul>
@@ -146,20 +159,26 @@ function QualityFigures({ t, view, atMs }) {
 
 function QualityBox({ t, may, period, setPeriod, read }) {
   const source = readSource(read, may);
+  // The page re-renders every second (the strip's clock); the report changes only on a read.
+  const view = useMemo(() => (source.ok ? qualityView(source.data) : null), [source.ok, source.data]);
+  // No right (no audit.view, or a scope the server refuses): no switch either — another period is refused the same.
+  const noRight = !may || (!source.ok && source.why === WHY.noRight);
   let body;
-  if (!may || (!source.ok && source.why === WHY.noRight)) body = <Note tone="info">{t("ozet.q.noRight")}</Note>;
+  if (noRight) body = <Note tone="info">{t("ozet.q.noRight")}</Note>;
   else if (read.phase === "loading") body = <p className="m-0 text-13 text-mute">{t("ozet.q.loading")}</p>;
   else if (!source.ok) {
+    // A failure is not read again by «Yenile» or a timer (spec D5 §3); the user may ask once more.
     body = (
       <Alert tone="crit">
-        <p className="m-0">{t("ozet.q.failed", { reason: read.error ? readErrorText(t, read.error) : t("ozet.why.failed") })}</p>
+        <p className="m-0">{read.error ? t("ozet.q.failed", { reason: readErrorText(t, read.error) }) : t("ozet.q.unreadable")}</p>
+        <Button size="sm" onClick={read.retry}>{t("admin.retry")}</Button>
       </Alert>
     );
-  } else body = <QualityFigures t={t} view={qualityView(read.data)} atMs={read.atMs} />;
+  } else body = <QualityFigures t={t} view={view} atMs={read.atMs} />;
   const options = PERIODS.map((days) => ({ value: days, label: t(PERIOD[days].label) }));
   return (
     <Box title={t("ozet.q.title")} icon="chart" level={2}
-      right={may ? <Seg label={t("ozet.period.label")} options={options} value={period} onChange={setPeriod} /> : null}>
+      right={noRight ? null : <Seg label={t("ozet.period.label")} options={options} value={period} onChange={setPeriod} />}>
       <div className="flex flex-col gap-2" data-quality>
         <p className="m-0 text-13 text-mute">{t("ozet.q.intro", { period: t(PERIOD[period].text) })}</p>
         {body}
@@ -191,7 +210,8 @@ function UnitRow({ t, row, name }) {
 
 function UnitsBox({ t, summary, occupancy }) {
   let body;
-  if (summary.rows === null) body = <Note tone="warn">{t("ozet.units.missing", { why: t(`ozet.why.${occupancy.why ?? WHY.failed}`) })}</Note>;
+  if (summary.rows === null && occupancy.why === WHY.loading) body = <p className="m-0 text-13 text-mute">{t("ozet.units.loading")}</p>;
+  else if (summary.rows === null) body = <Note tone="warn">{t("ozet.units.missing", { why: t(`ozet.why.${occupancy.why ?? WHY.failed}`) })}</Note>;
   else if (summary.rows.length === 0) body = <p className="m-0 text-13 text-mute">{t("doluluk.noUnits")}</p>;
   else {
     body = (
@@ -266,7 +286,7 @@ export function OzetScreen() {
         <Button size="sm" icon="clock" busy={reads.busy} onClick={reads.refresh}>{t("ozet.refresh")}</Button>
       </div>
       <p className="m-0 text-13 text-mute">{t("ozet.intro")}</p>
-      <Cards t={t} cards={summary.cards} period={period} atMs={atMs} />
+      <Cards t={t} cards={summary.cards} scoped={summary.scoped} period={period} atMs={atMs} />
       <QualityBox t={t} may={rights.quality} period={period} setPeriod={setPeriod} read={quality} />
       <UnitsBox t={t} summary={summary} occupancy={sources.occupancy} />
     </div>

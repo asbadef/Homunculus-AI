@@ -1,13 +1,15 @@
 // OzetScreen.test.jsx — «Rəhbər xülasəsi» (G4-02, spec D5): one h1 and no patient anywhere; the four cards and the units
 // table from their sources; the period switch driving the quality box and card 1, read on open and on a change, never
-// with «Yenile»; a truncated read; a null answered_rate; «yetki yok»; Decision 18. The default language is az.
-// Synthetic hospital (ozet.testutil.jsx).
+// with «Yenile»; a truncated read; a null answered_rate; «yetki yok»; Decision 18; the caller's reach; the daily bars
+// in proportion; «Yeniden dene»; a failed, refused or malformed source of its own each with its reason. The default
+// language is az. Synthetic hospital (ozet.testutil.jsx).
 import { describe, it, expect, afterEach } from "vitest";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { ddmmhhmm } from "../../i18n/dates.js";
 import { refusal } from "../../session/mount.testutil.jsx";
+import { scopedTo } from "../../data/board.testutil.js";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
-import { PATIENT_ID, PATIENT_NAME, REPORT, mountOzet, settle } from "./ozet.testutil.jsx";
+import { ADMIN, BOARD, PATIENT_ID, PATIENT_NAME, REA, REPORT, mountOzet, settle } from "./ozet.testutil.jsx";
 
 afterEach(() => { cleanup(); });
 
@@ -40,6 +42,8 @@ describe("the summary page", () => {
     expect(card("Əks-imza gözləyən təhvil")).toHaveTextContent("2ən köhnəsi 2 gün əvvəl");
     expect(card("Gecikən iş").querySelector("[data-card-value]").textContent).toBe("2");
     expect(card("Səssiz monitor")).toHaveTextContent("1ən uzunu 7 dəq");
+    expect(document.body.textContent).not.toContain("əhatənizdəkilər");    // an unrestricted caller's counts are the hospital's
+    expect(card("Cavabsız qalan siqnal · son 7 gün")).not.toHaveTextContent("natamam oxunuş");
     act(() => { board.clear(); });
   });
 
@@ -63,6 +67,41 @@ describe("the summary page", () => {
     expect(within(box).getByText("10.11: 8 epizod")).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Növə görə" })).getByRole("rowheader")).toHaveTextContent("news2");
     expect(box.textContent).not.toMatch(/3 dəq içində|Səhv kimi/);   // the prototype's numbers with no source
+    act(() => { board.clear(); });
+  });
+
+  it("draws each day's bar in proportion to its count, with no cap — a busier day is always longer", async () => {
+    const { board } = await mountOzet({ setup: (api) => api.alarmQuality.mockResolvedValue({ ...REPORT, per_day: [
+      { date: "2026-11-08", episodes: 4 }, { date: "2026-11-09", episodes: 8 }, { date: "2026-11-10", episodes: 5 }] }) });
+    const bars = [...quality().querySelectorAll("[data-daily] [data-bar]")];
+    expect(bars.map((bar) => parseFloat(bar.style.width))).toEqual([50, 100, 62.5]);
+    for (const bar of bars) expect(bar.style.maxWidth).toBe("");
+    act(() => { board.clear(); });
+  });
+});
+
+// The rows are the tree's, and the tree is the whole hospital's for structure.manage; every other source is cut to
+// the caller's reach by the server. So a unit outside her unit grants says «yetki yok», never 0 (Decision 18).
+describe("a caller whose scope is restricted", () => {
+  const scopedBoard = (api) => api.boardPatients.mockResolvedValue({ ...BOARD, scope: scopedTo([REA]) });
+  const NO_RIGHT = "— səlahiyyət yoxdur";
+
+  it("sees «yetki yok» for a unit outside her reach — its beds still counted from the whole tree — and cards said to be hers", async () => {
+    const { board } = await mountOzet({ setup: scopedBoard });
+    expect(unitRows()).toEqual([
+      ["Reanimasiya", "1 / 4 doludur", "2 (1 kritik · 1 yüksək)", "2", "2 · ən köhnəsi 2 gün əvvəl", "1"],
+      ["Neonatal · bağlıdır", "0 / 0 doludur", NO_RIGHT, NO_RIGHT, NO_RIGHT, NO_RIGHT],
+    ]);
+    for (const name of ["Əks-imza gözləyən təhvil", "Gecikən iş", "Səssiz monitor"]) {
+      expect(card(name), name).toHaveTextContent("yalnız əhatənizdəkilər, bütün xəstəxana deyil");
+    }
+    expect(card("Cavabsız qalan siqnal · son 7 gün")).not.toHaveTextContent("əhatənizdəkilər");   // the server's whole-hospital report
+    act(() => { board.clear(); });
+  });
+
+  it("without structure.manage the tree lists only her granted beds there, so their count is not hers either", async () => {
+    const { board } = await mountOzet({ perms: ADMIN.filter((key) => key !== "structure.manage"), setup: scopedBoard });
+    expect(unitRows()[1]).toEqual(["Neonatal · bağlıdır", NO_RIGHT, NO_RIGHT, NO_RIGHT, NO_RIGHT, NO_RIGHT]);
     act(() => { board.clear(); });
   });
 });
@@ -98,6 +137,8 @@ describe("the quality box says what it read", () => {
     const { board } = await mountOzet({ setup: (api) => api.alarmQuality.mockResolvedValue({ ...REPORT, truncated: true, window_from: from }) });
     expect(quality()).toHaveTextContent(
       `Serverin oxuma həddi aşıldı: yalnız ən yeni qeydlər oxundu; sayılan dövr ${ddmmhhmm(Date.parse(from))} ilə başlayır`);
+    // …and card 1, which counts from the same read, does not pass its count off as complete.
+    expect(card("Cavabsız qalan siqnal · son 7 gün")).toHaveTextContent("natamam oxunuş: yalnız ən yeni qeydlər sayıldı");
     act(() => { board.clear(); });
   });
 
@@ -115,11 +156,75 @@ describe("the quality box says what it read", () => {
     let mounted = await mountOzet({ setup: (api) => api.alarmQuality.mockRejectedValue(refusal(403, "alarm kalitesi raporunun tamamı kapsam dışı")) });
     expect(quality()).toHaveTextContent("audit.view");
     expect(card("Cavabsız qalan siqnal · son 7 gün")).toHaveTextContent("— səlahiyyət yoxdur");
+    // No period switch: another period would only be refused again.
+    expect(screen.queryByRole("button", { name: "30 gün" })).toBeNull();
     act(() => { mounted.board.clear(); });
     cleanup();
     mounted = await mountOzet({ setup: (api) => api.alarmQuality.mockRejectedValue(refusal(503, "down")) });
     expect(within(quality()).getByRole("alert")).toHaveTextContent("Siqnal keyfiyyəti oxunmadı");
     expect(card("Cavabsız qalan siqnal · son 7 gün")).toHaveTextContent("— oxunmadı");
+    expect(screen.getByRole("button", { name: "30 gün" })).toBeInTheDocument();
+    act(() => { mounted.board.clear(); });
+  });
+
+  it("reads the report again on «Yeniden dene» after a failure — a user's action, not a timer", async () => {
+    const { api, board } = await mountOzet({ setup: (a) => a.alarmQuality.mockRejectedValueOnce(refusal(503, "down")) });
+    expect(api.alarmQuality).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(within(quality()).getByRole("button", { name: "Yenidən cəhd et" })); });
+    await settle();
+    expect(api.alarmQuality).toHaveBeenCalledTimes(2);
+    expect(api.alarmQuality).toHaveBeenLastCalledWith(7);
+    expect(quality()).toHaveTextContent("Siqnal epizodu12");
+    expect(card("Cavabsız qalan siqnal · son 7 gün").querySelector("[data-card-value]").textContent).toBe("2");
+    act(() => { board.clear(); });
+  });
+
+  it("says an answer that is not a report could not be read — once, with no reason it does not have", async () => {
+    const { board } = await mountOzet({ setup: (api) => api.alarmQuality.mockResolvedValue({ episodes: "12" }) });
+    const alert = within(quality()).getByRole("alert");
+    expect(alert).toHaveTextContent("Siqnal keyfiyyəti oxunmadı.");
+    expect(alert.textContent).not.toMatch(/oxunmadı: /);
+    act(() => { board.clear(); });
+  });
+});
+
+describe("the page's own sources, each with its reason", () => {
+  it("a failed, refused or malformed /handovers/pending read: «—» and why on its card and its column", async () => {
+    const cases = [
+      [(api) => api.pendingHandovers.mockRejectedValue(refusal(503, "down")), "— oxunmadı"],
+      [(api) => api.pendingHandovers.mockRejectedValue(refusal(403, "no")), "— səlahiyyət yoxdur"],
+      [(api) => api.pendingHandovers.mockResolvedValue({ generated_at: "2026-11-11T10:00:00+00:00",
+        units: [{ unit_id: REA, unit_name: "Reanimasiya", pending: "2", oldest_outgoing_signed_at: null }] }), "— oxunmadı"],
+    ];
+    for (const [setup, said] of cases) {
+      const { board } = await mountOzet({ setup });
+      expect(card("Əks-imza gözləyən təhvil")).toHaveTextContent(said);
+      expect(unitRows().map((row) => row[4])).toEqual([said, said]);
+      act(() => { board.clear(); });
+      cleanup();
+    }
+  });
+
+  it("a monitor strip that stops answering: the strip's own reason, not the live board's", async () => {
+    const { api, board, shadow } = await mountOzet();
+    expect(card("Səssiz monitor").querySelector("[data-card-value]").textContent).toBe("1");
+    api.shadowBoard.mockRejectedValue(refusal(503, "down"));
+    // The page is the strip's one consumer: let it go and take it again, which polls at once — and fails.
+    await act(async () => { shadow.release(); shadow.acquire(); await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(card("Səssiz monitor")).toHaveTextContent("— monitor məlumatı yenilənməyib");
+    expect(unitRows().map((row) => row[5])).toEqual(["— monitor məlumatı yenilənməyib", "— monitor məlumatı yenilənməyib"]);
+    expect(document.body.textContent).not.toContain("lövhə yenilənməyib");
+    act(() => { board.clear(); });
+  });
+
+  it("while the tree is still being read the table says so plainly; a refused tree is no right", async () => {
+    let mounted = await mountOzet({ setup: (api) => api.structure.mockReturnValue(new Promise(() => {})) });
+    expect(document.querySelector("[data-units]")).toHaveTextContent("Şöbələr oxunur…");
+    expect(document.querySelector("[data-units]")).not.toHaveTextContent("yazıla bilmir");
+    act(() => { mounted.board.clear(); });
+    cleanup();
+    mounted = await mountOzet({ setup: (api) => api.structure.mockRejectedValue(refusal(403, "no")) });
+    expect(document.querySelector("[data-units]")).toHaveTextContent("Şöbə sətirləri yazıla bilmir · səlahiyyət yoxdur");
     act(() => { mounted.board.clear(); });
   });
 });
