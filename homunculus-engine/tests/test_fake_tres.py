@@ -138,6 +138,19 @@ async def test_only_the_local_id_search_exists(platform):
         assert response.status_code == 400, params
 
 
+async def test_the_search_is_a_fhir_string_search_case_insensitive_and_by_prefix(platform):
+    """Review #3: a FHIR `string` parameter matches what STARTS with the value, in any case — so the
+    search alone cannot tell `hmn-l-12` from `hmn-l-120`; the client must."""
+    fake, client = platform
+    for local_id in ("hmn-l-120", "hmn-l-12", "HMN-L-1200"):
+        await client.create("Observation", {**resource("Observation", local_id), "id": local_id})
+    response = await raw(fake, "GET", "/fhir/Observation", params={"local-system-unique-id": "hmn-l-12"})
+    hits = [local_id_of(entry["resource"]) for entry in response.json()["entry"]]
+    assert sorted(hits) == ["HMN-L-1200", "hmn-l-12", "hmn-l-120"]
+    response = await raw(fake, "GET", "/fhir/Observation", params={"local-system-unique-id": "hmn-l-121"})
+    assert response.json()["entry"] == []
+
+
 # ---------------------------------------------------------------- references (§4.2, §4.3)
 async def test_a_reference_to_a_resource_the_server_does_not_hold_is_refused(platform):
     fake, client = platform

@@ -14,7 +14,9 @@ what the ministry's server does:
 * PUT: the body's `id` must equal the URL's («Resource ID mismatch», 400); 404 for an unknown id;
 * every stored or validated resource carries `meta.profile` and the local-id extension (400);
 * a reference to a resource the server does not hold is refused («Non-existent reference», 409);
-* the only search is `?local-system-unique-id=` (any other, or none: 400);
+* the only search is `?local-system-unique-id=` (any other, or none: 400), and it is a FHIR
+  `string` search: a resource whose local id STARTS with the value, in any case, is a hit — so
+  `hmn-l-12` also finds `hmn-l-120`, and the client must pick the exact one (review #3);
 * DELETE of a resource another stored resource refers to is refused («There are other resources
   referencing this resource», 409);
 * `$validate` runs the same checks and stores nothing.
@@ -198,8 +200,9 @@ class FakeTres:
         params = dict(request.url.params)
         if set(params) != {LOCAL_ID_PARAM}:
             return _outcome(400, "Only a search by local-system-unique-id is supported")
+        wanted = params[LOCAL_ID_PARAM].lower()
         hits = [resource for resource in self.stored(resource_type)
-                if local_id_of(resource) == params[LOCAL_ID_PARAM]]
+                if (local_id_of(resource) or "").lower().startswith(wanted)]
         return httpx.Response(200, json={"resourceType": "Bundle", "type": "searchset", "total": len(hits),
                                          "entry": [{"resource": resource} for resource in hits]})
 

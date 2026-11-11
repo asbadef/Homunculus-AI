@@ -161,6 +161,41 @@ async def test_find_searches_by_the_local_id_and_answers_the_servers_id_or_none(
     await client.aclose()
 
 
+def _with_local_id(local_id: str, server_id: str) -> dict:
+    return {"resource": {**PATIENT, "id": server_id,
+                         "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}]}}
+
+
+async def test_find_answers_only_the_entry_whose_local_id_is_exactly_the_one_asked():
+    """Review #3: the search is a FHIR string search (a prefix, in any case), so the first entry
+    may be another resource's. Only an exact, case-sensitive match is an answer."""
+    script = Script(
+        httpx.Response(200, json={"resourceType": "Bundle", "entry": [
+            _with_local_id("hmn-p-00010", "7010"), _with_local_id("HMN-P-0001", "7011"),
+            {"resource": {**PATIENT, "id": "7012", "extension": []}}, {"resource": "?"}, "?",
+            _with_local_id("hmn-p-0001", "7001")]}),
+        httpx.Response(200, json={"resourceType": "Bundle", "entry": [
+            _with_local_id("hmn-p-00010", "7010"), _with_local_id("HMN-P-0001", "7011")]}))
+    client = client_on(script)
+    assert await client.find("Patient", "hmn-p-0001") == "7001"
+    assert await client.find("Patient", "hmn-p-0001") is None
+    await client.aclose()
+
+
+async def test_find_against_the_stand_in_tells_a_local_id_from_its_prefix():
+    from tests.fake_tres import FakeTres
+
+    fake = FakeTres()
+    client = TresClient(fake.account, transport=fake.transport)
+    lab = {**PATIENT, "resourceType": "Observation",
+           "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": "hmn-l-120"}]}
+    remote = await client.create("Observation", {**lab, "id": "hmn-l-120"})
+    assert await client.find("Observation", "hmn-l-12") is None          # the stand-in answered hmn-l-120
+    assert await client.find("Observation", "HMN-L-120") is None
+    assert await client.find("Observation", "hmn-l-120") == remote
+    await client.aclose()
+
+
 async def test_create_posts_the_placeholder_id_and_answers_the_servers_own():
     script = Script(httpx.Response(201, json={**PATIENT, "id": "7001"}))
     client = client_on(script)

@@ -9,7 +9,8 @@ file and the server disagree, the server is right and this file changes.
   `application/json-patch+json` and `{"healthcareProviderId": …}` answers `payload.sessionId`;
   every FHIR request carries it as a Bearer token. No expiry is published: a 401 means a new
   token, asked once, and the request once more.
-* One resource per request (§4.2, D4): `find` by the local id, then `create` or `update`.
+* One resource per request (§4.2, D4): `find` by the local id — an exact match only, the search
+  itself being a prefix — then `create` or `update`.
   `create` must carry an `id` although the server assigns its own (the caller's placeholder);
   `update` carries the server's id in the URL and in the body. `validate` stores nothing.
 * Errors (§4.5) come in three shapes; `read_error` reads all three. Every refusal is a
@@ -81,6 +82,16 @@ def is_outage(exc: TresError) -> bool:
     holds an error) is a refusal of the resource that was sent."""
     return (isinstance(exc, TresSessionError) or exc.status is None or exc.status == 429
             or exc.status >= 500)
+
+
+def local_id_of(resource: dict) -> str | None:
+    """The value of the resource's local-system-unique-id extension (§4.4), or None."""
+    extensions = resource.get("extension")
+    for extension in extensions if isinstance(extensions, list) else ():
+        if isinstance(extension, dict) and extension.get("url") == LOCAL_ID_EXTENSION:
+            value = extension.get("valueString")
+            return value if isinstance(value, str) else None
+    return None
 
 
 #: What a session id must look like to ride in a header: printable ASCII, no space.
@@ -245,14 +256,23 @@ class TresClient:
         return response
 
     async def find(self, resource_type: str, local_id: str) -> str | None:
-        """The server's id of the resource carrying this local id, or None (§4.2)."""
+        """The server's id of the resource carrying EXACTLY this local id, or None (§4.2).
+
+        The search parameter is a FHIR `string`: the server answers every resource whose local id
+        STARTS with the value, in any case — `hmn-l-12` finds `hmn-l-120` too (review #3). So the
+        answer is the first entry whose own local-id extension equals the one asked, character
+        for character; another resource's id is never taken for this one's."""
         response = await self._fhir("GET", resource_type, params={LOCAL_ID_PARAM: local_id})
         _refuse_unless_ok(response)
         entries = _answer(response).get("entry")
-        first = entries[0] if isinstance(entries, list) and entries else None
-        resource = first.get("resource") if isinstance(first, dict) else None
-        found = resource.get("id") if isinstance(resource, dict) else None
-        return found if isinstance(found, str) and found else None
+        for entry in entries if isinstance(entries, list) else ():
+            resource = entry.get("resource") if isinstance(entry, dict) else None
+            if not isinstance(resource, dict) or local_id_of(resource) != local_id:
+                continue
+            found = resource.get("id")
+            if isinstance(found, str) and found:
+                return found
+        return None
 
     async def create(self, resource_type: str, resource: dict) -> str:
         """POST. The body must carry an `id` (the caller's placeholder) although the server
