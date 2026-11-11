@@ -5,8 +5,8 @@
 // counters and the fluid totals are the engine's (`api/pharmacy.py`). Nothing here recomputes, re-sorts or judges
 // them: this module picks the text KEY for the state the server sent and hands back the instants and numbers the
 // screen formats. The two things the screen does compute are the two the server cannot send — an age, and the time
-// left to or passed since `deadline` — from the server's ISO stamps against the board's skew-corrected clock, and
-// only while the answer is fresh (spec D17, §5.1).
+// left to or passed since `deadline` — from the server's ISO stamps against the page's skew-corrected clock
+// (`clockSkewOf`), and only while the answer is fresh (spec D17, §5.1).
 //
 // A LIST THAT IS NOT FRESH NEVER READS AS TODAY'S (spec D18, §6). `isFresh` is the one rule; with `fresh` false the
 // `running` and `missed` cells stop counting and read in the past tense with the one stamp that stays true (the
@@ -40,6 +40,15 @@ export function isFresh(answer, error, nowMs) {
   return at !== null && typeof nowMs === "number" && Number.isFinite(nowMs) && nowMs - at <= PHARMACY_FRESH_MS;
 }
 
+/** The skew the page's clock is corrected by (server minus browser, ms). The board's whenever the board store has
+ *  measured one — a `board.view` holder's clock is `useBoardNow`'s, unchanged. The board store only starts for a
+ *  `board.view` holder, so for a session that holds `pharmacy.view` alone it is the skew of this page's own answers
+ *  (`usePharmacy`'s `skewMs`). 0 when neither is known: no answer has landed yet, and nothing is aged before one. */
+export function clockSkewOf(boardSkewMs, ownSkewMs) {
+  if (Number.isFinite(boardSkewMs)) return boardSkewMs;
+  return Number.isFinite(ownSkewMs) ? ownSkewMs : 0;
+}
+
 /** §5.1: a duration as its text key and parameters. `n = floor(seconds / 60)`, as the engine's alarm text counts
  *  (`int(seconds // 60)`): 0 is «<1 dk», under 120 «{n} dk», from 120 on «{h} sa {m} dk». A negative duration is 0;
  *  one that is no number has no text (null). */
@@ -59,7 +68,11 @@ export function durationParts(seconds) {
  *    two polls reads «<1 dk kaldı» until the next answer says `missed`.
  *  - `timeMs` (number | null) fills `{time}`: the administration's charted time (`met`, `late`, `given`), or the
  *    deadline in the two past-tense twins of a list that is not fresh.
- *  - `second` ({key, timeMs} | null): «tanınma {saat} · uygulama kaydı yok», under `running` and `missed`.
+ *  - `second` ({key, timeMs} | null), under `running` and `missed`, fresh or not: «tanınma {saat} · uygulama kaydı
+ *    yok» when nothing was charted (`given` null). With `given` strictly false something WAS charted — a 0, or a
+ *    dose stamped before recognition, which the engine's rule does not count — so «no record» would be untrue and
+ *    the line says what is missing: «tanınma {saat} · tanınmadan sonra sayılan uygulama kaydı yok». The state
+ *    word, the tone and the duration do not follow `given`, and neither line says the drug was not given (D8).
  *  A state this build does not know is printed as the server's own word (`eczane.ab.unknown`), never as «Kayıt yok». */
 export function antibioticCell(row, nowMs, fresh) {
   const ab = row?.antibiotic ?? {};
@@ -67,7 +80,7 @@ export function antibioticCell(row, nowMs, fresh) {
   const plain = (key, timeMs = null) => ({ state, key, tone: null, duration: null, timeMs, second: null });
   if (state === "running" || state === "missed") {
     const deadline = msOf(ab.deadline);
-    const second = { key: "eczane.ab.noAdmin", timeMs: msOf(ab.recognized_at) };
+    const second = { key: ab.given === false ? "eczane.ab.noCountedAdmin" : "eczane.ab.noAdmin", timeMs: msOf(ab.recognized_at) };
     if (!fresh) {
       return { state, key: state === "running" ? "eczane.ab.staleRunning" : "eczane.ab.staleMissed",
         tone: TONES[state], duration: null, timeMs: deadline, second };

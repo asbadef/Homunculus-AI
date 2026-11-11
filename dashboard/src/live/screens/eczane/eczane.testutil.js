@@ -22,9 +22,12 @@ export const MISSED = row("S-003", {
   creatinine: { value: 2.1, at: at(260) },
   fluid: { in_ml: 1250, out_ml: 900, balance_ml: 350, entries: 7, last_at: at(30) },
 });
+// Its deadline is half a minute off the whole minute (NOW + 20:30), so «20 dk kaldı» holds whether the screen's
+// clock stands on NOW or has moved a few milliseconds past it before the first render. `given: false`: something
+// was charted that the engine's rule does not count (a 0, or a dose stamped before recognition).
 export const RUNNING = row("S-004", {
   bed_label: "YBU 1-4", bed_id: "b4", display_name: "Örnek Hasta Dört",
-  antibiotic: { state: "running", given: false, given_at: null, recognized_at: at(40), deadline: at(-20), remaining_sec: 1200 },
+  antibiotic: { state: "running", given: false, given_at: null, recognized_at: at(39.5), deadline: at(-20.5), remaining_sec: 1230 },
   fluid: { in_ml: 200, out_ml: 650.5, balance_ml: -450.5, entries: 3, last_at: at(90) },
 });
 export const MET = row("S-001", {

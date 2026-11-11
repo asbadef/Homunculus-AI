@@ -8,7 +8,8 @@
 //
 // ITS SOURCE IS ITS OWN READ, not the board store: no `BoardStrip` is drawn (the board's stream is not what this
 // page shows), and its `ScopeNote` reads the answer's own `scope` / `scope_note` (spec §5). The only thing it takes
-// from the board is the skew-corrected clock (`useBoardNow`).
+// from the board is the clock's skew, when the board has one; a session without `board.view` has no board store
+// behind it, and its clock is corrected by the skew of the page's own answers (`clockSkewOf`, usePharmacy).
 //
 // A LIST THAT IS NOT FRESH NEVER READS AS TODAY'S (spec D18, §6): a failed read keeps the last answer under a crit
 // alert with the time of that answer, the durations stop counting, and nothing is called empty; with no answer at
@@ -21,11 +22,13 @@ import { dayStamp } from "../../i18n/dates.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, FOCUS_RING, Note, StatusPill, Table } from "../../ui/index.js";
-import { ScopeNote, nameOf, useBoardNow } from "../common/BoardState.jsx";
+import { useBoard } from "../../data/BoardProvider.jsx";
+import { ScopeNote, nameOf } from "../common/BoardState.jsx";
+import { useNow } from "../common/useNow.js";
 import { bedNameOf } from "../beds/order.js";
 import { ageText } from "../patient/ageText.js";
 import { mlText, signedMlText } from "../patient/fluids/fluidCodes.js";
-import { antibioticCell, creatinineCell, fluidCell, isFresh, msOf, pressorLines } from "./pharmacyModel.js";
+import { antibioticCell, clockSkewOf, creatinineCell, fluidCell, isFresh, msOf, pressorLines } from "./pharmacyModel.js";
 import { usePharmacy } from "./usePharmacy.js";
 
 /** The one window and source the page's source sentence states (spec D9). An answer that names another window or
@@ -70,7 +73,10 @@ function Counters({ counts, asOf }) {
   );
 }
 
-function Row({ row, nowMs, fresh, canOpen }) {
+/** `fluidCut`: the day's fluid read had to cut (`fluid_truncated`). The cut loses the day's OLDEST rows, so a balance
+ *  may be understated and a `fluid: null` may be a patient WITH entries: neither a number nor «Bugün kayıt yok» may be
+ *  printed as if it were known — every row's fluid cell is a dash, and the note above the table says why. */
+function Row({ row, nowMs, fresh, canOpen, fluidCut }) {
   const { t, lang } = useI18n();
   const stamp = (ms) => (ms === null ? "—" : dayStamp(ms, nowMs));
   const bed = bedNameOf({ bedLabel: row.bed_label, patient_id: row.patient_id });
@@ -121,7 +127,7 @@ function Row({ row, nowMs, fresh, canOpen }) {
           : <span className="font-text text-mute">{t("eczane.noRecord")}</span>}
       </td>
       <td data-cell="fluid">
-        {fluid ? (
+        {fluidCut ? <span className="text-mute">{"—"}</span> : fluid ? (
           <>
             <span className="block font-data font-bold">{t("eczane.fluid.balance", { value: signedMlText(lang, fluid.balance) })}</span>
             <span className="block text-12 text-mute">
@@ -137,11 +143,17 @@ function Row({ row, nowMs, fresh, canOpen }) {
 export function EczaneScreen() {
   const { t } = useI18n();
   const { user, store } = useSession();
-  const nowMs = useBoardNow(10_000);
-  const { data, error } = usePharmacy(store);
+  const { data, error, skewMs } = usePharmacy(store);
+  // The page's clock is the server's for every session: the board's skew for a `board.view` holder (`useBoardNow`'s
+  // own rule, unchanged), else the skew of this page's own answers — the board store never starts for a session
+  // that holds `pharmacy.view` alone, and a raw workstation clock would misjudge both the minutes and the freshness.
+  const { clockSkewMs } = useBoard();
+  const nowMs = useNow(10_000) + clockSkewOf(clockSkewMs, skewMs);
   const canOpen = user?.perms?.includes("board.view") ?? false;
   const fresh = isFresh(data, error, nowMs);
   const rows = data?.rows ?? [];
+  const fluidCut = Boolean(data?.fluid_truncated);
+  const fluidDayStart = msOf(data?.fluid_day?.start);
   const answeredAt = msOf(data?.now);
   const answered = answeredAt === null ? "—" : dayStamp(answeredAt, nowMs);
   const reason = error ? (error.malformed ? t("eczane.malformed") : readErrorText(t, error)) : null;
@@ -162,9 +174,10 @@ export function EczaneScreen() {
         </Alert>
       ) : null}
       {data && (fresh || rows.length > 0) ? <ScopeNote scope={data.scope} scopeNote={data.scope_note} /> : null}
-      {data ? <Counters counts={data.counts} asOf={fresh ? null : t("eczane.asOf", { time: answered })} /> : null}
+      {/* §6: a list that is not fresh with no rows says only that it is not fresh — four «0» tiles would read as a quiet ward. */}
+      {data && (fresh || rows.length > 0) ? <Counters counts={data.counts} asOf={fresh ? null : t("eczane.asOf", { time: answered })} /> : null}
       <Note tone="info" icon="pill">{t("eczane.note")}</Note>
-      {data?.fluid_truncated ? <Note tone="warn" icon="alert">{t("eczane.truncated")}</Note> : null}
+      {fluidCut ? <Note tone="warn" icon="alert">{t("eczane.truncated")}</Note> : null}
       {data && rows.length > 0 ? (
         <Table caption={t("eczane.caption", { n: countText(data.counts?.patients) })}>
           <thead>
@@ -173,11 +186,19 @@ export function EczaneScreen() {
               <th>{t("eczane.col.pressors")}</th>
               <th>{t("eczane.col.antibiotic")}</th>
               <th>{t("eczane.col.creatinine")}</th>
-              <th>{t("eczane.col.fluid")}</th>
+              <th>
+                {t("eczane.col.fluid")}
+                {/* «Today» is the ward's fluid day: it began at the first shift's start, and the heading says when. */}
+                {fluidDayStart !== null ? (
+                  <span data-fluid-day className="block font-normal normal-case tracking-normal">
+                    {t("eczane.col.fluidDay", { time: dayStamp(fluidDayStart, nowMs) })}
+                  </span>
+                ) : null}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => <Row key={row.patient_id} row={row} nowMs={nowMs} fresh={fresh} canOpen={canOpen} />)}
+            {rows.map((row) => <Row key={row.patient_id} row={row} nowMs={nowMs} fresh={fresh} canOpen={canOpen} fluidCut={fluidCut} />)}
           </tbody>
         </Table>
       ) : null}

@@ -3,7 +3,7 @@
 // the fluid balance. The model reads the server's state and never recomputes it.
 import { describe, it, expect } from "vitest";
 import {
-  PHARMACY_FRESH_MS, antibioticCell, creatinineCell, durationParts, fluidCell, isFresh, msOf, pressorLines,
+  PHARMACY_FRESH_MS, antibioticCell, clockSkewOf, creatinineCell, durationParts, fluidCell, isFresh, msOf, pressorLines,
 } from "./pharmacyModel.js";
 import { GIVEN, LATE, MET, MIN, MISSED, NOW, RUNNING, UNMEASURED, answer, at, row } from "./eczane.testutil.js";
 
@@ -26,6 +26,23 @@ describe("whether the list is fresh", () => {
     expect(isFresh(answer({ now: "dün" }), null, NOW)).toBe(false);
     expect(isFresh(answer(), null, Number.NaN)).toBe(false);
     expect(isFresh(answer(), null, undefined)).toBe(false);
+  });
+});
+
+// Review F1: the board store only starts for a `board.view` holder, so a session that holds `pharmacy.view` alone has
+// no board skew. Its clock is then corrected by the skew measured from the page's own answers (usePharmacy).
+describe("the skew the page's clock is corrected by", () => {
+  it("is the board's whenever the board store has measured one — a board holder's clock is unchanged", () => {
+    expect(clockSkewOf(180_000, 60_000)).toBe(180_000);
+    expect(clockSkewOf(-45_000, null)).toBe(-45_000);
+    expect(clockSkewOf(0, 300_000)).toBe(0);                    // «no skew» is a measurement, not an absence
+  });
+
+  it("is the page's own when the board has none, and 0 when neither is known", () => {
+    expect(clockSkewOf(null, 300_000)).toBe(300_000);
+    expect(clockSkewOf(undefined, -120_000)).toBe(-120_000);
+    expect(clockSkewOf(Number.NaN, 0)).toBe(0);
+    for (const none of [null, undefined, Number.NaN, Infinity, "300000"]) expect(clockSkewOf(null, none), String(none)).toBe(0);
   });
 });
 
@@ -54,11 +71,30 @@ describe("the antibiotic cell", () => {
       timeMs: null, second: { key: "eczane.ab.noAdmin", timeMs: NOW - 85 * MIN } });
   });
 
-  it("a running window is high and counts to the deadline — a `false` record is worded as a `null` one", () => {
+  it("a running window is high and counts to the deadline — a `false` record keeps the state word and the tone of a `null` one", () => {
     expect(RUNNING.antibiotic.given).toBe(false);
     expect(antibioticCell(RUNNING, NOW, true)).toEqual({
       state: "running", key: "eczane.ab.running", tone: "high", duration: { key: "eczane.dur.min", params: { n: 20 } },
-      timeMs: null, second: { key: "eczane.ab.noAdmin", timeMs: NOW - 40 * MIN } });
+      timeMs: null, second: { key: "eczane.ab.noCountedAdmin", timeMs: NOW - 39.5 * MIN } });
+  });
+
+  // Review F5: with `given` false something WAS charted (a 0, or a dose stamped before recognition, which the engine's
+  // rule does not count), so «uygulama kaydı yok» alone would be untrue. The second line then says what is missing:
+  // an administration counted after recognition. Nothing else changes, and nothing says the drug was not given.
+  it("the second line says «no counted administration after recognition» only for a record that is strictly false", () => {
+    const withGiven = (base, given) => row("S-9", { antibiotic: { ...base.antibiotic, given } });
+    for (const base of [RUNNING, MISSED]) {
+      for (const fresh of [true, false]) {
+        const charted = antibioticCell(withGiven(base, false), NOW, fresh);
+        expect(charted.second, `${base.antibiotic.state} ${fresh}`).toEqual({ key: "eczane.ab.noCountedAdmin", timeMs: msOf(base.antibiotic.recognized_at) });
+        for (const given of [null, undefined, true, 0, "false"]) {
+          const cell = antibioticCell(withGiven(base, given), NOW, fresh);
+          expect(cell.second, `${base.antibiotic.state} ${fresh} ${String(given)}`).toEqual({ key: "eczane.ab.noAdmin", timeMs: msOf(base.antibiotic.recognized_at) });
+          // the state word, the tone, the duration and the stamp do not follow `given`
+          expect({ ...cell, second: null }, `${base.antibiotic.state} ${fresh} ${String(given)}`).toEqual({ ...charted, second: null });
+        }
+      }
+    }
   });
 
   it("the durations move with the screen's clock between two polls", () => {
@@ -103,8 +139,8 @@ describe("the antibiotic cell", () => {
       state: "missed", key: "eczane.ab.staleMissed", tone: "crit", duration: null, timeMs: NOW - 25 * MIN,
       second: { key: "eczane.ab.noAdmin", timeMs: NOW - 85 * MIN } });
     expect(antibioticCell(RUNNING, NOW + 40 * MIN, false)).toEqual({
-      state: "running", key: "eczane.ab.staleRunning", tone: "high", duration: null, timeMs: NOW + 20 * MIN,
-      second: { key: "eczane.ab.noAdmin", timeMs: NOW - 40 * MIN } });
+      state: "running", key: "eczane.ab.staleRunning", tone: "high", duration: null, timeMs: NOW + 20.5 * MIN,
+      second: { key: "eczane.ab.noCountedAdmin", timeMs: NOW - 39.5 * MIN } });
   });
 
   it("the records with their own times stand as they are when the list is not fresh", () => {

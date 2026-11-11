@@ -10,8 +10,8 @@ const eczane = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => ke
 
 describe("the pharmacy page's words (eczane)", () => {
   // The sweeps below read every key of the namespace: on an empty namespace they would pass having read nothing.
-  it("has its 43 keys in every language", () => {
-    for (const lang of LANG_CODES) expect(eczane(lang), lang).toHaveLength(43);
+  it("has its 45 keys in every language", () => {
+    for (const lang of LANG_CODES) expect(eczane(lang), lang).toHaveLength(45);
   });
 
   it("says the spec's Turkish, word for word", () => {
@@ -21,7 +21,8 @@ describe("the pharmacy page's words (eczane)", () => {
     expect(tr["eczane.note"]).toBe("“Kayıt yok” ve “uygulama kaydı yok”, bu sisteme antibiyotik uygulaması kaydedilmediğini söyler; verilmediği anlamına gelmez.");
     expect(tr["eczane.source"]).toBe("Antibiyotik süresi: motorun sepsis ya da septik şok kuralının ilk tetiklendiği andan itibaren 1 saat — Surviving Sepsis Campaign 2026 (güçlü öneri, çok düşük kesinlikte kanıt).");
     expect(tr["eczane.footer"]).toBe("Bu sayfada yok: order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu, antibiyotik tedavi günü, doz önerisi. Homunculus tanı koymaz, order vermez.");
-    expect(tr["eczane.truncated"]).toBe("Sıvı toplamları eksik olabilir: günün kayıtları okuma sınırını aştı.");
+    expect(tr["eczane.truncated"]).toBe("Sıvı toplamları gösterilemiyor: günün kayıtları okuma sınırını aştı.");
+    expect(fill(tr["eczane.col.fluidDay"], { time: "08:00" })).toBe("gün başlangıcı 08:00");
     expect(tr["eczane.empty"]).toBe("Görünümünüzde yatan hasta yok.");
     expect(fill(tr["eczane.stale"], { time: "09:30" })).toBe("Eczane listesi güncel değil · son yanıt 09:30");
     expect(fill(tr["eczane.asOf"], { time: "09:30" })).toBe("son yanıt 09:30 itibarıyla");
@@ -45,8 +46,38 @@ describe("the pharmacy page's words (eczane)", () => {
     expect(fill(tr["eczane.ab.given"], { time: "08:40" })).toBe("Verildi · 08:40");
     expect(tr["eczane.noRecord"]).toBe("Kayıt yok");
     expect(fill(tr["eczane.ab.noAdmin"], { time: "08:05" })).toBe("tanınma 08:05 · uygulama kaydı yok");
+    expect(fill(tr["eczane.ab.noCountedAdmin"], { time: "08:05" })).toBe("tanınma 08:05 · tanınmadan sonra sayılan uygulama kaydı yok");
     expect(fill(tr["eczane.ab.staleRunning"], { time: "09:05" })).toBe("Son yanıtta süre işliyordu · bitiş 09:05");
     expect(fill(tr["eczane.ab.staleMissed"], { time: "09:05" })).toBe("Son yanıtta süre aşılmıştı · bitiş 09:05");
+  });
+
+  // Review F2, F3, F5: the three texts the review reworded or added, in every language.
+  it("says that a cut read's totals cannot be shown, and when the fluid day began", () => {
+    const CANNOT = { tr: "gösterilemiyor", az: "göstərilə bilmir", ru: "не могут быть показаны", en: "cannot be shown" };
+    const DAY = { tr: "gün başlangıcı 08:00", az: "günün başlanğıcı 08:00", ru: "начало суток 08:00", en: "day starts 08:00" };
+    for (const lang of LANG_CODES) {
+      expect(DICTIONARIES[lang]["eczane.truncated"], lang).toContain(CANNOT[lang]);
+      expect(DICTIONARIES[lang]["eczane.truncated"], lang).not.toMatch(/eksik olabilir|natamam ola bilər|могут быть неполными|may be incomplete/);
+      expect(fill(DICTIONARIES[lang]["eczane.col.fluidDay"], { time: "08:00" }), lang).toBe(DAY[lang]);
+    }
+  });
+
+  // F5: with a record that is `false` something WAS charted, so the second line says what is missing — an
+  // administration counted after recognition. It keeps the plain line's own words, so the note that says what
+  // «uygulama kaydı yok» means (D8) covers it too; and it never says the drug was not given (the sweep below).
+  it("qualifies the second line for a charted record: «after recognition, counted», around the plain line's own words", () => {
+    const QUALIFIED = { tr: "tanınmadan sonra sayılan", az: "aşkarlanmadan sonra sayılan", ru: "учитываемой после распознавания",
+      en: "that counts after recognition" };
+    for (const lang of LANG_CODES) {
+      const plain = DICTIONARIES[lang]["eczane.ab.noAdmin"];
+      const counted = DICTIONARIES[lang]["eczane.ab.noCountedAdmin"];
+      const [head, words] = plain.split(" · ");
+      expect(head, lang).toContain("{time}");
+      expect(counted.startsWith(`${head} · `), `${lang}: ${counted}`).toBe(true);
+      expect(counted, lang).toContain(words);
+      expect(counted, lang).toContain(QUALIFIED[lang]);
+      expect(counted, lang).not.toBe(plain);
+    }
   });
 
   it("writes a duration and the two numbers with their times as the spec does", () => {

@@ -2,7 +2,9 @@
 // caller's scope in one table: vasopressors, the antibiotic state, creatinine, today's fluid balance. Read-only.
 //
 // THE REGISTER IS THE POINT. The page never says «verilmedi»: `noRecord` and `ab.noAdmin` say that nothing was
-// recorded in this system, and `note` says what those words mean, on the page, in every state (D8). It suggests no
+// recorded in this system — `ab.noCountedAdmin`, for a record that was charted but that the engine's rule does not
+// count (a 0, or a dose stamped before recognition), that no administration COUNTED AFTER RECOGNITION was; it keeps
+// `ab.noAdmin`'s own words — and `note` says what those words mean, on the page, in every state (D8). It suggests no
 // dose and gives no order (`intro`, `footer`). The one sourced number is the engine's 1-hour antibiotic window, and
 // `source` names its source with both halves — a strong recommendation on very low certainty evidence (D9).
 // Creatinine and the fluid balance are a number and its time: no threshold, no target, no judgement.
@@ -34,7 +36,7 @@ export default {
     source: "Antibiyotik süresi: motorun sepsis ya da septik şok kuralının ilk tetiklendiği andan itibaren 1 saat — Surviving Sepsis Campaign 2026 (güçlü öneri, çok düşük kesinlikte kanıt).",
     sourceOther: "Antibiyotik süresi: motorun sepsis ya da septik şok kuralının ilk tetiklendiği andan itibaren {minutes} dk — kaynak: {source}.",
     footer: "Bu sayfada yok: order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu, antibiyotik tedavi günü, doz önerisi. Homunculus tanı koymaz, order vermez.",
-    truncated: "Sıvı toplamları eksik olabilir: günün kayıtları okuma sınırını aştı.",
+    truncated: "Sıvı toplamları gösterilemiyor: günün kayıtları okuma sınırını aştı.",
     empty: "Görünümünüzde yatan hasta yok.",
     caption: "Eczane listesi: {n} hasta",
     col: {
@@ -43,6 +45,7 @@ export default {
       antibiotic: "Antibiyotik",
       creatinine: "Kreatinin",
       fluid: "Bugünkü sıvı dengesi",
+      fluidDay: "gün başlangıcı {time}",
     },
     noRecord: "Kayıt yok",
     ab: {
@@ -52,6 +55,7 @@ export default {
       late: "Geç verildi · {time}",
       given: "Verildi · {time}",
       noAdmin: "tanınma {time} · uygulama kaydı yok",
+      noCountedAdmin: "tanınma {time} · tanınmadan sonra sayılan uygulama kaydı yok",
       staleRunning: "Son yanıtta süre işliyordu · bitiş {time}",
       staleMissed: "Son yanıtta süre aşılmıştı · bitiş {time}",
       unknown: "Bu sürümün tanımadığı durum: {state}",
@@ -84,7 +88,7 @@ export default {
     source: "Antibiotik müddəti: mühərrikin sepsis və ya septik şok qaydasının ilk dəfə işə düşdüyü andan etibarən 1 saat — Surviving Sepsis Campaign 2026 (güclü tövsiyə, çox aşağı əminlikli sübut).",
     sourceOther: "Antibiotik müddəti: mühərrikin sepsis və ya septik şok qaydasının ilk dəfə işə düşdüyü andan etibarən {minutes} dəq — mənbə: {source}.",
     footer: "Bu səhifədə yoxdur: təyinatlar, allergiyalar, kultura nəticələri, dərman qarşılıqlı təsiri sorğusu, antibiotik müalicə günü, doza tövsiyəsi. Homunculus diaqnoz qoymur, təyinat vermir.",
-    truncated: "Maye cəmləri natamam ola bilər: günün qeydləri oxuma həddini aşıb.",
+    truncated: "Maye cəmləri göstərilə bilmir: günün qeydləri oxuma həddini aşıb.",
     empty: "Görünüşünüzdə yatan xəstə yoxdur.",
     caption: "Aptek siyahısı: {n} xəstə",
     col: {
@@ -93,6 +97,7 @@ export default {
       antibiotic: "Antibiotik",
       creatinine: "Kreatinin",
       fluid: "Bugünkü maye balansı",
+      fluidDay: "günün başlanğıcı {time}",
     },
     noRecord: "Qeyd yoxdur",
     ab: {
@@ -102,6 +107,7 @@ export default {
       late: "Gec verilib · {time}",
       given: "Verilib · {time}",
       noAdmin: "aşkarlanma {time} · tətbiq qeydi yoxdur",
+      noCountedAdmin: "aşkarlanma {time} · aşkarlanmadan sonra sayılan tətbiq qeydi yoxdur",
       staleRunning: "Son cavabda müddət gedirdi · bitmə {time}",
       staleMissed: "Son cavabda müddət keçmişdi · bitmə {time}",
       unknown: "Bu versiyanın tanımadığı vəziyyət: {state}",
@@ -134,7 +140,7 @@ export default {
     source: "Срок для антибиотика: 1 час с момента первого срабатывания правила сепсиса или септического шока в Системе — Surviving Sepsis Campaign 2026 (сильная рекомендация, очень низкая достоверность доказательств).",
     sourceOther: "Срок для антибиотика: {minutes} мин с момента первого срабатывания правила сепсиса или септического шока в Системе — источник: {source}.",
     footer: "На этой странице нет: назначений, аллергий, результатов посевов, проверки лекарственных взаимодействий, дня антибактериальной терапии, рекомендаций по дозе. Homunculus не ставит диагноз и не делает назначений.",
-    truncated: "Суммы жидкости могут быть неполными: записей за сутки больше предела чтения.",
+    truncated: "Суммы жидкости не могут быть показаны: записей за сутки больше предела чтения.",
     empty: "В вашем представлении нет пациентов.",
     caption: "Список аптеки: пациентов — {n}",
     col: {
@@ -143,6 +149,7 @@ export default {
       antibiotic: "Антибиотик",
       creatinine: "Креатинин",
       fluid: "Баланс жидкости за сегодня",
+      fluidDay: "начало суток {time}",
     },
     noRecord: "Нет записи",
     ab: {
@@ -152,6 +159,7 @@ export default {
       late: "Введён с опозданием · {time}",
       given: "Введён · {time}",
       noAdmin: "распознан {time} · нет записи о введении",
+      noCountedAdmin: "распознан {time} · нет записи о введении, учитываемой после распознавания",
       staleRunning: "В последнем ответе срок шёл · окончание {time}",
       staleMissed: "В последнем ответе срок истёк · окончание {time}",
       unknown: "Состояние, не известное этой версии: {state}",
@@ -184,7 +192,7 @@ export default {
     source: "Antibiotic window: 1 hour from the moment the engine's sepsis or septic shock rule first fired — Surviving Sepsis Campaign 2026 (strong recommendation, very low certainty of evidence).",
     sourceOther: "Antibiotic window: {minutes} min from the moment the engine's sepsis or septic shock rule first fired — source: {source}.",
     footer: "Not on this page: orders, allergies, culture results, the drug-interaction lookup, the day of antibiotic treatment, dose advice. Homunculus does not diagnose and gives no order.",
-    truncated: "The fluid totals may be incomplete: the day's entries exceeded the read limit.",
+    truncated: "The fluid totals cannot be shown: the day's entries exceeded the read limit.",
     empty: "No admitted patient in your view.",
     caption: "Pharmacy list: {n} patients",
     col: {
@@ -193,6 +201,7 @@ export default {
       antibiotic: "Antibiotic",
       creatinine: "Creatinine",
       fluid: "Today's fluid balance",
+      fluidDay: "day starts {time}",
     },
     noRecord: "No record",
     ab: {
@@ -202,6 +211,7 @@ export default {
       late: "Given late · {time}",
       given: "Given · {time}",
       noAdmin: "recognised {time} · no administration recorded",
+      noCountedAdmin: "recognised {time} · no administration recorded that counts after recognition",
       staleRunning: "In the last answer the window was running · ends {time}",
       staleMissed: "In the last answer the window had passed · ended {time}",
       unknown: "A state this version does not know: {state}",
