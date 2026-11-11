@@ -29,6 +29,7 @@ import pytest_asyncio
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from homunculus.admission import transfer as transfer_module
 from homunculus.admission.boardlink import BoardLink
 from homunculus.admission.models import Admission, AdmissionState, CareTeamMember, CareTeamRole
 from homunculus.api.app import ScopedBoardView, sse_board_frames
@@ -574,7 +575,7 @@ async def test_a_card_that_did_not_move_is_moved_by_the_same_request_writing_not
     """T9, X1: the same request on the TRANSFERRED source whose arriving row is open on that bed
     moves the card again and answers 200. Nothing is written in the database."""
     w, client, app = ward
-    one, two = w.beds["1"].id, w.beds["2"].id
+    one, two, rea = w.beds["1"].id, w.beds["2"].id, w.units["rea"].id
     source = await signed(w, client)
     key = source["board_key"]
     real, refusals = BoardLink.move, []
@@ -590,6 +591,7 @@ async def test_a_card_that_did_not_move_is_moved_by_the_same_request_writing_not
     assert (first.status_code, first.json()["board"]) == (201, "failed")
     assert await _cards_on(client, one) == [key]                     # T9: never taken off
     after_first = await _the_ward(db_session)
+    queue = app.state.broadcaster.subscribe(SLUG)
     again = await transfer(w, client, source)
     assert (again.status_code, again.json()["board"], again.json()["id"]) == (
         200, "ok", first.json()["id"])
@@ -598,6 +600,48 @@ async def test_a_card_that_did_not_move_is_moved_by_the_same_request_writing_not
     (retry,) = audited(app, "admission.transfer_board_retry")
     assert (retry.patient_id, retry.payload["via"], retry.payload["board"]) == (
         key, "transfer", "ok")
+    # Task 4 review: the retry tells the OLD place — the patient's bed and its unit — then the card.
+    removal, card = drain(queue)
+    assert removal == {"patient_id": key, "removed": True,
+                       "identity": {"bed_id": str(one), "unit_id": str(rea)}}
+    assert (card["patient_id"], card["identity"]["bed_id"]) == (key, str(two))
+
+
+async def test_a_resend_after_a_later_move_is_refused_and_puts_no_second_card(ward, db_session):
+    """T9, Task 4 review: the first request sent again once the patient has moved on is not a
+    retry. Her arriving row is no longer open, so the resend is the 409 any move of a TRANSFERRED
+    admission is — and no phantom card (her H-number, her protocol gone from the source) appears
+    on the bed she left."""
+    w, client, app = ward
+    two, ten = w.beds["2"].id, w.beds["10"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    arriving = await moved(w, client, source, "2")
+    await moved(w, client, arriving, "10")
+    await _refused_writing_nothing(db_session, app, lambda: transfer(w, client, source, "2"),
+                                   409, "invalid_transition")
+    assert await _cards_on(client, ten) == [key] and await _cards_on(client, two) == []
+
+
+async def test_a_resend_after_the_arriving_stay_was_discharged_is_refused_and_writes_nothing(
+        ward, db_session):
+    """T9, Task 4 review: the same, when the arriving row has been DISCHARGED since. The card is
+    off the board for good (a tombstone), and the resend does not try to put it back."""
+    w, client, app = ward
+    one, two = w.beds["1"].id, w.beds["2"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    arriving = await moved(w, client, source, "2")
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/initiate",
+                          json={"disposition": "HOME"}, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/confirm",
+                          headers=w.auth["charge"])
+    assert (r.status_code, r.json()["board"]) == (200, "ok")
+    assert app.state.board_link.is_discharged(SLUG, key)
+    await _refused_writing_nothing(db_session, app, lambda: transfer(w, client, source, "2"),
+                                   409, "invalid_transition")
+    assert await _cards_on(client, two) == [] and await _cards_on(client, one) == []
 
 
 async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never_takes_it_off(
@@ -605,7 +649,7 @@ async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never
     """T9, C-1: the old bed is not freed under a card left on it. Its release moves the card to
     the patient's bed now, or is refused `board_not_cleared` with her key while it cannot."""
     w, client, app = ward
-    one, two = w.beds["1"].id, w.beds["2"].id
+    one, two, rea = w.beds["1"].id, w.beds["2"].id, w.units["rea"].id
     source = await signed(w, client)
     key = source["board_key"]
     release = f"/tenant/beds/{one}/release"
@@ -621,6 +665,7 @@ async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never
         state = (await db_session.execute(text("SELECT state::text FROM beds WHERE id = :id"),
                                           {"id": one})).scalar_one()
         assert state == "HOUSEKEEPING"
+    queue = app.state.broadcaster.subscribe(SLUG)
     r = await client.post(release, headers=w.auth["nurse"])
     assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
     assert await _cards_on(client, two) == [key] and await _cards_on(client, one) == []
@@ -628,16 +673,32 @@ async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never
     assert [(row.payload["via"], row.payload["board"])
             for row in audited(app, "admission.transfer_board_retry")] == [
         ("bed.release", "failed"), ("bed.release", "ok")]
+    # Task 4 review: the release tells the OLD place — this bed and its unit — then the card.
+    removal, card = drain(queue)
+    assert removal == {"patient_id": key, "removed": True,
+                       "identity": {"bed_id": str(one), "unit_id": str(rea)}}
+    assert (card["patient_id"], card["identity"]["bed_id"]) == (key, str(two))
 
 
-async def test_a_release_passes_over_a_patient_whose_card_moved(ward):
+async def test_a_release_passes_over_a_patient_whose_card_moved_and_reads_no_name(
+        ward, monkeypatch):
+    """§5.5; Task 4 review: a card that is already elsewhere is passed over on its key alone —
+    `card_of`, which decrypts the name, birth date and sex, is read for a card to be moved."""
     w, client, app = ward
     one = w.beds["1"].id
     source = await signed(w, client)
     await moved(w, client, source)
+    reads = []
+    real = transfer_module.card_of
+
+    async def counted(db, admission_id):
+        reads.append(admission_id)
+        return await real(db, admission_id)
+
+    monkeypatch.setattr(transfer_module, "card_of", counted)
     r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
     assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
-    assert audited(app, "admission.transfer_board_retry") == []
+    assert audited(app, "admission.transfer_board_retry") == [] and reads == []
 
 
 async def test_a_release_takes_off_the_card_of_a_patient_moved_and_discharged_since(

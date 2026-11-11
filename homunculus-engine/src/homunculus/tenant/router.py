@@ -615,8 +615,17 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
     (`transfer.move_card`), audited `admission.transfer_board_retry` with `via`; when it still
     fails, the bed is refused `board_not_cleared` with her number. It is never taken off: she is
     still admitted (A-37, O8). A card already elsewhere, or a tombstone, is passed over. One
-    exception (X4): when her stay has ended since and her discharge's board step failed too, the
-    card is a discharged patient's, and is taken off as above."""
+    exception (X4): when her stay has ended since — the chain ends DISCHARGED, and only then —
+    and her discharge's board step failed too, the card is a discharged patient's, and is taken
+    off as above.
+
+    Three things keep this cheap and safe (Task 4 review). The chain's end is read as its state
+    and its key alone (`ChainEnd`), and `BoardLink.stands_on` is asked of that key before anything
+    else: the name, birth date and sex (`transfer.card_of`, encrypted columns) are read only for a
+    card that is going to be moved, not for every patient who ever left this bed. The bed's own
+    unit is read once, before the loop. And `stands_on` is asked again right before the move,
+    with nothing awaited between it and the move's synchronous write, so a card another request
+    has taken elsewhere meanwhile is never written back to this bed."""
     link = board_link_of(request)
     if link is None:
         return
@@ -642,32 +651,33 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
         select(Admission.id)
         .where(Admission.bed_id == bed_id, Admission.state == AdmissionState.TRANSFERRED)
         .order_by(Admission.updated_at.desc()))).scalars().all()
-    here = None
+    here = await transfer.unit_of(db, bed_id) if transferred else None     # once, before the loop
     for source_id in transferred:
-        now_at = await transfer.where_now(db, source_id)
-        if now_at is None:
+        end = await transfer.where_now(db, source_id)
+        if end is None:
             continue                                   # a move the closed routes left half done
-        now_id, now_state = now_at
-        card = await transfer.card_of(db, now_id)
-        key = card["key"]
-        if link.is_discharged(hospital, key) or not link.stands_on(hospital, key, str(bed_id)):
+        key = end.key
+        if not link.stands_on(hospital, key, str(bed_id)):
             continue                                   # a tombstone, or a card already elsewhere
-        if now_state in OPEN_ADMISSION_STATES:         # still admitted: moved, never taken off
-            if here is None:
-                here = await transfer.unit_of(db, bed_id)
+        if end.state == AdmissionState.DISCHARGED:     # X4: her stay ended since; the card is a
+            board, alerts = await link.take_off(hospital, key)      # discharged patient's
+            trail.record(request, hospital, "admission.discharge_board_retry", patient_id=key,
+                         payload={"admission_id": str(end.admission_id), "bed_id": str(bed_id),
+                                  "board": board, "alerts": alerts, "via": via,
+                                  "actor": actor})
+        elif end.state in OPEN_ADMISSION_STATES:       # still admitted: moved, never taken off
+            card = await transfer.card_of(db, end.admission_id)   # decrypted for this card only
+            if not link.stands_on(hospital, key, str(bed_id)):
+                continue                               # taken elsewhere while the card was read
             board = await transfer.move_card(request, hospital, card, left=(bed_id, here))
             trail.record(request, hospital, "admission.transfer_board_retry", patient_id=key,
                          payload={"source_admission_id": str(source_id),
-                                  "admission_id": str(now_id), "bed_id": str(bed_id),
+                                  "admission_id": str(end.admission_id), "bed_id": str(bed_id),
                                   "board": board, "via": via, "actor": actor})
-        else:                                          # X4: her stay ended since; the card is a
-            board, alerts = await link.take_off(hospital, key)      # discharged patient's
-            trail.record(request, hospital, "admission.discharge_board_retry", patient_id=key,
-                         payload={"admission_id": str(now_id), "bed_id": str(bed_id),
-                                  "board": board, "alerts": alerts, "via": via,
-                                  "actor": actor})
+        else:
+            continue                                   # no other state ends a chain; not ours
         if board != "ok" and standing is None:
-            standing = {"patient_number": card["patient_number"], "board_key": key}
+            standing = {"patient_number": end.patient_number, "board_key": key}
     if standing is not None:
         raise Refusal(409, BOARD_NOT_CLEARED, "A patient's card still stands on this bed: the "
                       "board refused to move it or to take it off.", extra=standing)   # X11

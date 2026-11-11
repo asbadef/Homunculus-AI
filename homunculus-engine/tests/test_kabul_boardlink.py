@@ -25,6 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import homunculus.scenarios
+from homunculus.admission import transfer as transfer_module
 from homunculus.admission.boardlink import BoardLink, RetireIncomplete, board_link_of, kabul_record
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
@@ -1049,3 +1050,18 @@ def test_after_a_move_the_strip_links_the_new_beds_monitor_and_the_old_ones_to_n
     beds = {b["bed_label"]: b for b in shadow_board(client)["beds"]}
     assert (beds["B-2"]["link"], beds["B-2"]["patient_id"]) == ("one", "H2600001")
     assert (beds["B-1"]["link"], beds["B-1"]["patient_id"]) == ("none", None)
+
+
+def test_a_move_from_a_bed_with_no_known_unit_names_no_unit_and_not_the_text_none():
+    """Task 4 review: `transfer.move_card` passes a None unit through to the removal frame (a
+    screen reads `unit_id: null` as "unknown"); `str(None)` would have named a unit "None"."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.published.clear()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(board_link=world.link)))
+    card = {"key": "H2600001", "display_name": "Sentetik Hasta", "date_of_birth": "1970-01-01",
+            "sex": "female", "bed_label": "2B", "bed_id": NEW_BED, "unit_id": NEW_UNIT}
+    assert asyncio.run(transfer_module.move_card(request, HOSPITAL, card, left=(BED, None))) == "ok"
+    (_, removal), (_, moved_card) = world.published
+    assert removal["identity"] == {"bed_id": BED, "unit_id": None}
+    assert moved_card["identity"]["bed_id"] == NEW_BED

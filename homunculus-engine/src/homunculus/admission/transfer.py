@@ -6,7 +6,8 @@
                  the name, birth date and sex, and its bed and real unit;
 * `arriving_of`  the admission a transfer from this one opened (the retry's question, T9);
 * `where_now`    the patient's admission now, from a TRANSFERRED one of hers: `source_admission_id`
-                 followed forward (the bed release's question, §5.5);
+                 followed forward (the bed release's question, §5.5), answered as its id, its
+                 state, its board key and its H-number — no name is read, no column decrypted;
 * `move_card`    the card moved to the bed she now lies in, the old place told first
                  (`BoardLink.move`, T8): `ok` or `failed`, never raising.
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import NamedTuple
 
 from fastapi import Request
 from sqlalchemy import select
@@ -67,31 +69,46 @@ async def arriving_of(db: AsyncSession, admission_id: uuid.UUID) -> Admission | 
         .order_by(Admission.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
-async def where_now(db: AsyncSession,
-                    admission_id: uuid.UUID) -> tuple[uuid.UUID, AdmissionState] | None:
+class ChainEnd(NamedTuple):
+    """Where a stay's chain of moves ends (`where_now`): the admission's id and state, the key its
+    card stands under (`board_key`) and its H-number — what the bed release asks of a patient who
+    moved, before it decides whether her card is one to move at all."""
+    admission_id: uuid.UUID
+    state: AdmissionState
+    key: str
+    patient_number: str
+
+
+async def where_now(db: AsyncSession, admission_id: uuid.UUID) -> ChainEnd | None:
     """The patient's admission now, from a TRANSFERRED one of hers: `source_admission_id` followed
     forward to the first row that is not TRANSFERRED — open, or DISCHARGED since. None when the
-    chain breaks off (a transfer the closed routes left half done)."""
+    chain breaks off (a transfer the closed routes left half done). Reads the id, the state, the
+    protocol and the H-number only: the name, birth date and sex (encrypted) are `card_of`'s, read
+    for a card that is going to be moved."""
     current = admission_id
     for _ in range(_MOST_MOVES):
         found = (await db.execute(
-            select(Admission.id, Admission.state)
+            select(Admission.id, Admission.state, Admission.protocol_no, Patient.patient_number)
+            .join(Patient, Patient.id == Admission.patient_id)
             .where(Admission.source_admission_id == current)
             .order_by(Admission.created_at.desc()).limit(1))).first()
         if found is None:
             return None
         if found.state != AdmissionState.TRANSFERRED:
-            return found.id, found.state
+            return ChainEnd(found.id, found.state, board_key(found.protocol_no,
+                                                             found.patient_number),
+                            found.patient_number)
         current = found.id
     return None
 
 
 async def move_card(request: Request, hospital: str, card: dict, *,
-                    left: tuple[uuid.UUID, uuid.UUID]) -> EngineWrite:
+                    left: tuple[uuid.UUID, uuid.UUID | None]) -> EngineWrite:
     """The card on the patient's new bed, the old place told first (`BoardLink.move`, T8): `ok`,
     or `failed` and logged with the board key — never a name, and never raising. `left` is the
-    old bed's id and its unit's. An app built without its BoardLink moved nothing: `failed`,
-    logged at ERROR (X53)."""
+    old bed's id and its unit's, which may be None: it goes to the removal frame as None, never as
+    the text "None". An app built without its BoardLink moved nothing: `failed`, logged at ERROR
+    (X53)."""
     link = board_link_of(request)
     if link is None:
         log.error("transfer %s: this app has no BoardLink; the card did not move", card["key"])
@@ -104,4 +121,6 @@ async def move_card(request: Request, hospital: str, card: dict, *,
     except Exception:
         log.exception("transfer %s: the card could not be built", card["key"])
         return "failed"
-    return await link.move(hospital, record, left=(str(left[0]), str(left[1])))
+    old_bed, old_unit = left
+    return await link.move(hospital, record, left=(str(old_bed),
+                                                   None if old_unit is None else str(old_unit)))
