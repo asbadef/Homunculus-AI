@@ -497,9 +497,10 @@ const kabulCard = () => entry(KEY, [], {
 
 /** The patient screen of KEY, with its sign-off strip, label reprint and care team over ONE read of the open
  *  admissions (Task 16 review). */
-async function openScreen({ perms = READER, setup } = {}) {
+async function openScreen({ perms = READER, groups, setup } = {}) {
   const mounted = await mountKabul(<PatientScreen params={{ id: KEY }} />, {
     perms,
+    groups,
     setup: (api) => {
       api.boardPatients.mockResolvedValue(board([kabulCard()]));
       api.streamTicket.mockResolvedValue({ ticket: "t-1" });
@@ -539,6 +540,7 @@ describe("the patient screen", () => {
     await withClock(async () => {
       const { api } = await openScreen({
         perms: [...READER, "admissions.sign_off"],
+        groups: PHYSICIAN_GROUP,     // «İmzala» is offered to a physician (G2-B1c, final review)
         setup: (a) => {
           a.admissions.mockResolvedValueOnce([DRAFT_ROW]).mockResolvedValue([ACTIVE]);
           a.signOffAdmission.mockResolvedValue({ id: ADM, state: "ACTIVE" });

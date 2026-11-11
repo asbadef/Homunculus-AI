@@ -1,9 +1,13 @@
 // src/live/screens/kabul/SignOffStrip.jsx — "Hekim imzası bekliyor" on the patient screen of a
 // DRAFT admission (Group 2 · B1a, spec D3, §3.2, §5.5). The card and the monitoring started at
 // admission; the signature is the physician's later step, and until it is given the screen says
-// so. A holder of `admissions.sign_off` signs here (POST /admissions/{id}/sign-off): the server
-// makes her the attending when none is set. A session without `admissions.view` reads no
-// admission and shows no strip (X61).
+// so. A holder of `admissions.sign_off` signs here (POST /admissions/{id}/sign-off) — when she is a
+// physician, or the form already names one (G2-B1c, spec §5.3, T1): the signer must be a physician
+// unless the form names one, and the server refuses otherwise (409 `care_team_not_physician`). The system
+// administrator holds the right by rule but is no physician, so on a DRAFT naming nobody the strip says,
+// in one muted line, that a physician signs — in place of a button that would only earn a refusal on a
+// toast. The refusal keeps its words for a race (a role changed after the screen read). A session
+// without `admissions.view` reads no admission and shows no strip (X61).
 //
 // The list is read again every minute, as the bed board's badge is: a signature given on another
 // screen takes the strip away within the minute, instead of leaving it to say the patient still
@@ -34,6 +38,7 @@ import { FOCUS_RING } from "../../ui/focus.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { useAdmissions } from "./useAdmissions.js";
 import { boardKeyOf } from "./boardKey.js"; // G2-B1d
+import { isPhysician } from "../patient/careTeam/careTeam.js"; // G2-B1c: T1, the session's role groups
 
 const DRAFT = ["DRAFT"];
 const EVERY_MS = 60_000;
@@ -80,7 +85,10 @@ function Strip({ row, reload }) {
       </p>
     ) : null;
   }
-  const canSign = user?.perms?.includes("admissions.sign_off") ?? false;
+  const hasRight = user?.perms?.includes("admissions.sign_off") ?? false;
+  // The server refuses a non-physician's sign-off of a DRAFT that names no physician (§5.3); this only keeps the
+  // button from offering what it knows will be refused — it checks again, and the 409 below still has its words.
+  const canSign = hasRight && (isPhysician(user) || row.attending_physician_id != null);
   const subject = bedOf(row);
 
   async function sign() {
@@ -109,7 +117,7 @@ function Strip({ row, reload }) {
           {t("kabul.sign")}
         </Button>
       ) : (
-        <span className="text-12 font-normal">{t("kabul.signNoRight")}</span>
+        <span className="text-12 font-normal">{t(hasRight ? "kabul.signPhysician" : "kabul.signNoRight")}</span>
       )}
       {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
       <Announce text={busy ? t("kabul.signing") : ""} />

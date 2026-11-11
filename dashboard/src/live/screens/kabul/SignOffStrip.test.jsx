@@ -15,7 +15,7 @@ import { BedCard } from "../beds/BedCard.jsx";
 import { BedsScreen } from "../beds/BedsScreen.jsx";
 import { PatientScreen } from "../patient/PatientScreen.jsx";
 import { SignOffStrip } from "./SignOffStrip.jsx";
-import { BED, DOCTOR, NURSE, REA, expectNoUuid, mountKabul, row, settle, toasts } from "./kabul.testutil.js";
+import { BED, DOCTOR, NURSE, PHYSICIAN, REA, SYS_ADMIN, expectNoUuid, mountKabul, row, settle, toasts } from "./kabul.testutil.js";
 
 const DRAFT = [row({ id: "a-7", patient_number: "H2600007", state: "DRAFT" })];
 const BED_2 = "2 · Otaq 1 · Reanimasiya";
@@ -51,7 +51,7 @@ describe("SignOffStrip", () => {
 
   it("is not there for a patient whose admission is signed", async () => {
     await mountKabul(<SignOffStrip patientId="H2600001" />,
-      { perms: DOCTOR, setup: (a) => a.admissions.mockResolvedValue(DRAFT) });
+      { perms: DOCTOR, groups: PHYSICIAN, setup: (a) => a.admissions.mockResolvedValue(DRAFT) });
     expect(screen.queryByText(WAITS)).toBeNull();
     expect(screen.queryByRole("button", { name: /Qəbulu imzala/ })).toBeNull();
   });
@@ -65,7 +65,7 @@ describe("SignOffStrip", () => {
 
   it("lets a physician sign: the button and the toast name the bed, and the strip goes", async () => {
     const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
         a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
@@ -83,7 +83,7 @@ describe("SignOffStrip", () => {
     let answer;
     let reread;
     const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValueOnce(DRAFT).mockImplementation(() => new Promise((resolve) => { reread = resolve; }));
         a.signOffAdmission.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
@@ -109,7 +109,7 @@ describe("SignOffStrip", () => {
     try {
       const reads = [];
       const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
-        perms: DOCTOR,
+        perms: DOCTOR, groups: PHYSICIAN,
         setup: (a) => {
           a.admissions.mockResolvedValueOnce(DRAFT).mockImplementation(() => new Promise((resolve) => { reads.push(resolve); }));
           a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
@@ -135,7 +135,7 @@ describe("SignOffStrip", () => {
 
   it("says the signature where the strip stood, and takes there the focus its button had — not <body> (A-22, §5.7)", async () => {
     await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
         a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
@@ -154,7 +154,7 @@ describe("SignOffStrip", () => {
 
   it("leaves the focus where it is when the physician moved it elsewhere meanwhile", async () => {
     await mountKabul(<><SignOffStrip patientId="H2600007" /><input aria-label="elsewhere" /></>, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
         a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" });
@@ -172,7 +172,7 @@ describe("SignOffStrip", () => {
   it("says it is signing while the button is held: a busy button alone reads only «unavailable»", async () => {
     let answer;
     await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValue(DRAFT);
         a.signOffAdmission.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
@@ -191,7 +191,7 @@ describe("SignOffStrip", () => {
   it("someone signed first: the refusal goes on the toast by its code, and the strip goes with the re-read", async () => {
     // admission/service.py sign_off_admission: a non-DRAFT is a 409 `invalid_transition`.
     const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValueOnce(DRAFT).mockResolvedValue([]);
         a.signOffAdmission.mockRejectedValue(refusal(409, "Only a DRAFT admission can be signed off (current: ACTIVE).",
@@ -209,7 +209,7 @@ describe("SignOffStrip", () => {
 
   it("puts a refusal on the toast by its code, never in the server's English, and reads the list again", async () => {
     const { api } = await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValue(DRAFT);
         a.signOffAdmission.mockRejectedValue(refusal(403, "This bed is not in one of your units.", { apiCode: "out_of_scope" }));
@@ -225,7 +225,7 @@ describe("SignOffStrip", () => {
 
   it("says an uncoded 404 by its status in the reader's words, never the server's English (A-9)", async () => {
     await mountKabul(<SignOffStrip patientId="H2600007" />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => {
         a.admissions.mockResolvedValue(DRAFT);
         a.signOffAdmission.mockRejectedValue(refusal(404, "Admission not found."));
@@ -255,7 +255,7 @@ describe("SignOffStrip", () => {
 describe("the patient screen's strip", () => {
   it("stands on the screen of a patient whose admission waits, with the button naming the bed", async () => {
     const mounted = await mountKabul(<PatientScreen params={{ id: "H2600007" }} />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (api) => {
         api.boardPatients.mockResolvedValue(board([kabulCard("H2600007", "2")]));
         api.streamTicket.mockResolvedValue({ ticket: "t-1" });
@@ -272,6 +272,26 @@ describe("the patient screen's strip", () => {
     expectNoUuid();
   });
 
+  it("tells the administrator, over the patient screen's one read, that a physician signs — no button (G2-B1c, final review)", async () => {
+    const mounted = await mountKabul(<PatientScreen params={{ id: "H2600007" }} />, {
+      perms: DOCTOR,
+      groups: SYS_ADMIN,
+      setup: (api) => {
+        api.boardPatients.mockResolvedValue(board([kabulCard("H2600007", "2")]));
+        api.streamTicket.mockResolvedValue({ ticket: "t-1" });
+        api.view.mockResolvedValue({ ok: true });
+        api.patientTrends.mockImplementation(answering());
+        api.admissions.mockResolvedValue(DRAFT);
+      },
+    });
+    await act(async () => { await mounted.board.start(); mounted.stream.open(); });
+    await settle();
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    expect(screen.getByText("Qəbulu həkim imzalayır; imzalayan məsul həkim olur.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: SIGN })).toBeNull();
+    expectNoUuid();
+  });
+
   it("starts free on the next patient while the last one's signature is still out", async () => {
     // The shell renders a screen with no `key` (shell/Shell.jsx): moving from one patient to the
     // next keeps PatientScreen mounted and only changes `params.id`, as `move` does here.
@@ -284,7 +304,7 @@ describe("the patient screen's strip", () => {
       return <PatientScreen params={{ id }} />;
     }
     const mounted = await mountKabul(<Moving />, {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (api) => {
         api.boardPatients.mockResolvedValue(board([kabulCard("H2600007", "2"), kabulCard("H2600009", "5")]));
         api.streamTicket.mockResolvedValue({ ticket: "t-1" });
@@ -320,14 +340,14 @@ describe("SignOffStrip over the read it is handed", () => {
   const strip = (admission, onSigned) => <SignOffStrip patientId="H2600007" admission={admission} onSigned={onSigned} />;
 
   it("reads nothing itself, and shows only while the row it is handed is a DRAFT", async () => {
-    const { api } = await mountKabul(strip(DRAFT[0]), { perms: DOCTOR });
+    const { api } = await mountKabul(strip(DRAFT[0]), { perms: DOCTOR, groups: PHYSICIAN });
     expect(screen.getByText(WAITS)).toBeTruthy();
     expect(api.admissions).not.toHaveBeenCalled();
     cleanup();
-    await mountKabul(strip({ ...DRAFT[0], state: "ACTIVE" }), { perms: DOCTOR });
+    await mountKabul(strip({ ...DRAFT[0], state: "ACTIVE" }), { perms: DOCTOR, groups: PHYSICIAN });
     expect(screen.queryByText(WAITS)).toBeNull();
     cleanup();
-    await mountKabul(strip(null), { perms: DOCTOR });
+    await mountKabul(strip(null), { perms: DOCTOR, groups: PHYSICIAN });
     expect(screen.queryByText(WAITS)).toBeNull();
   });
 
@@ -339,7 +359,7 @@ describe("SignOffStrip over the read it is handed", () => {
       return strip(admission, async () => { await onSigned(); setAdmission({ ...DRAFT[0], state: "ACTIVE" }); });
     }
     const { api } = await mountKabul(<Handed />, {
-      perms: DOCTOR, setup: (a) => a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" }) });
+      perms: DOCTOR, groups: PHYSICIAN, setup: (a) => a.signOffAdmission.mockResolvedValue({ id: "a-7", state: "ACTIVE" }) });
     const button = screen.getByRole("button", { name: SIGN });
     button.focus();
     await act(async () => { fireEvent.click(button); });
@@ -357,12 +377,91 @@ describe("SignOffStrip over the read it is handed", () => {
   it("tells onSigned after a refusal too, and keeps the strip while the row is still a DRAFT", async () => {
     const onSigned = vi.fn(async () => {});
     const { api } = await mountKabul(strip(DRAFT[0], onSigned), {
-      perms: DOCTOR,
+      perms: DOCTOR, groups: PHYSICIAN,
       setup: (a) => a.signOffAdmission.mockRejectedValue(refusal(409, "English words", { apiCode: "invalid_transition" })) });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
     await settle();
     expect(api.signOffAdmission).toHaveBeenCalledTimes(1);
     expect(onSigned).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    expect(screen.getByRole("button", { name: SIGN })).not.toHaveAttribute("aria-busy");
+  });
+});
+
+// G2-B1c, final review: the server refuses the sign-off of a DRAFT that names no physician unless the signer is one
+// (409 `care_team_not_physician`, spec §5.3, T1). The system administrator holds `admissions.sign_off` by rule and is
+// no physician, so on such a DRAFT she is told, in one muted line, who signs — not offered a button that only earns a
+// refusal on a toast. Both ways the strip finds its admission.
+describe.each([
+  ["reading the DRAFT list itself", (adm, opts = {}) => mountKabul(<SignOffStrip patientId="H2600007" />, {
+    ...opts, setup: (a) => { a.admissions.mockResolvedValue([adm]); opts.setup?.(a); } })],
+  ["over the read it is handed", (adm, opts = {}) => mountKabul(
+    <SignOffStrip patientId="H2600007" admission={adm} onSigned={async () => {}} />, opts)],
+])("who is offered «İmzala» — %s (G2-B1c, final review)", (_how, open) => {
+  const PHYSICIAN_LINE = "Qəbulu həkim imzalayır; imzalayan məsul həkim olur.";
+  const NO_RIGHT = "İmzanı yalnız qəbulu təsdiqləmək səlahiyyəti olan həkim atır.";
+  const NAMED = { ...DRAFT[0], attending_physician_id: "66666666-6666-4666-8666-666666666601" };
+  const NOBODY = DRAFT[0];
+
+  it("tells the administrator, who is no physician, that a physician signs — and offers no button — on a DRAFT naming nobody", async () => {
+    await open(NOBODY, { perms: DOCTOR, groups: SYS_ADMIN });
+    expect(screen.getByText(WAITS)).toBeTruthy();
+    expect(screen.getByText(PHYSICIAN_LINE)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Qəbulu imzala/ })).toBeNull();
+    expect(screen.queryByText(NO_RIGHT)).toBeNull();
+    expectNoUuid();
+  });
+
+  it("says the same to a session with no group at all", async () => {
+    await open(NOBODY, { perms: DOCTOR, groups: [] });
+    expect(screen.getByText(PHYSICIAN_LINE)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Qəbulu imzala/ })).toBeNull();
+  });
+
+  it("offers a physician the button, and no line", async () => {
+    await open(NOBODY, { perms: DOCTOR, groups: PHYSICIAN });
+    expect(screen.getByRole("button", { name: SIGN })).toBeTruthy();
+    expect(screen.queryByText(PHYSICIAN_LINE)).toBeNull();
+    expect(screen.queryByText(NO_RIGHT)).toBeNull();
+  });
+
+  it("takes each of the three physician groups for a physician", async () => {
+    for (const slug of ["attending", "unit_physician", "physician"]) {
+      await open(NOBODY, { perms: DOCTOR, groups: [{ slug, name: slug }] });
+      expect(screen.getByRole("button", { name: SIGN })).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("offers the administrator the button when the form already names a physician", async () => {
+    await open(NAMED, { perms: DOCTOR, groups: SYS_ADMIN });
+    expect(screen.getByRole("button", { name: SIGN })).toBeTruthy();
+    expect(screen.queryByText(PHYSICIAN_LINE)).toBeNull();
+  });
+
+  it("keeps «only a physician with the right» for a session without admissions.sign_off — a physician or not, a name or not", async () => {
+    for (const [adm, groups] of [[NOBODY, PHYSICIAN], [NAMED, PHYSICIAN], [NOBODY, SYS_ADMIN], [NAMED, []]]) {
+      await open(adm, { perms: NURSE, groups });
+      expect(screen.getByText(NO_RIGHT)).toBeTruthy();
+      expect(screen.queryByText(PHYSICIAN_LINE)).toBeNull();
+      expect(screen.queryByRole("button", { name: /Qəbulu imzala/ })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("still puts the server's refusal on the toast by its code when a role changed after the screen read — the button stays for the next try", async () => {
+    // The strip believed she was a physician (the groups it read at sign-in); the server, which reads them now, says no.
+    const { api } = await open(NOBODY, {
+      perms: DOCTOR, groups: PHYSICIAN,
+      setup: (a) => a.signOffAdmission.mockRejectedValue(
+        refusal(409, "English words", { apiCode: "care_team_not_physician" })),
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: SIGN })); });
+    await settle();
+    expect(api.signOffAdmission).toHaveBeenCalledWith("a-7");
+    expect(toasts().getAllByText(`${BED_2}: Bu şəxs həkim deyil: baxım komandasına yalnız həkimlər daxil olur və qəbulu imzalayan məsul həkim olur.`)
+      .length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/English words/);
     expect(screen.getByText(WAITS)).toBeTruthy();
     expect(screen.getByRole("button", { name: SIGN })).not.toHaveAttribute("aria-busy");
   });
