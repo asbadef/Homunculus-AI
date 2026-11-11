@@ -347,6 +347,20 @@ export function summarise({ tree, occupancy, board, tasks, pending, shadow, qual
   return { cards, rows, unplaced: any ? { key: NO_UNIT, occupancy: null, ...rest } : null, reachNote };
 }
 
+/** A rate (0–1) as a whole percent that never says more than the counts: 100 only when every settled episode was
+ *  answered, 0 only when none was — 299 of 300 is 99, 1 of 300 is 1, where plain rounding says 100 and 0 (G4-03
+ *  review). `answered` and `settled` are the counts when known (else null: the rate's own side of 1 and 0 decides).
+ *  Null for no rate. Shared by «Yönetici özeti» and «Kalite göstergeleri». */
+export function wholePercent(rate, answered, settled) {
+  if (!Number.isFinite(rate)) return null;
+  const known = Number.isInteger(answered) && Number.isInteger(settled);
+  // From the counts when known (the engine's rate is rounded to 4 places, and rounding it again can be a point off).
+  const pct = Math.round(known && settled > 0 ? (answered / settled) * 100 : rate * 100);
+  if (pct >= 100 && (known ? answered < settled : rate < 1)) return 99;
+  if (pct <= 0 && (known ? answered > 0 : rate > 0)) return 1;
+  return pct;
+}
+
 /** A response time in seconds as whole minutes and seconds (`m` null under a minute); null for none. */
 export function durationOf(seconds) {
   const s = secondsOf(seconds);
@@ -364,9 +378,12 @@ export const dayOf = (date) => `${date.slice(8, 10)}.${date.slice(5, 7)}`;
 export function qualityView(report) {
   const days = listOf(report?.per_day).filter((d) => typeof d?.date === "string" && countOf(d?.episodes) !== null);
   const busiest = days.reduce((most, d) => Math.max(most, d.episodes), 0);
+  const answered = countOf(report?.answered);
+  const unanswered = countOf(report?.unanswered);
   return {
-    episodes: countOf(report?.episodes), answered: countOf(report?.answered),
-    answeredPct: Number.isFinite(report?.answered_rate) ? Math.round(report.answered_rate * 100) : null,
+    episodes: countOf(report?.episodes), answered,
+    answeredPct: wholePercent(report?.answered_rate, answered,
+      answered === null || unanswered === null ? null : answered + unanswered),
     median: durationOf(report?.median_response_sec), p90: durationOf(report?.p90_response_sec),
     escalated: countOf(report?.escalated), unanswered: countOf(report?.unanswered), pending: countOf(report?.pending),
     perDay: days.map((d) => ({ date: d.date, episodes: d.episodes, share: busiest > 0 ? d.episodes / busiest : 0 })),

@@ -563,7 +563,7 @@ image's start command (`Dockerfile.api`) runs it too, so the table exists once t
 an image that contains the migration. An image rolled back later leaves the table in place; the older
 images do not read it. The table lives in the VM's database only. The same migration adds the audit
 index `ix_audit_tenant_event_id` on `(tenant, event_type, id)`: the lane reads its two kinds
-newest-first and `/alarm-quality` reads its five, and without it each read walks the tenant's rows
+newest-first and `/alarm-quality` reads its four (five until G4-03, which stopped reading `alert`), and without it each read walks the tenant's rows
 by id. It is built inside the migration's transaction, so writes to the audit wait while it builds —
 at the API's start, before it serves. `alembic downgrade 0012` drops the table, its rows and the
 index.
@@ -602,8 +602,8 @@ through its imports, none of the notifier, the ack store, the alert lifecycle, t
 module, escalation, the broadcaster, the audit replay, the clinical door, the board or the app.
 
 **The audit's windows at `rules`.** The shadow rows are in the same audit log as the real ones.
-`/alarm-quality` reads only the kinds it counts (`first_seen`, `alert`, `ack`, `escalation`,
-`alert_cleared`), so no shadow row takes a place under its cap or moves a counter — the gate's three
+`/alarm-quality` reads only the kinds it counts (`first_seen`, `ack`, `escalation`, `alert_cleared`;
+`alert` too until G4-03), so no shadow row takes a place under its cap or moves a counter — the gate's three
 runs compare that report too. That filter is new with this code and applies at **every** stage, `off`
 included, from the deploy that brings it: before it every kind of row (each reading's `ingest` row
 among them) took a place under the cap, so after the deploy the report's `truncated` flag and its

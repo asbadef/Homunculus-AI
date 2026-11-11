@@ -37,11 +37,17 @@ from homunculus.api.audit import AuditRecord
 # rather than a delay. Operational, not clinical — it is a reporting boundary, not a rule.
 DEFAULT_SETTLE = timedelta(minutes=10)
 
-# The audit kinds `build_episodes` reads — and the only ones `/alarm-quality` asks the audit for, so
-# that no other row (an `ingest`, a `notification`, Aşama B's `shadow_alert`) takes a place under the
-# report's cap and moves its counters (T6 review). A kind read below and left out here would vanish
-# from the report without a word; tests/test_alarm_quality.py holds the two to each other.
+# The audit kinds `build_episodes` reads. A kind read below and left out here would vanish from the
+# reports without a word; tests/test_alarm_quality.py holds the two to each other.
 EPISODE_KINDS = frozenset({"first_seen", "alert", "ack", "escalation", "alert_cleared"})
+# The only kinds `/alarm-quality` and `/quality` ask the audit for, so that no other row (an `ingest`,
+# a `notification`, Aşama B's `shadow_alert`) takes a place under the reports' cap and moves their
+# counters (T6 review). Not `alert` either (G4-03, spec A2): the engine writes one for every active
+# alert on every ingest, so on a live ward they filled the 20 000-row cap within hours — «7 gün» read
+# as the last hours, and an episode whose `first_seen` fell past the cut vanished — while all they fed
+# was `Episode.repeats`, a count no screen shows. `build_episodes` still takes them (and counts them as
+# repeats, never as episodes); no report sends a repeat count.
+EPISODE_READ_KINDS = EPISODE_KINDS - {"alert"}
 
 
 def _parse(ts: str | None) -> datetime | None:
@@ -76,6 +82,9 @@ class Episode:
     escalated: bool = False
     repeats: int = 0          # `alert` rows emitted while this episode was open
     resolved_at: datetime | None = None   # G2-A1: when its rule stopped firing (`alert_cleared`)
+    # G4-03 (spec D4): its rule itself stopped at least once (an `alert_cleared` row, reason `resolved`). A discharge
+    # or an «entered in error» also sets `resolved_at` when none was set, and is not the alarm clearing by itself.
+    self_resolved: bool = False
     ended_at: datetime | None = None      # when it closed: then, or at the ack that removed a latch
 
     @property
@@ -93,7 +102,7 @@ class KindStats:
     escalated: int = 0
     unanswered: int = 0
     pending: int = 0
-    repeats: int = 0
+    # No `repeats` (G4-03, spec A2): the reports no longer read the `alert` rows it counted.
     median_response_sec: float | None = None
 
     def as_dict(self) -> dict:
@@ -107,6 +116,9 @@ class AlarmQuality:
     unanswered: int = 0
     escalated: int = 0
     pending: int = 0
+    # G4-03 (spec D4): the unanswered episodes whose alarm cleared by itself (`Episode.self_resolved`), a subset of
+    # `unanswered`. New and additive: no other field changes.
+    unanswered_resolved: int = 0
     # None, never 0, when nothing has settled yet: a rate computed from no episodes is not 0%,
     # it is unknown, and a dashboard that renders it as 0% is reporting a catastrophe that did
     # not happen.
@@ -120,7 +132,7 @@ class AlarmQuality:
     # patient then hour. UTC because every `ts`/`at` in the trail is UTC and the engine knows no hospital time
     # zone: the browser turns each hour start into its own local hour of the day.
     per_patient_hour: list[dict] = field(default_factory=list)
-    repeats: int = 0
+    # No `repeats` (G4-03, spec A2): always 0 once the `alert` rows are not read, so not sent at all.
     window_from: str | None = None
     window_to: str | None = None
 
@@ -178,6 +190,8 @@ def build_episodes(records: list[AuditRecord]) -> list[Episode]:
             # writes a second `resolved` row, and the board shows that last stop.
             if reason == "resolved" or episode.resolved_at is None:
                 episode.resolved_at = when
+            if reason == "resolved":
+                episode.self_resolved = True     # G4-03: the rule stopped — not a discharge, not an error
             # `/ack` writes an `ack` row and this row for one act; the report must not depend on
             # which lands first, so the row that removes a latch is itself the answer.
             if reason == "acked_after_resolve" and episode.answered_at is None:
@@ -207,9 +221,7 @@ def summarise(episodes: list[Episode], now: datetime,
     for ep in episodes:
         stats = per_kind.setdefault(ep.kind, KindStats(kind=ep.kind))
         stats.episodes += 1
-        stats.repeats += ep.repeats
         report.episodes += 1
-        report.repeats += ep.repeats
         per_day[ep.started.date().isoformat()] = per_day.get(ep.started.date().isoformat(), 0) + 1
         per_bed[ep.patient_id] = per_bed.get(ep.patient_id, 0) + 1
         hour = ep.started.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()
@@ -230,6 +242,8 @@ def summarise(episodes: list[Episode], now: datetime,
         else:
             stats.unanswered += 1
             report.unanswered += 1
+            if ep.self_resolved:
+                report.unanswered_resolved += 1      # G4-03 (spec D4): nobody answered; it cleared by itself
 
     for stats in per_kind.values():
         kind_responses = [ep.response_seconds for ep in episodes

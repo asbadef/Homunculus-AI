@@ -285,8 +285,8 @@ describe("the handover screen's route", () => {
 
 // G4-02 (spec D3): «Yönetici özeti» — for `summary.view`, which by default only the system administrator holds (the
 // system group holds every key by rule). Not a work screen; after the handover screen, so nobody's home moves.
-// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «devir» edits this line and no other.
-// G3-04 put the pharmacy page between the handover screen and this one: devir → eczane → ozet → settings.
+// G3-04 put the pharmacy page between the handover screen and this one: devir → eczane → ozet. G4-03: «Kalite
+// göstergeleri» comes right after it, and the table's one pinned tail is in that route's block now.
 describe("the management summary's route", () => {
   afterEach(() => resetScreens());
   const ozet = () => ROUTES.find((r) => r.id === "ozet");
@@ -295,7 +295,8 @@ describe("the management summary's route", () => {
     expect(ozet()).toMatchObject({ path: "/ozet", perms: ["summary.view"], work: false, nav: "main",
       icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort" });
     expect(screenOf(ozet())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["eczane", "ozet", "settings"]);
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids[ids.indexOf("ozet") + 1]).toBe("kalite");
   });
 
   it("is the system administrator's by default, and moves nobody's home", () => {
@@ -358,6 +359,40 @@ describe("the pharmacy page's route", () => {
     expect(hasWorkRoute(["pharmacy.view"])).toBe(true);
     expect(navRoutes(["pharmacy.view"]).main.map((r) => r.id)).toEqual(["eczane"]);
     expect(homePath(["pharmacy.view"])).toBe("/eczane");
+  });
+});
+
+// G4-03 (spec D3): «Kalite göstergeleri» — for `quality.view`: the auditor group by default (migration 0020), the
+// system administrator by rule, any group a hospital gives it. A work screen: a hospital's own quality group, given
+// this key alone, signs in to it and lands on it. After the management summary, so nobody's home moves.
+// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «kalite» edits this line and no other.
+// The order: devir → eczane → ozet → kalite → settings.
+describe("the quality indicators' route", () => {
+  afterEach(() => resetScreens());
+  const kalite = () => ROUTES.find((r) => r.id === "kalite");
+  /** The auditor's group (`auditor`), as the engine seeds it since G4-03 (auth/permissions.py). */
+  const AUDITOR = ["board.view", "audit.view", "quality.view"];
+
+  it("is a work screen for quality.view, on the main rail, with its own icon and names", () => {
+    expect(kalite()).toMatchObject({ path: "/kalite", perms: ["quality.view"], work: true, nav: "main",
+      icon: "star", labelKey: "kalite.nav", shortKey: "kalite.navShort" });
+    expect(screenOf(kalite())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["eczane", "ozet", "kalite", "settings"]);
+  });
+
+  it("is the auditor's and the system administrator's, and moves neither's home", () => {
+    expect(navRoutes(AUDITOR).main.map((r) => r.id)).toEqual(["beds", "alarms", "denetim", "kalite"]);
+    expect(homePath(AUDITOR)).toBe("/beds");
+    expect(navRoutes(ADMIN).main.map((r) => r.id)).toContain("kalite");
+    expect(homePath(ADMIN)).toBe("/beds");
+    for (const perms of [NURSE, ["handover.sign"], ["summary.view"], ["pharmacy.view"], ["audit.view"], ["devices.manage"]]) {
+      expect(canReach(kalite(), perms), perms.join(",")).toBe(false);
+    }
+  });
+
+  it("is a work screen: a group given only quality.view signs in to it and lands on it", () => {
+    expect(hasWorkRoute(["quality.view"])).toBe(true);
+    expect(homePath(["quality.view"])).toBe("/kalite");
   });
 });
 

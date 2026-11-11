@@ -12,6 +12,7 @@ import { NEO, REA, structure } from "../kabul/kabul.testutil.js";
 import {
   NO_UNIT, WHY, ageOf, boardReachSource, boardSource, durationOf, isPendingAnswer, isScopeAnswer, isTasksAnswer, lateOf,
   noSource, okSource, qualityView, reachSource, readSource, rightsOf, shadowSource, structureSource, summarise,
+  wholePercent,
 } from "./ozet.js";
 
 const NOW = Date.parse("2026-11-11T10:00:00Z");
@@ -56,7 +57,7 @@ const fresh = (data, over = {}) => ({ phase: SHADOW_PHASE.OK, data, fetchedAtMs:
 const REPORT = {
   episodes: 12, answered: 9, unanswered: 2, escalated: 1, pending: 1, answered_rate: 0.8182,
   median_response_sec: 42.4, p90_response_sec: 185, truncated: false, window_from: iso(6 * 24 * 60 * MIN),
-  per_kind: [{ kind: "news2", episodes: 8, answered: 6, escalated: 1, unanswered: 1, pending: 1, repeats: 0, median_response_sec: 40 }],
+  per_kind: [{ kind: "news2", episodes: 8, answered: 6, escalated: 1, unanswered: 1, pending: 1, median_response_sec: 40 }],
   per_day: [{ date: "2026-11-09", episodes: 4 }, { date: "2026-11-10", episodes: 8 }],
   noisiest_beds: [{ patient_id: "S-1", episodes: 5 }], per_patient_hour: [],
 };
@@ -388,6 +389,20 @@ describe("the alarm-quality box", () => {
     expect(view.median).toBeNull();
     expect(view.escalated).toBeNull();
     expect(view.perDay).toEqual([]);
+  });
+
+  // G4-03 review: a whole percent rounded plainly says «%100» with an alarm left unanswered (299 of 300) and «%0» with
+  // one answered (1 of 300). The edges belong to «all» and «none» only.
+  it("writes 100% only when every settled episode was answered, and 0% only when none was", () => {
+    const of = (answered, unanswered) => qualityView({ ...REPORT, answered, unanswered,
+      answered_rate: Math.round((answered / (answered + unanswered)) * 10_000) / 10_000 }).answeredPct;
+    expect([of(299, 1), of(1, 299), of(300, 0), of(0, 300), of(9, 2)]).toEqual([99, 1, 100, 0, 82]);
+    expect([wholePercent(0.9967, 299, 300), wholePercent(0.0033, 1, 300), wholePercent(1, 4, 4), wholePercent(0, 0, 4)])
+      .toEqual([99, 1, 100, 0]);
+    expect(wholePercent(1, 19_999, 20_000)).toBe(99);                    // the engine's 4-decimal rate rounds up to 1
+    expect(wholePercent(0.125, 781, 6250)).toBe(12);                     // 12.496 %: from the counts, not 0.125 → 13
+    expect([wholePercent(0.9967, null, null), wholePercent(0.0033, null, null), wholePercent(null, 1, 2)])
+      .toEqual([99, 1, null]);                                            // without the counts, the rate's own side
   });
 
   it("says a truncated read is one, from when it counts", () => {

@@ -41,7 +41,7 @@ export const PENDING = {
 export const REPORT = {
   episodes: 12, answered: 9, unanswered: 2, escalated: 1, pending: 1, answered_rate: 0.8182,
   median_response_sec: 42, p90_response_sec: 185, days: 7, truncated: false, window_from: "2026-11-05T08:00:00+00:00",
-  per_kind: [{ kind: "news2", episodes: 8, answered: 6, escalated: 1, unanswered: 1, pending: 1, repeats: 0, median_response_sec: 40 }],
+  per_kind: [{ kind: "news2", episodes: 8, answered: 6, escalated: 1, unanswered: 1, pending: 1, median_response_sec: 40 }],
   per_day: [{ date: "2026-11-09", episodes: 4 }, { date: "2026-11-10", episodes: 8 }],
   noisiest_beds: [{ patient_id: PATIENT_ID, episodes: 5 }], per_patient_hour: [],
 };

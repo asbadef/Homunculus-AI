@@ -93,6 +93,9 @@ import ozet from "./strings/ozet.js";
 // G3-04: «Eczane» — the pharmacist's ward page (screens/eczane).
 import eczane from "./strings/eczane.js";
 
+// G4-03: «Kalite göstergeleri» — care-process quality per unit (screens/kalite).
+import kalite from "./strings/kalite.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -150,6 +153,8 @@ export const NAMESPACES = {
   ozet, // G4-02
 
   eczane, // G3-04
+
+  kalite, // G4-03
 };
 
 function flattenInto(out, prefix, entries) {

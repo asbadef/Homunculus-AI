@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from homunculus.api.alarm_quality import alarm_quality, build_episodes
 from homunculus.api.alert_lifecycle import ENTERED_IN_ERROR
 from homunculus.api.app import create_app
-from homunculus.api.audit import AuditRecord
+from homunculus.api.audit import AuditEvent, AuditRecord
 
 T0 = datetime(2026, 9, 8, 9, 0, tzinfo=timezone.utc)
 TOKEN = "tok"
@@ -44,7 +44,8 @@ class TestTheUnitIsTheEpisode:
         records += [rec("alert", "bed-1", "sepsis", m) for m in range(1, 30)]
         report = alarm_quality(records, _now(60))
         assert report.episodes == 1
-        assert report.repeats == 29     # the noise is still reported, just not as episodes
+        (episode,) = build_episodes(records)
+        assert episode.repeats == 29    # the episode still knows its noise; no report sends it (G4-03, A2)
 
     def test_an_alert_that_clears_and_returns_is_two_episodes(self):
         records = [rec("first_seen", "bed-1", "sepsis", 0), rec("ack", "bed-1", "sepsis", 2),
@@ -63,8 +64,9 @@ class TestTheUnitIsTheEpisode:
         episodes = build_episodes(records)
         assert [(e.started, e.resolved_at, e.ended_at) for e in episodes] == [
             (_now(0), _now(1), _now(1)), (_now(2), _now(3), _now(3))]
+        assert [e.repeats for e in episodes] == [0, 0]
         report = alarm_quality(records, _now(60))
-        assert (report.episodes, report.repeats, report.answered) == (2, 0, 1)
+        assert (report.episodes, report.answered) == (2, 1)
 
     def test_a_latched_critical_stays_open_until_the_acknowledgement_that_removes_it(self):
         """A critical nobody answered latches when its rule stops (`alert_cleared`, resolved); the
@@ -183,6 +185,42 @@ class TestItDoesNotFlatterOrSlanderItself:
         assert report.answered_rate == 1.0      # 1 answered of 1 settled, not 0.5 of 2
 
 
+class TestTheSelfResolved:
+    """G4-03 (spec D4; plan note N5): an unanswered episode whose alarm cleared by itself — its rule stopped
+    (`alert_cleared`, reason `resolved`) and nobody ever answered — is counted apart, as a subset of
+    `unanswered`. A discharge also ends an episode, and is not the alarm clearing by itself."""
+
+    def test_an_unanswered_alarm_whose_rule_stopped_is_counted_apart(self):
+        records = [rec("first_seen", "bed-1", "news2", 0),
+                   rec("alert_cleared", "bed-1", "news2", 4, reason="resolved", severity="moderate"),
+                   rec("first_seen", "bed-2", "news2", 0)]                    # never stopped
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (2, 1)
+
+    def test_a_latched_critical_nobody_answered_is_one_too(self):
+        records = [rec("first_seen", "bed-1", "septic_shock", 0),
+                   rec("alert_cleared", "bed-1", "septic_shock", 2, reason="resolved", severity="critical")]
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (1, 1)
+
+    def test_an_answered_or_pending_alarm_whose_rule_stopped_is_not(self):
+        answered = [rec("first_seen", "bed-1", "news2", 0), rec("ack", "bed-1", "news2", 1, role="ayse"),
+                    rec("alert_cleared", "bed-1", "news2", 3, reason="resolved", severity="moderate")]
+        assert alarm_quality(answered, _now(60)).unanswered_resolved == 0
+        pending = [rec("first_seen", "bed-1", "news2", 55),
+                   rec("alert_cleared", "bed-1", "news2", 57, reason="resolved", severity="moderate")]
+        report = alarm_quality(pending, _now(60))
+        assert (report.pending, report.unanswered_resolved) == (1, 0)
+
+    def test_a_discharge_ends_an_episode_without_its_alarm_clearing_by_itself(self):
+        records = [rec("first_seen", "bed-1", "news2", 0),
+                   rec("alert_cleared", "bed-1", "news2", 4, reason="discharged", severity="moderate")]
+        (episode,) = build_episodes(records)
+        assert episode.resolved_at == _now(4) and episode.self_resolved is False
+        report = alarm_quality(records, _now(60))
+        assert (report.unanswered, report.unanswered_resolved) == (1, 0)
+
+
 class TestTheBreakdown:
     def test_kinds_are_ranked_by_how_often_they_disturb_the_ward(self):
         records = []
@@ -256,6 +294,37 @@ class TestTheEndpoint:
         assert cells and {c["patient_id"] for c in cells} == {"bed-1"}
         assert sum(c["episodes"] for c in cells) == body["episodes"]
         assert all(c["hour"].endswith(":00:00+00:00") for c in cells)
+
+    def test_the_report_adds_the_self_resolved_count_and_drops_the_repeats(self, client):   # G4-03 (spec D4, A2)
+        """`unanswered_resolved` is new; `repeats` is gone, top level and per kind: the report no longer reads the
+        `alert` rows it counted, so it would always be 0. No other field changes."""
+        client.post("/clinical/bed-1", json={"entries": [
+            {"code": "suspected_infection", "value": 1},
+            {"code": "platelets", "value": 80},
+            {"code": "creatinine", "value": 3.5},
+        ]}, headers=AUTH)
+        body = client.get("/alarm-quality", headers=AUTH).json()
+        assert body["unanswered_resolved"] == 0
+        assert set(body) == {"episodes", "answered", "unanswered", "unanswered_resolved", "escalated", "pending",
+                             "answered_rate", "median_response_sec", "p90_response_sec", "per_kind", "per_day",
+                             "noisiest_beds", "per_patient_hour", "window_from", "window_to",
+                             "days", "truncated"}
+        assert body["per_kind"] and all(set(k) == {"kind", "episodes", "answered", "escalated", "unanswered",
+                                                   "pending", "median_response_sec"} for k in body["per_kind"])
+
+    def test_alert_rows_take_no_place_under_the_cap(self, client):   # G4-03 (spec A2)
+        """The engine writes an `alert` row for every active alert on every ingest; read, they filled the cap within
+        hours and pushed the episodes' own rows out. The report reads none of them: an answered episode followed by
+        many `alert` rows is still read whole under a cap of two."""
+        audit = client.app.state.audit
+        at = datetime.now(timezone.utc) - timedelta(minutes=30)
+        audit.append(AuditEvent("h1", "first_seen", "bed-1", "news2", {"at": at.isoformat()}))
+        audit.append(AuditEvent("h1", "ack", "bed-1", "news2", {"at": (at + timedelta(minutes=1)).isoformat(),
+                                                                "role": "ayse"}))
+        for n in range(5):
+            audit.append(AuditEvent("h1", "alert", "bed-1", "news2", {"at": (at + timedelta(minutes=2 + n)).isoformat()}))
+        body = client.get("/alarm-quality", params={"limit": 2}, headers=AUTH).json()
+        assert (body["truncated"], body["episodes"], body["answered"], body["median_response_sec"]) == (False, 1, 1, 60.0)
 
 
 class TestChartingRaisesRealEpisodes:
@@ -337,6 +406,8 @@ def test_the_report_reads_exactly_the_kinds_build_episodes_counts():
     read = set(re.findall(r'rec\.event_type == "(\w+)"', inspect.getsource(module.build_episodes)))
     assert read and module.EPISODE_KINDS == frozenset(read)
     assert not {"shadow_alert", "shadow_alert_cleared", "ingest", "notification"} & module.EPISODE_KINDS
+    # G4-03 (spec A2): the routes read every one of them but `alert`, whose only use was the repeat count.
+    assert module.EPISODE_READ_KINDS == module.EPISODE_KINDS - {"alert"}
 
 
 def test_rows_of_other_kinds_change_no_episode():
@@ -344,8 +415,8 @@ def test_rows_of_other_kinds_change_no_episode():
             rec("shadow_alert", "bed-1", "news2", 1, severity="high"), rec("ingest", "bed-1", "heart_rate", 2),
             rec("ack", "bed-1", "news2", 3, role="NURSE"), rec("shadow_alert_cleared", "bed-1", "news2", 4),
             rec("alert_cleared", "bed-1", "news2", 5, reason="resolved")]
-    from homunculus.api.alarm_quality import EPISODE_KINDS
+    from homunculus.api.alarm_quality import EPISODE_READ_KINDS
 
     now = T0 + timedelta(hours=1)
     assert (alarm_quality(rows, now).as_dict()
-            == alarm_quality([r for r in rows if r.event_type in EPISODE_KINDS], now).as_dict())
+            == alarm_quality([r for r in rows if r.event_type in EPISODE_READ_KINDS], now).as_dict())
