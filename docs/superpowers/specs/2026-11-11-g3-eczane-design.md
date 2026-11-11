@@ -9,6 +9,14 @@ start, tenant zone; the `_board_for` reader), G3-03 (the fluid ledger) and the G
 cut from main `e0850fb1` and merged with the main that carries G2-B1c (migration `0018`) and G4-02 («Yönetici özeti»).
 Guide section at implementation: §3.23.
 
+**Amended 2026-11-11, after the two independent reviews of the code** (fix commits `28d615bd`, `469a423d`; the branch
+is merged with main `b6c0dcd8`). The spec describes the code as it is now. Amended: D8 and §3.1 (the second line of a
+record that was charted but is not counted), D10 and §3.2 (diacritics in the bed order), D13 and §3.3 (a cut fluid
+read prints no number; an empty board reads no fluid entry), D16 (the fluid day's start under the column heading),
+D17 and §5 (the page's clock without `board.view`; no poll from a hidden tab), D18 and §6 (no counters on a list that
+is not fresh and has no rows; a refused read drops the list), §7 (the tests), §9 (O2's and O7's wording, new O9 and
+O10). The other decisions stand as approved.
+
 ## 1. Why
 
 The pharmacist group has existed since the RBAC slice and reaches no screen of its own: it holds `board.view` and
@@ -39,17 +47,17 @@ or advise a dose.
 | D5 | **The row**: bed (`identity.bed_label`, else the patient key — the board's `bedNameOf` rule), patient (`identity.display_name`; when it is empty the screen prints what the board prints, `nameOf`'s `board.identityPending`), vasopressors/inotropes, the antibiotic state, creatinine, today's fluid balance. The bed and the name are one link to the patient screen (`#/patients/<key>`, a real anchor as on the alarm rows — not a click handler on the `<tr>`), drawn as a link only for a session that holds `board.view`. | The approved columns; the patient screen is where the detail and the charting are. |
 | D6 | **Vasopressors/inotropes**: every drug of `meds.pressors` with a charted rate, its rate and when it was charted (`meds.pressors_at`). A rate > 0 is printed as running, a 0 as «durduruldu» — the Meds box's own two sentences (`patient.medsRunning`, `patient.medsStopped`), with the charted time written as an age («12 dk önce», `ageText`). `on_pressor` is the engine's (`meds.on_pressor`). No judgement on how old a rate is. | Same vocabulary as the Meds box; a rate without its time cannot say whether it is current (G2-A3 D5). |
 | D7 | **The antibiotic state** is one of six, decided by the server from `meds.antibiotic_clock`, `meds.antibiotic_at` and `meds.antibiotic_given` (§3.1): `running` «Süre işliyor · n dk kaldı», `missed` «Süre aştı · n dk», `met` «Karşılandı · saat», `late` «Geç verildi · saat», `given` «Verildi · saat», `none` «Kayıt yok» (the three «saat» are the administration's charted time). The clock, its deadline and `met` are the engine's (`_meds`); the page adds no window of its own. | The approved states, in the engine's own fields. |
-| D8 | **«Kayıt yok» is never «verilmedi».** `antibiotic_given` stays three-valued in the answer. `null` (nobody charted anything) and `false` (something was charted, but no administration that counts: a 0, or a dose stamped before recognition) are worded alike: by the clock when there is one (`running` / `missed`, with the second line «uygulama kaydı yok»), else «Kayıt yok» — the Meds box does the same (its `false` without a clock falls to `patient.antibioticUnknown`). No state, tile or note says «verilmedi». A fixed note above the table says what the words mean: «“Kayıt yok” ve “uygulama kaydı yok”, bu sisteme antibiyotik uygulaması kaydedilmediğini söyler; verilmediği anlamına gelmez.» | The carried rule; `_meds`' own docstring. |
+| D8 | **«Kayıt yok» is never «verilmedi».** `antibiotic_given` stays three-valued in the answer. `null` (nobody charted anything) and `false` (something was charted, but no administration that counts: a 0, or a dose stamped before recognition) take the same state word, tone, duration and counters: by the clock when there is one (`running` / `missed`), else «Kayıt yok» — the Meds box does the same (its `false` without a clock falls to `patient.antibioticUnknown`). Under a clock only the second line tells the two apart: `null` reads «tanınma {saat} · uygulama kaydı yok»; `false` reads «tanınma {saat} · tanınmadan sonra sayılan uygulama kaydı yok» — something was charted, so «no record» would be untrue, and the line names what is missing (an administration that counts after recognition) around the first line's own words. No state, tile, line or note says or implies «verilmedi». A fixed note above the table, in every state, says what the words mean: «“Kayıt yok” ve “uygulama kaydı yok”, bu sisteme antibiyotik uygulaması kaydedilmediğini söyler; verilmediği anlamına gelmez.» | The carried rule; `_meds`' own docstring. A sentence that is untrue of a charted record is not a neutral one. |
 | D9 | **Time zero and the window are the engine's, and the page says so.** The clock runs from `engine.recognized_at` — the first evaluation in which the engine's `sepsis` or `septic_shock` rule fired in this episode (`pipeline.py`) — for `ANTIBIOTIC_WINDOW` = 1 h. It keeps counting while the sepsis alert is off the board: the anchor is dropped only when suspected infection is charted absent while no recognition rule fires (and restored if recognition returns within 15 minutes, `ANCHOR_RESTORE_S`), or when the patient is retired at discharge. An administration charted at or after recognition answers the clock (`met` / `late`); it does not remove it. The page's source line: «Antibiyotik süresi: motorun sepsis ya da septik şok kuralının ilk tetiklendiği andan itibaren 1 saat — Surviving Sepsis Campaign 2026 (güçlü öneri, çok düşük kesinlikte kanıt).» | Hard rule 1; [[antimicrobial-timing-sepsis]]: time zero must be stated, and the strength and the certainty are two different things. |
-| D10 | **Order** (server): (1) rows whose state is `running` or `missed`, least `remaining_sec` first — the longest passed first, then the least time left; (2) the other rows with `on_pressor`; (3) the rest. Inside a group, bed order as the board's (`screens/beds/order.js` `byBed`): unit id, a row on no unit last, then the bed label with digit runs compared as numbers and letters case-folded, then the patient key. | The approved order; one bed order in the product. |
+| D10 | **Order** (server): (1) rows whose state is `running` or `missed`, least `remaining_sec` first — the longest passed first, then the least time left; (2) the other rows with `on_pressor`; (3) the rest. Inside a group, bed order as the board's (`screens/beds/order.js` `byBed`): unit id, a row on no unit last, then the bed label with digit runs compared as numbers and letters compared without diacritics and without case (the board's collator at `sensitivity: "base"`: «ÇYB 2» orders with C), then the patient key. | The approved order; one bed order in the product. |
 | D11 | **Four counters** (server, `counts`): «Süre işliyor» (`clock_running`), «Süre aştı» (`clock_missed`), «Vazopresör / inotrop alan» (`on_pressor`), «Sepsis tanınan» (`recognized`: rows with a clock) with its second line «antibiyotik kaydı yok: n» (`recognized_no_record`). By the engine's rules a recognised patient with no counted administration is exactly a `running` or `missed` row, so `recognized_no_record` = `clock_running` + `clock_missed`; the approved fourth counter is therefore shown with the number it is a part of (open item O1). | The approved counters; a tile that only repeated the sum of its neighbours would say nothing. |
 | D12 | **Creatinine**: the last value and its time, «1.4 mg/dL · 06:10». `_meds` carries the value only, so `_meds` gains `creatinine_at` (the observation's timestamp, as `pressors_at`). No colour, no threshold, no trend, no eGFR. | A value without its time cannot be read; the vault has no renal-dosing source. |
-| D13 | **Fluid balance**: the current fluid day's intake − output (G3-03 D5: from `task_settings.shift_start_a`, default 08:00, in the tenant's zone), summed by the server with `api/fluids.py` `fluid_day` and `totals`. One tenant-wide read of the day's `chart` / `chart_retract` rows per request (not one per patient); withdrawn entries are in no sum. A patient with no entry in the day has `fluid: null` and reads «Bugün kayıt yok» — never «0 mL». Shown as the signed balance, intake, output and the last entry's time. No colour, no target. | The approved column; an uncharted day is not a zero balance. |
+| D13 | **Fluid balance**: the current fluid day's intake − output (G3-03 D5: from `task_settings.shift_start_a`, default 08:00, in the tenant's zone), summed by the server with `api/fluids.py` `fluid_day` and `totals`. One tenant-wide read of the day's `chart` / `chart_retract` rows per request (not one per patient; none at all when the scoped board has no card); withdrawn entries are in no sum. A patient with no entry in the day has `fluid: null` and reads «Bugün kayıt yok» — never «0 mL». Shown as the signed balance, intake, output and the last entry's time; under the column's heading the page says when the day began, «gün başlangıcı {saat}» (from `fluid_day.start`; nothing when it is missing or does not parse). No colour, no target. **A cut read prints no number:** while `fluid_truncated` is true every row's fluid cell is «—» — no balance, no intake or output, no «Bugün kayıt yok», fresh or not — under the note «Sıvı toplamları gösterilemiyor: günün kayıtları okuma sınırını aştı.» (§3.3). | The approved column; an uncharted day is not a zero balance. A cut drops the day's oldest rows: a balance may be understated and a null may be a patient with entries, so neither is printed as if it were known. «Today» that does not say when it began cannot be compared with a 24-hour chart. |
 | D14 | **Tones mirror the engine's severities and nothing else**: `missed` is drawn `crit` and `running` `high`, the severities `rules/antibiotic_clock.py` gives `antibiotic_overdue` and `antibiotic_due`; every other state, creatinine and the fluid balance are neutral. Nothing is green. | The screen adds no judgement of its own (riskStyle's rule). |
 | D15 | **No audit row for the list read**, as `/patients`, `/tasks`, `/patients/{id}/trends` and `/fluids` write none (a poll would bury the record). Opening a patient from a row is the patient screen's usual `POST /view`, which writes `view`. | The code's existing convention. |
-| D16 | **Screen** `/eczane` (route id `eczane`, rail after `devir` and before `ozet` (G4-02's page; the rail then ends `eczane`, `ozet`, `settings`), icon `pill`, `perms: ["pharmacy.view"]`, `work: true`, `nav: "main"`). Header «Eczane» with «Bu ekran izleme içindir; doz önermez, order vermez.»; the counters; D8's note; the table; the source line (D9); the footer note (D19). The table scrolls sideways on a narrow screen (`ui/Table`). | The prototype's page, with the live system's data. |
-| D17 | **Refresh** every 30 s (`usePharmacy`, the shape of `useTasks`). While the answer is fresh, the antibiotic durations and the vasopressor ages are computed from the server's ISO times against the board's skew-corrected clock (`useBoardNow`), so they move between polls; the state word is always the server's. | Ward tempo; G2-A2: the API sends the stamp, never an age. |
-| D18 | **A list that is not fresh never reads as today's.** §6: a failed read keeps the last answer under «Eczane listesi güncel değil · son yanıt {saat}», durations are frozen and worded in the past tense, and nothing is called empty; with no answer at all the page says «Eczane listesi okunamadı» and draws no counter and no table. | Decision 18 (only a live answer may say «nothing»); G4-01's rule for a board that is not fresh. |
+| D16 | **Screen** `/eczane` (route id `eczane`, rail after `devir` and before `ozet` (G4-02's page; the rail then ends `eczane`, `ozet`, `settings`), icon `pill`, `perms: ["pharmacy.view"]`, `work: true`, `nav: "main"`). Header «Eczane» with «Bu ekran izleme içindir; doz önermez, order vermez.»; the counters; D8's note; the table, whose heading «Bugünkü sıvı dengesi» carries the fluid day's start beneath it («gün başlangıcı {saat}», D13); the source line (D9); the footer note (D19). The table scrolls sideways on a narrow screen (`ui/Table`). | The prototype's page, with the live system's data. |
+| D17 | **Refresh** every 30 s (`usePharmacy`, the shape of `useTasks`) and at once when the tab is shown again; while the tab is hidden the 30 s tick reads nothing. While the answer is fresh, the antibiotic durations and the vasopressor ages are computed from the server's ISO times against the page's skew-corrected clock, so they move between polls; the state word is always the server's. **The page's clock is skew-corrected for every session** (`useNow(10_000)` + `clockSkewOf(board skew, own skew)`): the board's skew when it is a finite number (a `board.view` holder: `useBoardNow`'s clock, unchanged), else the skew of the page's own answers, taken as each lands — the server skew the API client measured (`serverClockSkewMs`), else the answer's own `now` against the browser's clock at receipt, with the client's noise floor (under 2 s counts as 0, above it rounded to the second); 0 while neither is known. | Ward tempo; G2-A2: the API sends the stamp, never an age. A session that holds `pharmacy.view` alone starts no board store, so it would run on the raw workstation clock: a fast clock would read the list «güncel değil» for ever, a slow one would read a dead list as fresh. A poll from a tab nobody sees serves nobody. |
+| D18 | **A list that is not fresh never reads as today's.** §6: a failed read keeps the last answer under «Eczane listesi güncel değil · son yanıt {saat}» (a refused one, 401 or 403, drops it), durations are frozen and worded in the past tense, and nothing is called empty; with no answer at all the page says «Eczane listesi okunamadı» and draws no counter and no table. | Decision 18 (only a live answer may say «nothing»); G4-01's rule for a board that is not fresh. |
 | D19 | **Out of this slice, and said on the page**: orders, allergies, cultures, the drug-interaction lookup, counting antibiotic treatment days, dose advice. Footer note: «Bu sayfada yok: order'lar, alerjiler, kültür sonuçları, ilaç etkileşim sorgusu, antibiyotik tedavi günü, doz önerisi. Homunculus tanı koymaz, order vermez.» Also out: any write from this page, notifications, a rail badge, printing, the last complete day's balance (O4). | One slice; hard rule 5. |
 | D20 | **i18n** `src/live/i18n/strings/eczane.js`, four languages; nav label tr «Eczane», az «Aptek», ru «Аптека», en «Pharmacy». Reused as they are: the drug names and the two pressor sentences (`patient.medsDrug*`, `patient.medsRunning`, `patient.medsStopped`), `ageText` (`patient.vitalAge`, `board.ageS/M/H`), `nameOf` (`board.identityPending`), `ScopeNote`'s strings. The Meds box's four antibiotic sentences are whole sentences that begin «Antibiyotik…» and do not fit a cell under an «Antibiyotik» heading; the cells get short keys of their own in the same vocabulary. | Shell rule; one vocabulary. |
 | D21 | **Migration `0019_pharmacy_view.py`**: `revision = "0019"`, `down_revision = "0018"`. Only `group_permissions` rows — `pharmacy.view` for the four non-system default groups of every tenant, by slug, `ON CONFLICT DO NOTHING` (0017's statement); `hospital_admin` needs no row (0016's and 0017's precedent). Downgrade deletes the key's rows. No table, no column. **Order:** the care-team slice's `0018_care_team_transfer` reached main first (2026-11-11), so this file follows it; `alembic heads` stays one head (`test_migration_chain_has_a_single_head`). | Alembic is a single chain; `ensure_default_groups` creates missing groups only. |
@@ -109,8 +117,8 @@ three null):
 
 | `C` | `A` | further test | `state` | TR text |
 |---|---|---|---|---|
-| object | null | `C.remaining_sec > 0` | `running` | «Süre işliyor · {süre} kaldı» · second line «tanınma {saat} · uygulama kaydı yok» |
-| object | null | `C.remaining_sec <= 0` | `missed` | «Süre aştı · {süre}» · the same second line |
+| object | null | `C.remaining_sec > 0` | `running` | «Süre işliyor · {süre} kaldı» · second line «tanınma {saat} · uygulama kaydı yok» (`G` null) or «tanınma {saat} · tanınmadan sonra sayılan uygulama kaydı yok» (`G` false) |
+| object | null | `C.remaining_sec <= 0` | `missed` | «Süre aştı · {süre}» · the same second line, by `G` |
 | object | set | `C.met` is true | `met` | «Karşılandı · {saat}» |
 | object | set | `C.met` is false | `late` | «Geç verildi · {saat}» |
 | null | set | — | `given` | «Verildi · {saat}» |
@@ -120,9 +128,12 @@ three null):
   `antibiotic_due`, otherwise `antibiotic_overdue`), so the page and the alarm change word at the same second.
 - `A` is the first administration (value ≥ 1) stamped at or after recognition when there is a clock, else the first
   one charted (`_meds`). `met` is `A <= deadline`, the engine's comparison. `{saat}` is `A` as `dayStamp` writes it.
-- `G` false with a clock is `running` or `missed` like `G` null: a 0 was charted, or a dose is stamped before
-  recognition, which the rule does not count (`_antibiotic_given_since`; open item O2). `G` false without a clock is
-  `none`. `given` passes `G` through unchanged, so a later reader can still tell the two.
+- `G` false with a clock is `running` or `missed` like `G` null — the same state, tone, duration and counters: a 0
+  was charted, or a dose is stamped before recognition, which the rule does not count (`_antibiotic_given_since`;
+  open item O2). Only the second line differs (D8), and it is the screen that picks it, from the answer's `given`:
+  strictly `false` is «tanınma {saat} · tanınmadan sonra sayılan uygulama kaydı yok» (`eczane.ab.noCountedAdmin`),
+  anything else «tanınma {saat} · uygulama kaydı yok» (`eczane.ab.noAdmin`). `{saat}` there is `recognized_at`. `G`
+  false without a clock is `none`. `given` passes `G` through unchanged, which is what lets the screen tell the two.
 - The answer's `antibiotic` object is `{state, given, given_at, recognized_at, deadline, remaining_sec}`;
   `remaining_sec` is a number only for `running` and `missed`.
 
@@ -130,7 +141,10 @@ three null):
 
 Sort key of a row: `(group, remaining_sec if group == 0 else 0, unit_id == "", unit_id, natural(bed_label or
 patient_id), patient_id)` with `group` 0 for `running` / `missed`, 1 for `on_pressor`, 2 otherwise, and `natural`
-splitting the label into digit runs (compared as integers) and the rest (case-folded). `counts`: `patients` =
+splitting the label into digit runs (compared as integers) and the rest, compared as the board's collator does at
+`sensitivity: "base"`: combining marks stripped (Unicode NFD, then every combining character dropped), then
+case-folded — «ÇYB 2» orders with C, before «YBU 1-1», as on the board. Compatibility characters are left alone (NFD,
+not NFKD). `counts`: `patients` =
 `len(rows)`; `clock_running` and `clock_missed` by state; `on_pressor` rows with `on_pressor`; `recognized` rows with
 `recognized_at`; `recognized_no_record` = `clock_running + clock_missed`.
 
@@ -142,8 +156,14 @@ are read up to `now + BEDSIDE_SKEW` and summed over `[day.start, day.end)` with 
 equals «today» in that patient's Sıvı box. `fluid` is null when the patient has no non-withdrawn entry in the day;
 else `{in_ml, out_ml, balance_ml, entries, last_at}` (`entries` the count, `last_at` the newest entry's measurement
 time). `fluid_truncated` is true when the one read had to cut (its limit, 20 000 rows, as the task board's hand-entry
-read); a cut loses the day's oldest rows, and the page then says «Sıvı toplamları eksik olabilir: günün kayıtları
-okuma sınırını aştı.»
+read). A cut loses the day's oldest rows, so a balance may be understated and a `fluid: null` may be a patient who has
+entries. The answer still carries what the read summed; the page prints none of it: while `fluid_truncated` is true
+every row's fluid cell is «—» — no balance, no intake or output, no «Bugün kayıt yok», fresh or not — and a note
+above the table says «Sıvı toplamları gösterilemiyor: günün kayıtları okuma sınırını aştı.»
+
+A scoped board with no card reads no fluid entry at all (as `/tasks` skips its reads): `ward_pharmacy` answers its
+whole shape — `rows: []`, zero counts, the same `fluid_day`, `fluid_truncated: false` — without touching the audit
+trail.
 
 ## 4. Engine and API changes (by file)
 
@@ -161,8 +181,8 @@ okuma sınırını aştı.»
 - `homunculus-engine/src/homunculus/api/pharmacy.py` (new) — pure functions, no route: `antibiotic_of(meds) -> dict`
   (§3.1), `pressors_of(meds) -> list[dict]`, `fluid_of(entries, day) -> dict | None`, `row_of(card, fluid) -> dict`,
   `sort_key(row)`, `counts_of(rows) -> dict`, and `ward_pharmacy(cards, audit, *, hospital, now, zone, start_a,
-  start_b) -> dict` (the answer without the scope block). It reads the cards' `identity` and `meds` only; it holds no
-  reference to the engine.
+  start_b) -> dict` (the answer without the scope block; with no card it reads no trail, §3.3). It reads the cards'
+  `identity` and `meds` only; it holds no reference to the engine.
 - `homunculus-engine/src/homunculus/api/app.py` — `PHARMACY_VIEW` beside `BOARD_VIEW`; `GET /pharmacy` after
   `/patients`: `_board_for(authorization, PHARMACY_VIEW)`, the task settings and zone as the fluids route,
   `ward_pharmacy(result.boards, …)`, plus `scope` and `scope_note`. Not audited (D15).
@@ -175,16 +195,24 @@ okuma sınırını aştı.»
   `src/live/session/testTokens.testutil.js`.
 - `dashboard/src/live/shell/routes.js` — the `lazyScreen` line, the `SCREENS` line and the `ROUTES` entry of D16
   (three lines, blank-line separated).
-- `dashboard/src/live/screens/eczane/usePharmacy.js` — read on mount and every `PHARMACY_TICK_MS = 30_000`, the
-  sequence guard of `useTasks`; a failed read keeps the last answer and reports the error; an answer without a `rows`
-  array is a failed read.
+- `dashboard/src/live/screens/eczane/usePharmacy.js` — read on mount, every `PHARMACY_TICK_MS = 30_000` (the tick
+  reads nothing while the tab is hidden) and when the tab is shown again (`visibilitychange`); the sequence guard of
+  `useTasks`. A failed read keeps the last answer and reports the error — except a refused one: on 401 or 403 the
+  held answer is dropped (§6). An answer without a `rows` array is a failed read (`error.malformed`). It hands back
+  `{ data, error, skewMs, refresh }`: `skewMs` is server minus browser in ms, taken the moment each answer lands
+  (D17: `store.api.serverClockSkewMs()` when it is a finite number, else the answer's `now` minus `Date.now()` with
+  the 2 s noise floor and whole seconds), null before the first answer, kept through a failed read.
 - `dashboard/src/live/screens/eczane/pharmacyModel.js` — pure: `isFresh(answer, error, nowMs)` (§6),
-  `durationParts(seconds)` (§5.1), `antibioticCell(row, nowMs, fresh)` → the text key, its parameters and the tone
-  (D14), `pressorLines(row, nowMs, fresh)`, `fluidCell(row)`. It reads the server's `state`, `counts` and row order
-  and never recomputes them.
+  `clockSkewOf(boardSkewMs, ownSkewMs)` (D17: the board's when finite, else the page's own when finite, else 0),
+  `durationParts(seconds)` (§5.1), `antibioticCell(row, nowMs, fresh)` → the text key, its parameters, the tone
+  (D14) and the second line's key by `given` (D8), `pressorLines(row, nowMs, fresh)`, `creatinineCell(row)`,
+  `fluidCell(row)`, `msOf(iso)`. It reads the server's `state`, `counts` and row order and never recomputes them.
 - `dashboard/src/live/screens/eczane/EczaneScreen.jsx` — D16's page. It does not read the board store for its rows
   and draws no `BoardStrip` (the board's stream is not its source); it draws `ScopeNote` from the answer's `scope` /
-  `scope_note`, and reads the clock with `useBoardNow(10_000)`.
+  `scope_note`. Its clock is `useNow(10_000) + clockSkewOf(useBoard().clockSkewMs, usePharmacy's skewMs)` — not
+  `useBoardNow`, whose skew exists only for a `board.view` holder (D17); the one thing it takes from the board is that
+  skew, when there is one. `fluid_truncated` blanks every row's fluid cell (D13); `fluid_day.start` is printed under
+  the fluid column's heading.
 - `dashboard/src/live/i18n/strings/eczane.js` and the catalog's import and entry lines (D20).
 - `dashboard/src/live/screens/admin/catalogue.js` (`PERMISSION_KEYS`), `admin.testutil.js` (`PERMISSION_TEXTS`, the
   backend's sentence) and `src/live/i18n/strings/perms.js` (`pharmacy: { view }` in four languages; tr: «“Eczane”
@@ -202,19 +230,29 @@ whose deadline passes between two polls reads «Süre işliyor · <1 dk kaldı»
 ## 6. Stale and failed reads
 
 - **Fresh** = the last read succeeded and the answer's `now` is at most `PHARMACY_FRESH_MS = 90_000` behind the
-  screen's clock (three polls; a hidden tab shown again is not fresh until its poll lands).
-- **Not fresh, an answer held**: a `crit` Alert leads the page — «Eczane listesi güncel değil · son yanıt {saat}», with
-  the read's reason when it failed (`readErrorText`). The counters keep their numbers under «son yanıt {saat}
-  itibarıyla». `running` and `missed` cells stop counting and read in the past tense with the one stamp that stays
-  true: «Son yanıtta süre işliyordu · bitiş {saat}», «Son yanıtta süre aşılmıştı · bitiş {saat}». Vasopressor ages
-  become the charted time (`dayStamp`). The other cells are records with their own times and stand as they are.
-- **No answer yet and the read failed**: «Eczane listesi okunamadı: {neden}»; no counter, no table — never zeros.
+  page's skew-corrected clock (D17; three polls; a hidden tab shown again is not fresh until its poll lands). The
+  clock is the server's for a session without `board.view` too, so a wrong workstation clock neither reads a dead
+  list as fresh nor a live one as stale.
+- **Not fresh, an answer held, with rows**: a `crit` Alert leads the page — «Eczane listesi güncel değil · son yanıt
+  {saat}», with the read's reason when it failed (`readErrorText`). The counters keep their numbers under «son yanıt
+  {saat} itibarıyla». `running` and `missed` cells stop counting and read in the past tense with the one stamp that
+  stays true: «Son yanıtta süre işliyordu · bitiş {saat}», «Son yanıtta süre aşılmıştı · bitiş {saat}»; their second
+  line (D8) stays. Vasopressor ages become the charted time (`dayStamp`). The other cells are records with their own
+  times and stand as they are.
+- **Not fresh, an answer held, no rows**: the alert only. No counter is drawn — four «0» tiles would read as a quiet
+  ward — and no `ScopeNote`; the page says only that the list is not fresh.
+- **No answer and the read failed**: «Eczane listesi okunamadı: {neden}»; no counter, no table — never zeros.
 - **No answer yet, read in flight**: a loading note.
 - **Empty `rows`**: only a fresh answer may say «Görünümünüzde yatan hasta yok.», under the `ScopeNote` (a blind scope
-  is explained by the engine's own sentence). A list that is not fresh with no rows says only that it is not fresh.
+  is explained by the engine's own sentence) and the server's own zero counters.
 - A counter of 0 is a number the server sent, not a reassurance: D8's note stays on the page in every state.
-- 403 (the right was withdrawn mid-session) and 503 (scope unreadable) are failed reads, worded by `apiErrors.js` as
-  everywhere.
+- **A refused read drops the list.** A 401 or a 403 says the caller may no longer see the list (the session is gone;
+  the right was withdrawn mid-session): `usePharmacy` drops the held answer and the page is the «no answer and the
+  read failed» page — the read's error, worded by `apiErrors.js` as everywhere, with no counter, no table and no
+  source line. A 5xx (503 «kapsam şu anda okunamıyor» among them), a timeout and a network failure say nothing about
+  the caller: the last answer stays, not fresh, as above.
+- **A cut fluid read** (`fluid_truncated`, §3.3) blanks every row's fluid cell in every state above that draws the
+  table, under its own note.
 
 ## 7. Testing
 
@@ -223,12 +261,16 @@ whose deadline passes between two polls reads «Süre işliyor · <1 dk kaldı»
     `meds`, the boundary (`remaining_sec` 1 is `running`, 0 and −1 are `missed`); `pressors_of` (a 0 rate listed as
     stopped, a never-charted drug absent); `fluid_of` (null without entries, withdrawn entries excluded, `last_at`);
     `sort_key` (most overdue first, then least time left, then the vasopressor group, then unit and natural bed order —
-    «YBU 1-2» before «YBU 1-10», a row on no unit last); `counts_of` (`recognized_no_record` = running + missed).
+    «YBU 1-2» before «YBU 1-10», a row on no unit last; a letter with a diacritic orders with its base letter, «ÇYB 2»
+    before «YBU 1-1»); `counts_of` (`recognized_no_record` = running + missed); `ward_pharmacy` with no card reads
+    no trail and still answers whole.
   - `tests/test_pharmacy_api.py` — the route: 403 without the key and 200 with it alone; only the caller's beds, with
     `scope` and `scope_note`; 503 for an unreadable scope; an identity-only card's row; the fluid day from the task
-    settings and the tenant's zone (`Asia/Baku`), an entry before the day start left out; creatinine with its time; the
-    read appends nothing to the audit log; a patient discharged through Kabul is absent, as on `/patients`; the device
-    token passes.
+    settings and the tenant's zone (`Asia/Baku`), an entry before the day start left out — on a fixed instant, not the
+    wall clock; creatinine with its time; the read appends nothing to the audit log, and an empty scoped board reads
+    no fluid entry and still answers whole; a patient discharged through Kabul is absent, as on `/patients`; the
+    device token passes; two hospitals with the same patient key and the same bed label each read only their own
+    row, sums and counts.
   - `tests/test_fluids.py` — `read_entries_by_patient` agrees with `read_entries` patient by patient; a withdrawal
     never crosses patients; `truncated`.
   - `tests/test_api_board_meds.py` — `creatinine_at`.
@@ -240,13 +282,26 @@ whose deadline passes between two polls reads «Süre işliyor · <1 dk kaldı»
   migration tests — upgrade to `0018`, a tenant with `pharmacist`, `physician` and `nurse` groups, upgrade to `0019`:
   the two get the row, the nurse none; the statement is idempotent; downgrade to `0018` removes the rows and leaves
   the groups and their other rows.
-- Dashboard: `pharmacyModel.test.js` (durations at 0, 59 s, 119 min, 120 min; each state's key and tone; the stale
-  twins; no tone on creatinine or fluid), `EczaneScreen.test.jsx` (the counters and the rows in the server's order;
-  the six states; «Kayıt yok» never «verilmedi»; the link only with `board.view`; the notes of D8, D9 and D19 present;
-  fresh, not fresh, failed first read, empty), `shell/routes.test.js` (the route, its place between `devir` and `ozet`, the
-  nurse and the auditor cannot reach it, `pharmacy.view` alone lands on `/eczane`; the pinned route tails updated),
+- Dashboard: `pharmacyModel.test.js` (durations at 0, 59 s, 119 min, 120 min; each state's key and tone; the second
+  line's key — `noCountedAdmin` only for a `given` that is strictly false, with the state word and the tone of a null
+  one; the stale twins; no tone on creatinine or fluid; `clockSkewOf`: the board's skew when it has one, else the
+  page's own, else 0), `usePharmacy.test.jsx` (mount and every 30 s; the last answer kept through a 5xx, a timeout
+  and a network failure, dropped on 401 and 403; a malformed answer; the sequence guard; nothing read from a hidden
+  tab, and at once when it is shown again; the skew of the page's own answers — the client's measured one, else the
+  answer's `now` with the 2 s noise floor and whole seconds, kept through a failed read), `EczaneScreen.test.jsx`
+  (the counters and the rows in the server's order; the six states; «Kayıt yok» never «verilmedi»; the link only with
+  `board.view`; the notes of D8, D9 and D19 present; the fluid day's start under the heading, with its date when it
+  began on another day; a cut read: a dash in every fluid cell and the note; fresh, not fresh with rows (counters
+  under the last answer's time) and without (no counter), failed first read, empty; a refused read leaves no table,
+  no counter and no name on the page; a session with `pharmacy.view` alone on a workstation whose clock is 5 minutes
+  slow or 2 minutes fast reads the server's minutes and the server's freshness, and a `board.view` holder's clock is
+  the board's as before), `shell/routes.test.js` (the route, its place between `devir` and `ozet`, the nurse and the
+  auditor cannot reach it, `pharmacy.view` alone lands on `/eczane`; the pinned route tails updated),
   `admin/catalogue.test.js` and `admin.testutil.test.js` (the mirrors), `i18n/strings.test.js` (four languages, same
-  keys and placeholders), `rawKeys.test.jsx` (sweeps the new screen).
+  keys and placeholders), `i18n/eczane.strings.test.js` (the namespace's 45 keys per language — 43 before the
+  reviews; the Turkish word for word; the cut-read note and the day-start line; the qualified second line built
+  around the plain line's own words; «verilmedi» only in the note that denies it), `rawKeys.test.jsx` (sweeps the
+  new screen).
 - Gates as G3-03: the engine's no-DB suite, the Postgres part on a disposable database, the Python 3.14 slice, the
   dashboard suite, `npm run build` (one more lazy chunk; the precache count is recorded).
 
@@ -263,8 +318,11 @@ the page once its token is renewed. Blocks one at a time; the owner walks the pa
 - O1 The fourth counter. As approved («no antibiotic record among sepsis-recognised patients») it always equals
   running + missed; this spec shows «Sepsis tanınan» with that number as its second line (D11). Owner confirmed, 2026-11-11.
 - O2 A dose charted before recognition does not stop the clock (the engine's rule), so that patient reads «Süre
-  işliyor» / «Süre aştı» here as in the alarm. Whether an earlier dose should count is a question about time zero,
-  which [[antimicrobial-timing-sepsis]] leaves open ([[open-questions]]); no change without a source. Owner: no change, 2026-11-11.
+  işliyor» / «Süre aştı» here as in the alarm, and is counted so. Since the reviews the second line is exact about
+  it — «tanınmadan sonra sayılan uygulama kaydı yok», not «uygulama kaydı yok» (D8): the sentence changed, the clock
+  did not, and the earlier dose still does not count. Whether it should is a question about time zero, which
+  [[antimicrobial-timing-sepsis]] leaves open ([[open-questions]]); no change without a source. Owner: no change,
+  2026-11-11.
 - O3 A clock nobody answers stays «Süre aştı» until infection is charted absent or the patient is discharged, and
   sorts first. Kept (owner, 2026-11-11); to be looked at after the pilot's first week (e.g. marking rows whose sepsis alarm no
   longer fires).
@@ -273,5 +331,15 @@ the page once its token is renewed. Blocks one at a time; the owner walks the pa
   is doubted: each needs a source in the vault first.
 - O6 A device token reads `/pharmacy` with names, as it reads `/patients` (Görevlerim's O10) — the owner's call for
   the list reads together.
-- O7 AZ, RU and EN texts await a native reading, as every namespace.
+- O7 AZ, RU and EN texts await a native reading, as every namespace. Two remarks from the reviews for that reading:
+  RU `source` (and `sourceOther`) says «правила … в Системе» where TR, AZ and EN name the engine's rule; AZ `note`
+  ends «anlamına gəlmir», which sounds Turkish.
 - O8 The Meds box could print `creatinine_at`, now on the card; not in this slice.
+- O9 The tenant-wide read's cost. `fluids.read_entries_by_patient` (and `/tasks`' hand-entry read with it) asks the
+  audit trail for the tenant's `chart` / `chart_retract` rows since the day start: the filter is on a text timestamp
+  and the read cannot stop early, so its cost grows with the trail, and it runs on the event loop — every 30 s for
+  each open page. Today's trail is small. A later slice: page newest-first by id and stop at the first row older than
+  `since`, and/or run the read off the event loop.
+- O10 The pharmacist group's description is unchanged («Pano ve kabul kayıtlarını okuma.»), though the group now
+  opens a page of its own. Changing it needs a migration that rewrites the seeded tenants' text, as `0018` did for
+  the charge nurse. Owner's call.
