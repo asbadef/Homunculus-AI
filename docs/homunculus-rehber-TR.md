@@ -1286,7 +1286,8 @@ bildirimde (toast) görünür.
   denetimli — sonraki dilim).
 - Taburcu sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
   (rozet yalnız kartta).
-- İmza, imzalayan hekimi bakım ekibine eklemez (B1c).
+- İmza, imzalayan hekimi bakım ekibine eklemez (B1c). *B1c'de kapandı: imzalayan hekim sorumlu
+  hekim olur ve ekip satırı yazılır (3.19).*
 - Kabul, Taburcu, Yataklar ve Yapı'nın Azerbaycanca, Rusça ve İngilizce metinleri yerel bir
   okuyucunun okumasını bekliyor.
 - **Hastanenin sunucusunda henüz yok.** Dağıtım kullanıcının sözüyle yapılacak; orada önce
@@ -1940,6 +1941,96 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 - **Denetim kaydı:** açma, imza ve karşı imza denetim kaydına yazılır. Notun metni kayda yazılmaz.
 - **Bu dilimde olmayanlar:** menü rozeti, hasta ekranında «Teslim notu» sekmesi, sunucuda saklanan taslak, vardiya çizelgesi.
 - **Kaynak:** `docs/superpowers/specs/2026-11-10-g2b-b3b-devir-design.md`.
+
+### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
+
+Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
+kodda (`feat/g2b-b1c-bakim-ekibi`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Örneklerdeki
+adlar uydurmadır.
+
+- **Yalnız hekimler.** Ekipte üç rol var: **sorumlu hekim** (her an tek kişi), **yardımcı hekim** ve
+  **nöbetçi hekim** (başlangıcı ve bitişi olan, en çok 48 saatlik bir pencereyle). Hemşireler ekipte
+  değildir; hemşirenin yatakla bağı ayrı bir kayıttır. Kimin hekim olduğunu kişinin rol grubu söyler:
+  Sorumlu Hekim, Ünite Hekimi ya da Hekim (hesap etkin ve kurumun üyesi olmalı). Hekim olmayan biri
+  ekibe eklenemez, sorumlu hekim yapılamaz, «Sorumlu hekim ol» diyemez: sunucu 409 `care_team_not_physician`
+  verir, ekran bunu okuyanın dilinde söyler.
+- **İmzalayan sorumlu hekim olur.** Kabulü imzalayan hekim, formda başka bir sorumlu hekim adı yoksa,
+  aynı işlemde sorumlu hekim olur ve ekipteki satırı yazılır; biri başarısız olursa ikisi de yazılmaz.
+  Formda bir hekim adı varsa sorumlu hekim odur. Sorumlu hekim (formdaki, yoksa imzalayan) hekim değilse
+  imza reddedilir: bir yönetici hesabı, hekim adı geçmeyen bir taslağı artık imzalayamaz; ekran «hekim
+  değil» der. Kabul bu yüzden hekim hesabıyla imzalanır. (3.8'deki «İmza, imzalayan hekimi bakım ekibine
+  eklemez» sınırı bununla kapandı.)
+- **Kutu.** Hasta ekranında «Bakım ekibi»: her üyenin adı, rolü, nöbetçinin penceresi (geçtiyse
+  «süresi doldu») ve onu kimin eklediği. Eski üyeler «Önceki üyeler» altında katlıdır, ne zaman
+  çıktıklarıyla. Kimlik numarası gösterilmez. Kabul henüz imzalanmadıysa kutu yalnız «Sorumlu hekim,
+  kabul imzalanınca atanır.» der. Hasta ekranı açık kabulleri bir kez okur (dakikada bir yeniler) ve imza
+  şeridi, etiket ve kutu aynı okumayı kullanır; imza atılır atılmaz kutu ekibi gösterir. Kabuller hiç
+  okunamadıysa kutu bunu tek satırla söyler.
+- **Düğmeler.**
+  - «Sorumlu hekim ol»: `care_team.claim` sahibi bir hekim, sorumlu hekim değilse.
+  - «Ekibe ekle»: `care_team.assign` sahibi. Seçici kurumdaki bütün hekimleri adla sunar (kimlik numarası
+    yok); başka birimden bir nöbetçi meslektaş da çıkar. Ekipte etkin satırı olan hekim sunulmaz; süresi
+    dolmuş bir nöbetçi yeniden sunulur. Nöbetçi için başlangıç ve bitiş gerekir: bitiş başlangıçtan
+    sonra, gelecekte ve en çok 48 saat sonra olmalıdır; başka rolün penceresi olmaz. Sunucu bunları
+    ayrıca denetler (422).
+  - «Sorumlu hekim yap» ve «Ekipten çıkar»: `care_team.assign` sahibi, sorumlu hekimin satırı dışında.
+  - «Ekipten ayrıl»: üyenin kendisi, kendi satırında; yalnız `admissions.view` yeter, kendi birimlerinin
+    dışından da.
+
+  Varsayılan gruplarda `care_team.claim` ve `care_team.assign` yalnız Sorumlu Hekim grubundadır (ve bütün
+  izinleri taşıyan Sistem Yöneticisi grubunda); Ünite Hekimi ile Hekim ekibi değiştirmez. Ekip imzadan
+  taburcuya kadar yazılır: taslak ya da kapanmış bir kabulde ekibe yazılmaz (409).
+- **Sorumlu hekimin satırı.** Yeni bir sorumlu hekim atanırken ekran bir kez sorar: «X sorumlu hekim
+  olur; Y ekipten çıkar.» (önceki yoksa yalnız «X sorumlu hekim olur.»). Soru «Sorumlu hekim ol»da,
+  «Sorumlu hekim yap»ta ve «Ekibe ekle»de rol sorumlu hekimse sorulur; düğme cevaptır. Yeni sorumlu hekim
+  öncekinin satırını bitirir; terfi eden yardımcının kendi eski satırı da kapanır, yani bir hekimin kabulde
+  tek satırı kalır. Sorumlu hekimin satırı tek başına kaldırılamaz (409 `care_team_attending_required`;
+  ekran «yeni bir sorumlu hekim atayın» der): yeni sorumlu hekim atanınca ya da taburcuda biter. Taburcu
+  ekibin tamamını kapatır, kapanmış satırlar geçmişte kalır. İki hekim aynı anda «Sorumlu hekim ol» derse
+  ikisi de geçer, sırayla; sonuncu sorumlu hekim kalır. Bir hekimin kendi ikinci basışı ve ekipte zaten
+  olan birinin eklenmesi 409 `care_team_conflict` verir. Süresi dolmuş bir nöbetçi yeniden eklenebilir:
+  eski satırı kapanır, yenisi yazılır. Nakil yolları henüz kapalıdır (B1b); ekibin nakilde ne olacağı onun
+  işidir.
+- **Kendi hastası.** Ekipteki hekim hastasını panoda kendi birimlerinin dışında da görür; nöbetçi
+  yalnız penceresi içinde. Ekipten çıkan artık görmez. Açık bir pano bağlantısı yeni üyeyi yeniden
+  bağlanınca alır; diğer okumalar hemen. Ekip okuması, üyenin kendi satırı etkin olduğu sürece ona açıktır.
+  Birimi dışındaki bir üye hastayı panoda görür, ama o hastanın ekranında kutu çıkmaz (sonraki dilim).
+- **Sorumlu hemşire.** Sorumlu hemşire grubu `care_team.claim` yetkisini kaybetti: ekip hekimlerindir,
+  hemşirenin bu düğmesi her zaman reddedilirdi. Grubun açıklamasından da «bakım ekibi» çıktı. Göçten
+  önce giriş yapmış bir sorumlu hemşire, jetonu yenilenene dek yetkiyi jetonunda taşır; kutu ona düğme
+  sunmaz, isteği yine reddedilir.
+- **Denetim.** Her değişiklik denetim kaydına yazılır: kim, kimi, hangi yolla (imza, üstlenme, ekleme),
+  hangi rolle ve hangi satırı bitirerek; hastanın adı yazılmaz. «Denetim bütünlüğü» sayfası (3.13) bu üç
+  olayı adıyla gösterir ve «Tür» süzgecinde sunar: «Sorumlu hekim atandı», «Bakım ekibine eklendi»,
+  «Bakım ekibinden çıkış».
+- **Göç `0018`** (G3-02'nin `0017`'sinin ardından). Eski kısıt, bir üyenin aynı kabulden ikinci kez
+  çıkarılmasını engelliyordu. Yerine iki kısmi tekil dizin gelir: kabul başına üye için bir etkin satır,
+  kabul başına bir sorumlu hekim. Göç önce var olan satırları düzeltir:
+  - kapanmış kabullerin (taburcu, nakil) açık satırlarını kapatır;
+  - bir kabulde iki etkin sorumlu hekim satırı varsa en yenisini bırakır, ötekini kapatır;
+  - imzalı açık kabulün etkin sorumlu hekim satırı yoksa adı geçen sorumlu hekim için yazar (hekimin o
+    kabulde başka bir etkin satırı varsa o satır sorumlu hekim satırına dönüşür);
+  - sorumlu hemşire grubundan `care_team.claim`'i alır ve grubun açıklaması varsayılan metinse
+    «bakım ekibi»ni çıkarır; hastanenin kendi yazdığı açıklamaya dokunmaz.
+
+  B1b'nin (nakil) iki sütunu da bu göçle gelir: `admissions.transfer_reason` ve `transfer_note`; henüz
+  hiçbir yol onları yazmaz. **Geri alma** (`alembic downgrade 0017`) bu iki sütunu düşürür: B1b çıktıktan
+  sonra her nakil nedeni ve şifreli notu kaybolur. Bir üyenin aynı kabulde iki kapalı satırı varsa eski
+  kısıt geri kurulamaz ve geri alma bütünüyle durur. Göçün kapattığı ya da yazdığı satırlar geri
+  alınmaz. Önce api, sonra web çıkar; eski bir imaj `0018`'e karşı yalnız iki yolda 500 verir (eski
+  «üstlen» ve sorumlu hekim rolüyle ekleme), eski web ikisini de çağırmaz.
+- **Sunucuya çıkmadan önce.** İki salt okunur sayım yapılır (yalnız sayı; ad ve kimlik yok): imzalı açık
+  kabullerde adı geçen sorumlu hekimlerden hekim olmayanların sayısı (göç onlara da sorumlu hekim satırı
+  yazar) ve kapanmamış kabullerde etkin sorumlu hekim satırı olup hekim olmayanların sayısı (eski
+  «üstlen» yolu bir sorumlu hemşirenin hastayı almasına izin veriyordu). Sayı sıfır değilse çıkış durmaz:
+  kutu o satırları olduğu gibi gösterir; sonra bir hekim hastayı üstlenir ya da bir sorumlu hekim onu
+  sorumlu hekim rolüyle ekler, bu öncekinin satırını bitirir. Hangi hastanın önce bir hekime verileceğine
+  sahip karar verir. Sorgular planın «Deploy notes» bölümündedir.
+- **Bu dilimde olmayanlar:** süresi dolan nöbetçi satırlarının kendiliğinden kapanması (yeniden eklemek
+  ya da «Ekipten çıkar» gerekir), birimi dışındaki üye için hasta ekranında kutu, açık pano akışına yeni
+  üyeyi hemen bildirmek, ekibin nakilde taşınması (B1b).
+- **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md` ve
+  `docs/superpowers/plans/2026-11-09-g2b-b1c-bakim-ekibi.md`.
 
 ### 3.21 Alarm erteleme: «Ertele» (Grup 2 · B5b)
 
