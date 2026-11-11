@@ -97,6 +97,29 @@ export function handEntryOf(manual, point) {
   return manual.find((m) => m.retracted === null && m.ms === point.ms && m.value === point.value) ?? null;
 }
 
+/** G3-05 (D16): a channel's device readings (`device`) as `{ entry, ms, iso, value, source, retracted }`, in their
+ *  order; `retracted` as `parseManual`'s. An entry whose instant, value or id cannot be read is dropped. */
+export function parseDevice(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((d) => {
+    const ms = Date.parse(d?.at);
+    if (!Number.isFinite(ms) || typeof d?.value !== "number" || !Number.isFinite(d.value) || !Number.isInteger(d?.entry)) return [];
+    const r = d.retracted && typeof d.retracted === "object" ? d.retracted : null;
+    const rms = r ? Date.parse(r.at) : Number.NaN;
+    return [{
+      entry: d.entry, ms, iso: d.at, value: d.value, source: String(d.source ?? ""),
+      retracted: r ? { reason: String(r.reason ?? ""), by: String(r.by ?? ""), ms: Number.isFinite(rms) ? rms : null } : null,
+    }];
+  });
+}
+
+/** The device reading a drawn point is — not withdrawn, at its instant, with its value — or null (`handEntryOf`'s
+ *  rule, for the other source). */
+export function deviceEntryOf(device, point) {
+  if (!point || !Array.isArray(device)) return null;
+  return device.find((d) => d.retracted === null && d.ms === point.ms && d.value === point.value) ?? null;
+}
+
 /** [sinceMs, untilMs] onto [left, right]. */
 export function timeScale(sinceMs, untilMs, left, right) {
   const span = untilMs - sinceMs;

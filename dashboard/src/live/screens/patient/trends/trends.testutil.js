@@ -50,6 +50,14 @@ export function hand(entry, minutesAgo, value, { by = "hem.ayse", retracted = nu
   };
 }
 
+/** G3-05 (D16): one device reading of a channel's `device`, `minutesAgo` before NOW. `retracted` as `hand`'s. */
+export function dev(entry, minutesAgo, value, { source = "CONNEX-3A", retracted = null } = {}) {
+  return {
+    entry, at: ago(minutesAgo * 60), value, source,
+    retracted: retracted ? { reason: retracted.reason, by: retracted.by ?? "hem.ayse", at: ago(retracted.minutesAgo * 60) } : null,
+  };
+}
+
 /** One channel. Its `latest` defaults to the last point with no delta and no own-normal judgement;
  *  a test about those states them in `over.latest`. */
 export function channel(key, points = [], over = {}) {
@@ -65,6 +73,7 @@ export function channel(key, points = [], over = {}) {
     latest: last ? { ts: last[0], value: last[1], delta: null, news2_points: last[2], within_own_normal: null } : null,
     bands: { news2: BANDS[key], own_normal: null, device: null },
     manual: [],               // G3-01 (D13): the channel's hand entries in the window
+    device: [],               // G3-05 (D16): the channel's device readings in the window
     ...over,
   };
 }

@@ -12,12 +12,16 @@
 // by its row's time and value (and series, on the pressure card): the buttons share one name. A struck row says
 // «hatalı giriş olarak işaretlendi» in words beside the <s>, which a screen reader does not read as struck, and can
 // take focus (`tabIndex={-1}`): after a withdrawal the dialog puts focus there, because the button that had it is gone.
+//
+// G3-05 (D16): a reading a device sent says «cihaz», and to a `clinical.chart` holder offers «Düzelt» (the host
+// opens it, `onCorrect`) on a value of the bedside set. A withdrawn device reading is a struck row like a hand
+// entry's, and says «cihaz». A reading that is both lists (the same instant and value) is shown as the hand entry.
 import React, { useId } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { Button, FOCUS_RING, Table } from "../../../ui/index.js";
 import { isBedsideCode } from "../../bedside/vitalsFields.js";
 import { cardTitle } from "./cards.js";
-import { handEntryOf } from "./trendGeometry.js";
+import { deviceEntryOf, handEntryOf } from "./trendGeometry.js";
 import { markText, pointsText, whenText } from "./trendText.js";
 
 /** The table's rows, newest first. A reading with no value is not one (the chart draws no dot for it).
@@ -37,7 +41,8 @@ function rowsOf(card, series, markers) {
   const rows = [
     ...card.series.flatMap((s, i) => (series[i]?.points ?? []).flatMap((p, j) => (
       Number.isFinite(p.value) && Number.isFinite(p.ms)
-        ? [{ ms: p.ms, rank: i, order: j, key: keyed(`${s.key}-${p.iso}`), series: s, p, hand: handEntryOf(series[i]?.manual, p) }]
+        ? [{ ms: p.ms, rank: i, order: j, key: keyed(`${s.key}-${p.iso}`), series: s, p, hand: handEntryOf(series[i]?.manual, p),
+          device: deviceEntryOf(series[i]?.device, p) }]
         : []
     ))),
     // G3-01 (D13): after the readings of its instant, each withdrawn hand entry of the series.
@@ -65,7 +70,7 @@ function PointsCell({ points, news2 }) {
   );
 }
 
-export function TrendTable({ card, channels, series, markers, hours, canRetract = false, onWithdraw }) {
+export function TrendTable({ card, channels, series, markers, hours, canRetract = false, onWithdraw, canCorrect = false, onCorrect }) {
   const { t } = useI18n();
   const base = useId();
   const two = card.series.length > 1;
@@ -104,7 +109,7 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
             <td>{t(row.series.unitKey)}</td>
             <td />
             <td>
-              <span className="font-semibold">{t("olcum.hand")}</span>{" "}
+              <span className="font-semibold">{t(row.withdrawn.origin === "device" ? "olcum.device" : "olcum.hand")}</span>{" "}
               {t("olcum.retracted", {
                 reason: row.withdrawn.retracted.reason, who: row.withdrawn.retracted.by,
                 time: row.withdrawn.retracted.ms === null ? "—" : whenText(row.withdrawn.retracted.ms, hours),
@@ -116,6 +121,7 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
             key={row.key} row={row} id={`${base}-${row.key}`} two={two} hours={hours}
             news2={Array.isArray(channels[row.series.key]?.bands?.news2)}
             offer={Boolean(row.hand) && canRetract && isBedsideCode(row.series.key)} onWithdraw={onWithdraw}
+            offerCorrect={!row.hand && Boolean(row.device) && canCorrect && isBedsideCode(row.series.key)} onCorrect={onCorrect}
           />
         )))}
       </tbody>
@@ -125,9 +131,9 @@ export function TrendTable({ card, channels, series, markers, hours, canRetract 
 
 /** One reading. A hand one says «elle»; offered to a `clinical.chart` holder, its «Hatalı giriş» is described by
  *  the row's time, its series on the pressure card, and its value (`id` is the row's own prefix for them). */
-function ReadingRow({ row, id, two, hours, news2, offer, onWithdraw }) {
+function ReadingRow({ row, id, two, hours, news2, offer, onWithdraw, offerCorrect = false, onCorrect }) {
   const { t } = useI18n();
-  const ids = offer ? { time: `${id}-t`, series: two ? `${id}-s` : undefined, value: `${id}-v` } : {};
+  const ids = offer || offerCorrect ? { time: `${id}-t`, series: two ? `${id}-s` : undefined, value: `${id}-v` } : {};
   return (
     <tr data-ts={row.p.iso} data-value={row.p.value} data-series={row.series.key}>
       <th scope="row" id={ids.time} className="font-data font-semibold">{whenText(row.ms, hours)}</th>
@@ -137,6 +143,15 @@ function ReadingRow({ row, id, two, hours, news2, offer, onWithdraw }) {
       <PointsCell points={row.p.points} news2={news2} />
       <td>
         {row.hand ? <span className="font-semibold">{t("olcum.hand")}</span> : null}
+        {!row.hand && row.device ? <span className="font-semibold">{t("olcum.device")}</span> : null}
+        {offerCorrect ? (
+          <Button
+            size="sm" variant="ghost" icon="edit" className="ml-2"
+            aria-describedby={[ids.time, ids.series, ids.value].filter(Boolean).join(" ")} onClick={() => onCorrect(row.series, row.device)}
+          >
+            {t("kayit.correct")}
+          </Button>
+        ) : null}
         {offer ? (
           <Button
             size="sm" variant="ghost" icon="x" className="ml-2"

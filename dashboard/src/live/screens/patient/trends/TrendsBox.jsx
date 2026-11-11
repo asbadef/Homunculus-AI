@@ -113,6 +113,13 @@ export function TrendsBox({ patient, bed, nowMs, onWritten }) {
               if (answer !== null) onWritten?.(patient.patient_id);
               return answer;
             })
+            .finally(() => trends.reload())}
+          // G3-05 (D13): the right value of a corrected device reading — a hand entry at the reading's own time.
+          onChart={(entries, at) => board.store.chart(patient.patient_id, entries, at)
+            .then((answer) => {
+              if (answer !== null) onWritten?.(patient.patient_id);
+              return answer;
+            })
             .finally(() => trends.reload())} />
       ) : null}
       {editing?.id === patient.patient_id ? (

@@ -25,17 +25,23 @@
 // means. A `clinical.chart` holder (`canRetract`, the box's) withdraws a hand reading from the table: the shared
 // dialog (common/RetractDialog.jsx) over this one, the write through the box's `onRetract`, then this window is
 // read again — the withdrawal changed the record the chart draws.
+//
+// G3-05 (D16): a device reading says «cihaz» in the table, and a `clinical.chart` holder corrects one there with
+// «Düzelt» (readings/CorrectDialog.jsx): the withdrawal through `onRetract`, the right value through `onChart`,
+// then the same re-read. A withdrawn device reading is drawn crossed and listed struck, as a hand entry's.
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/I18nProvider.jsx";
 import { dayStamp, hhmm } from "../../../i18n/dates.js";
 import { Announce, Modal, Seg } from "../../../ui/index.js";
 import { nameOf } from "../../common/BoardState.jsx";
 import { RetractDialog } from "../../common/RetractDialog.jsx";
+import { CorrectDialog } from "../readings/CorrectDialog.jsx";
+import { sourceText } from "../readings/ReadingsBox.jsx";
 import { cardTitle, channelsOf } from "./cards.js";
 import { TrendChart } from "./TrendChart.jsx";
 import { TrendLegend, TrendNotes } from "./TrendLegend.jsx";
 import { TrendTable } from "./TrendTable.jsx";
-import { handEntryOf, indexAtTime, marksAtTime, parseManual, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
+import { handEntryOf, indexAtTime, marksAtTime, parseDevice, parseManual, parseMarkers, parsePoints, validWindow } from "./trendGeometry.js";
 import { markBeside, pointsBeside, valueBeside, whenText } from "./trendText.js";
 import { measuredKeyOf, useTrends } from "./useTrends.js";
 
@@ -128,7 +134,7 @@ function step(key, stops, ms) {
   return null;
 }
 
-export function TrendModal({ card, patient, bed, onClose, canRetract = false, onRetract }) {
+export function TrendModal({ card, patient, bed, onClose, canRetract = false, onRetract, onChart }) {
   const { t } = useI18n();
   const hintId = useId();
   const controls = useRef(null);
@@ -137,12 +143,14 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   const [cursor, setCursor] = useState(null);   // { ms, how: "mouse" | "key" } — an instant, see the header
   const [plotWidth, setPlotWidth] = useState(0);
   const [withdrawing, setWithdrawing] = useState(null);   // G3-01: { series, entry } whose «hatalı giriş» is open
+  const [correcting, setCorrecting] = useState(null);     // G3-05: { series, entry } — a device reading whose «Düzelt» is open
   const struck = useRef(null);   // G3-01: { entry, data } — a withdrawal whose focus waits for the re-read
   const trends = useTrends(patient.patient_id, hours, measuredKeyOf(patient.measuredAt));
   // G3-01 (D10): a withdrawal is the patient's it was opened for. The dialog is handed another (browser Back under
   // the inert page; TrendsBox keeps `open` across a move): the open «hatalı giriş» closes, and nothing waits for focus.
   useEffect(() => {
     setWithdrawing(null);
+    setCorrecting(null);
     struck.current = null;
   }, [patient.patient_id]);
   // Parsed once per answer, not on every render of a mouse move. The table is handed these very arrays.
@@ -151,9 +159,13 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
     // G3-01 (D13): each series' hand entries, and the withdrawn ones the big chart draws crossed.
     const drawn = card.series.map((s) => {
       const manual = parseManual(byKey[s.key]?.manual);
+      // G3-05 (D16): the device's readings, and its withdrawn ones beside the hand's — marked, so the table can say whose.
+      const device = parseDevice(byKey[s.key]?.device);
+      const withdrawn = [...manual.filter((m) => m.retracted !== null),
+        ...device.filter((d) => d.retracted !== null).map((d) => ({ ...d, origin: "device" }))];
       return {
         key: s.key, color: s.color, hollow: s.hollow, points: parsePoints(byKey[s.key]?.points),
-        manual, withdrawn: manual.filter((m) => m.retracted !== null),
+        manual, device, withdrawn,
       };
     });
     return { channels: byKey, series: drawn, markers: parseMarkers(trends.data?.markers), stops: stopsOf(drawn[0].points) };
@@ -176,7 +188,7 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   const anyWithdrawn = series.some((s) => s.withdrawn.length > 0);
   // «No measurement for this channel» is said only of a window with nothing in it: no reading AND no hand entry. A
   // window whose only entries were withdrawn draws a struck mark (and lists a struck row), so it says that instead.
-  const noData = count === 0 && !series.some((s) => s.manual.length > 0);
+  const noData = count === 0 && !series.some((s) => s.manual.length > 0 || s.withdrawn.length > 0);
   const onlyWithdrawn = count === 0 && anyWithdrawn;
 
   // After the kit Modal's own effect (a child's runs first) put focus on the body's first control.
@@ -190,7 +202,7 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   // dialog is still over this one; what waits is let go once a new answer is in.
   useEffect(() => {
     const pending = struck.current;
-    if (pending === null || withdrawing !== null) return;
+    if (pending === null || withdrawing !== null || correcting !== null) return;
     const active = document.activeElement;
     const lost = !active || active === document.body || !active.isConnected;
     if (lost) {
@@ -200,7 +212,7 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
       (row ?? groups[groups.length - 1]?.querySelector("[aria-pressed='true']"))?.focus();
     }
     if (lost || trends.data !== pending.data) struck.current = null;
-  }, [trends.data, withdrawing]);
+  }, [trends.data, withdrawing, correcting]);
 
   const choose = (value) => {
     setHours(value);
@@ -271,7 +283,9 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
           {onlyWithdrawn ? <p data-only-withdrawn="" className="m-0 mt-3 text-13 text-mute">{t("olcum.onlyWithdrawn")}</p> : null}
           <TrendTable card={card} channels={channels} series={series} markers={markers} hours={hours}
             canRetract={canRetract && typeof onRetract === "function"}
-            onWithdraw={(s, entry) => setWithdrawing({ series: s, entry })} />
+            onWithdraw={(s, entry) => setWithdrawing({ series: s, entry })}
+            canCorrect={canRetract && typeof onRetract === "function" && typeof onChart === "function"}
+            onCorrect={(s, entry) => setCorrecting({ series: s, entry })} />
           <TrendNotes card={card} channels={channels} truncated={truncated} />
         </>
       ) : null}
@@ -298,6 +312,25 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
             trends.reload();
           }}
           onClose={() => setWithdrawing(null)}
+        />
+      ) : null}
+      {correcting ? (
+        <CorrectDialog
+          bed={bed} nowMs={Date.now()}
+          what={{
+            code: correcting.series.key, label: t(correcting.series.labelKey),
+            value: `${correcting.entry.value} ${t(correcting.series.unitKey)}`,
+            time: dayStamp(correcting.entry.ms, Date.now()), observedMs: correcting.entry.ms,
+            source: sourceText(t, "device", correcting.entry.source, null),
+          }}
+          onRetract={(reason) => onRetract(correcting.entry.entry, reason)}
+          onChart={onChart}
+          // Every ending re-reads; focus waits for that answer, as after a hand entry's withdrawal.
+          onDone={() => {
+            struck.current = { entry: correcting.entry.entry, data: trends.data };
+            trends.reload();
+          }}
+          onClose={() => setCorrecting(null)}
         />
       ) : null}
     </Modal>
