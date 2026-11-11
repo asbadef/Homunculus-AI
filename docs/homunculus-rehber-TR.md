@@ -1791,8 +1791,8 @@ uydurmadır.
 Servisin bütün yatakları tek ekranda, birime ve odaya göre: hangisi boş, hangisi dolu, hangisi
 temizlikte, rezerve, kullanım dışı ya da bakımda — ve ne zamandan beri. Hasta Kabul'ün eski
 «Yataklar» sekmesi buraya taşındı. **Durum:** 11 Kasım 2026'dan beri hastane
-sunucusunda çalışıyor (göç 0016); yeşil/kırmızı yatak renkleri ve kimlik sorusundaki «soyad ad» sırası
-main'de (11 Kasım 2026), sunucuya sonraki çıkışla gelir. Örneklerdeki adlar uydurmadır.
+sunucusunda çalışıyor (göç 0016); yeşil/kırmızı yatak renkleri ve kimlik sorusundaki «soyad ad» sırası da
+aynı gün sunucuya çıktı. Örneklerdeki adlar uydurmadır.
 
 - **Kim görür.** Kabulleri okuyan, kabul yapan, taburcu onaylayan ya da yatak boşaltan herkes,
   yalnız kendi birimlerinde. Kullanıcı yöneticisi ya da monitör eşleyicisi görmez.
@@ -2048,6 +2048,7 @@ adlar uydurmadır.
 
 - **Ne:** Alarmlar ekranında bir alarmı sınırlı bir süre için susturmak. Erteleme bir kişinin gerekçeli ve süreli
   kararıdır; alarm panodan kalkmaz.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç yok).
 - **Sahip kararı (kurallar):**
   - **Kritik alarm hiç ertelenmez.** Ekran bunu bir kez, cevap bekleyen ilk kritik alarmın yanında yazar: «Kritik
     alarm ertelenemez».
@@ -2084,7 +2085,7 @@ adlar uydurmadır.
   «Устройства» — telefonun dar rayında «Устр.» —, İngilizce «Devices») önce tek bir soruyu yanıtlar:
   **veri geliyor mu?** Sayfanın başlığı «Cihaz & Veri Akışı». Adresi (`/devices`), simgesi ve yetkileri
   değişmedi; rehberin önceki bölümleri (ör. 3.9, 3.11) ekranı eski adıyla anar, aynı ekrandır.
-- **Durum:** kodda (`feat/g4-cihaz-akis`); main'e ve hastane sunucusuna sahibin sözüyle çıkar.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç yok).
 - **Kim görür:** cihaz yönetimi yetkisi (`devices.manage`: Biyomedikal Teknisyen, Üretici Destek;
   Sistem Yöneticisi her yetkiyi taşır) ya da monitör–yatak eşleme yetkisi (`devices.map_beds`: Sorumlu
   Hemşire) olan herkes. Biyomedikal Teknisyen ve Üretici Destek girişte bu sayfaya düşer. Yalnız panoyu
