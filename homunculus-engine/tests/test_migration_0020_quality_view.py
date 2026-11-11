@@ -62,8 +62,8 @@ def test_0020_gives_the_key_to_every_auditor_group_and_to_no_other(clean_db):
         assert _grants(sync) == AUDITORS
         command.upgrade(cfg, "head")                          # nothing after it
         assert _grants(sync) == AUDITORS
-        with sync.connect() as conn:                          # 0020 is the head
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0020"
+        with sync.connect() as conn:                          # at 0020 or past it: a later migration may follow
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() >= "0020"
     finally:
         sync.dispose()
 

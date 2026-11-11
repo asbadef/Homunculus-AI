@@ -353,8 +353,9 @@ export function summarise({ tree, occupancy, board, tasks, pending, shadow, qual
  *  Null for no rate. Shared by «Yönetici özeti» and «Kalite göstergeleri». */
 export function wholePercent(rate, answered, settled) {
   if (!Number.isFinite(rate)) return null;
-  const pct = Math.round(rate * 100);
   const known = Number.isInteger(answered) && Number.isInteger(settled);
+  // From the counts when known (the engine's rate is rounded to 4 places, and rounding it again can be a point off).
+  const pct = Math.round(known && settled > 0 ? (answered / settled) * 100 : rate * 100);
   if (pct >= 100 && (known ? answered < settled : rate < 1)) return 99;
   if (pct <= 0 && (known ? answered > 0 : rate > 0)) return 1;
   return pct;

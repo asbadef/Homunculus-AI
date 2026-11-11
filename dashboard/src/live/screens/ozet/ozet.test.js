@@ -400,6 +400,7 @@ describe("the alarm-quality box", () => {
     expect([wholePercent(0.9967, 299, 300), wholePercent(0.0033, 1, 300), wholePercent(1, 4, 4), wholePercent(0, 0, 4)])
       .toEqual([99, 1, 100, 0]);
     expect(wholePercent(1, 19_999, 20_000)).toBe(99);                    // the engine's 4-decimal rate rounds up to 1
+    expect(wholePercent(0.125, 781, 6250)).toBe(12);                     // 12.496 %: from the counts, not 0.125 → 13
     expect([wholePercent(0.9967, null, null), wholePercent(0.0033, null, null), wholePercent(null, 1, 2)])
       .toEqual([99, 1, null]);                                            // without the counts, the rate's own side
   });
