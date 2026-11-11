@@ -87,6 +87,7 @@ from homunculus.scope import (
 from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.state.timeline import PatientState
 from homunculus.tenant.bedmap import BedMap
+from homunculus.tres.egress import egress_on        # TRƏS-01 (spec D2): the install's lock
 
 if TYPE_CHECKING:
     from homunculus.auth.ldap import LdapRuntime
@@ -881,6 +882,10 @@ def create_app(
     app.state.audit = audit
     app.state.tickets = tickets
     app.state.tasks = tasks                         # G3-02
+
+    # TRƏS-01 (spec D2): the install's lock on the national e-health feed, read once, here. Closed
+    # unless TRES_EGRESS=on: the module then opens no connection, whatever a tenant's settings say.
+    app.state.tres_egress = egress_on(os.environ)
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01

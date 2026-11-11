@@ -109,6 +109,10 @@ services:
       # an unassigned user sees the whole hospital). Turn it on only once assignments exist —
       # on an empty assignment table it blacks out every clinical screen at once.
       SCOPE_ENFORCE_UNASSIGNED: ${SCOPE_ENFORCE_UNASSIGNED:-}
+      # TRƏS-01 — the national e-health feed (spec 2026-11-11-tres-esaglik-gonderim-design.md, D2).
+      # Unset, or anything but "on" = closed: the API opens no connection to the ministry's
+      # platform, whatever a hospital's Yönetim › TRƏS settings say, and that tab says so.
+      TRES_EGRESS: ${TRES_EGRESS:-}
     volumes:
       # This site's HIS-location -> our-bed table. Copy bed-mapping.example.json to
       # bed-mapping.json before the first `up`: Docker leaves a DIRECTORY at a bind-mount target
