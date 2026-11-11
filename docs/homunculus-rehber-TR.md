@@ -1954,7 +1954,7 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 ### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
 
 Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
-kodda (`feat/g2b-b1c-bakim-ekibi`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Örneklerdeki
+main'de (11 Kasım 2026; göç 0018); hastane sunucusuna sahibin sözüyle, ayrı bir çıkışla gelir. Örneklerdeki
 adlar uydurmadır.
 
 - **Yalnız hekimler.** Ekipte üç rol var: **sorumlu hekim** (her an tek kişi), **yardımcı hekim** ve
@@ -2187,7 +2187,7 @@ adlar uydurmadır.
   руководства», İngilizce «Management summary»; telefonun dar rayında «Özet»). Hastanenin şu anki durumu ve alarm
   kalitesi tek sayfada, yalnız gerçek verilerden. Sayfa yalnız okur ve hiçbir yerde hasta adı ya da kimliği göstermez.
   (§3.23 Eczane dilimine ayrıldı; bu yüzden numara atlıyor.)
-- **Durum:** kodda (`feat/g4-yonetici-ozeti`); main'e ve hastane sunucusuna sahibin sözüyle çıkar.
+- **Durum:** main'de (11 Kasım 2026; göç yok); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
 - **Kim görür:** yeni yetki `summary.view` («Yönetici özetini görür») olan. Varsayılan gruplardan hiçbirinde yok;
   Sistem Yöneticisi her yetkiyi kural gereği taşıdığından yalnız o görür, göç (migration) gerekmedi. Başka bir gruba
   (ör. başhekim) Yönetim › Roller ve yetkiler'den kodsuz verilebilir; o grup bir kaynağın kendi yetkisini taşımıyorsa
