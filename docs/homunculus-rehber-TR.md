@@ -353,7 +353,8 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 22 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…).
+- *Homunculus'ta:* 27 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
+  `summary.view`, «Yönetici özeti», §3.24).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -2078,6 +2079,76 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
   bildirim ya da ray rozeti, klinik panonun «besleme sağlığı» göstergesinin biyomedikale açılması, hub
   ya da toplayıcı değişikliği.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-cihaz-veri-akisi-design.md`.
+
+### 3.24 «Yönetici özeti»: hastane bir bakışta (Grup 4 · G4-02)
+
+- **Ne:** Sol raydaki **«Yönetici özeti»** sayfası (`/ozet`; Azerbaycanca «Rəhbər xülasəsi», Rusça «Сводка для
+  руководства», İngilizce «Management summary»; telefonun dar rayında «Özet»). Hastanenin şu anki durumu ve alarm
+  kalitesi tek sayfada, yalnız gerçek verilerden. Sayfa yalnız okur ve hiçbir yerde hasta adı ya da kimliği göstermez.
+  (§3.23 Eczane dilimine ayrıldı; bu yüzden numara atlıyor.)
+- **Durum:** kodda (`feat/g4-yonetici-ozeti`); main'e ve hastane sunucusuna sahibin sözüyle çıkar.
+- **Kim görür:** yeni yetki `summary.view` («Yönetici özetini görür») olan. Varsayılan gruplardan hiçbirinde yok;
+  Sistem Yöneticisi her yetkiyi kural gereği taşıdığından yalnız o görür, göç (migration) gerekmedi. Başka bir gruba
+  (ör. başhekim) Yönetim › Roller ve yetkiler'den kodsuz verilebilir; o grup bir kaynağın kendi yetkisini taşımıyorsa
+  o sütun ya da kart sayı yerine «yetki yok» der (yapıyı okuma yetkisi yoksa birim tablosunun yerinde «Birim
+  satırları yazılamıyor · yetki yok» yazar). Rayda «Vardiya devri»nden sonra gelir; kimsenin giriş sayfası
+  değişmedi (Sistem Yöneticisi yine «Yataklar»a düşer). Bir çalışma ekranı değildir: yalnız `summary.view` taşıyan
+  bir hesap bununla oturum açamaz (giriş ekranı «Hesabınızın yetkileri bu arayüzdeki ekranlardan hiçbirini
+  açmıyor…» der, §3.5); ona bir çalışma yetkisi de (ör. panoyu görme, `board.view`) verilmelidir.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **Başlık:** «Yönetici özeti», son tam okumanın saati («10:42 itibarıyla») ve «Yenile» düğmesi. Tam okuma,
+     sayfanın kendi okumalarından (yapı, görevler, bekleyen devirler) oturumun okuyabildiği her birinin yanıt
+     verdiği son turdur; henüz yoksa «Henüz tam bir okuma yok» yazar.
+  2. **«Unutulan işler»:** dört kart; her biri bir sayı, neyi saydığını söyleyen bir satır ve kaynağının okunduğu
+     saat («son okuma 10:42»).
+     - **«Yanıtsız kalan alarm · {dönem}»:** seçilen dönemde hiç yanıtlanmamış ve en az 10 dakikalık alarm olayları.
+       10 dakika motorun rapor sınırıdır (5 dakikalık eskalasyonun iki katı); kart bunu söyler.
+     - **«Karşı imzası bekleyen devir»:** devredenin imzaladığı, devralanın henüz karşı imzalamadığı devirler ve
+       «en eskisi {n} dk / saat / gün önce» (sunucunun saatiyle, aşağı yuvarlanarak). Bu durum kendiliğinden
+       kapanmaz; en eskisi günler öncesi olabilir.
+     - **«Geciken iş»:** şimdi, bu nöbet: sunucunun geç dediği el görevleri ve zamanı geçmiş vital ölçümler.
+     - **«Sessiz monitör»:** şimdi: sessiz ya da haber alınamayan monitörler («Cihazlar» sayfasının kurallarıyla,
+       §3.22) ve «en uzunu {n} dk»; görünümde hiç monitör yoksa 0 ve «Bu görünümde monitör yok». «1 saatten uzun
+       sessiz» gibi bir eşik yok: kaynağı yok.
+  3. **«Alarm kalitesi»:** dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün); bu kutuyu ve ilk kartı
+     değiştirir. «Bugün» takvim günü değil, son 24 saattir; kutu ve kart bunu «son 24 saat» diye yazar. Hastane
+     geneli, denetim kaydından; birim birim değil (denetim kaydındaki alarmın yatağı yok; birim birim alarm kalitesi
+     sonraki bir dilimdir). Sayılar: alarm olayı; yanıtlanan ve oranı (hiçbir olay yerleşmediyse «henüz yerleşen
+     yok»); yanıt süresinin ortancası ve p90'ı; eskale edilen; yanıtsız kalan; bekleyen (10 dakikası dolmamış).
+     «Günlük alarm sayısı»: her gün için bir çubuk ve sayısı; günler UTC takvimine göredir; «geçen haftaya göre»
+     eğilimi yok. Altında türe göre küçük bir tablo. Sunucunun okuma sınırı aşılırsa kutu bunu ve sayılan dönemin
+     başını söyler. Kutu yalnız sayfa açılınca ve dönem değişince okunur; kendiliğinden ya da «Yenile» ile
+     yenilenmez (sunucu dönemin her olayını denetim kaydından yeniden kurar); kendi okuma saatini altında yazar.
+     Prototipteki «3 dk içinde yanıt» ve «Hatalı olarak işaretlenen» yok: kaynakları yok. Kutu, denetim kaydı yetkisi
+     (`audit.view`) ve bütün hastaneyi kapsayan bir kapsam ister; yoksa bunu söyler.
+  4. **«Birimler»:** yapıdaki her birim için bir satır, şimdi: doluluk («{dolu} / {kullanılabilir} dolu»; sıfırdan
+     büyükse rezerve, kullanım dışı ve bakımdaki yataklar, Doluluk ekranının sözcükleriyle), yanıt bekleyen alarm
+     (zilin saydığı alarmlar, onaylanan ve ertelenen sayılmaz; kritik ve yüksek ayraç içinde), geciken iş, karşı
+     imzası bekleyen devir (en eskisinin yaşıyla), sessiz monitör. Kapalı bir birim «kapalı» diye yazılır. Yatağı
+     olmayan ya da yapıda bulunmayan bir birimdeki hasta ve monitörler en alttaki **«Birimi belli olmayan»**
+     satırında toplanır; sayacak bir şey yoksa bu satır yazılmaz. Yapı henüz hiç okunmadıysa tablonun yerinde «Birim
+     satırları yazılamıyor · {neden}» yazar; yapının son okuması başarısızsa satırlar son okunan yapıdan yazılır ve
+     doluluk «— okunamadı» der.
+- **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Henüz okunmamış, okunamamış, güncel olmayan ya da
+  yetkiniz olmayan bir kaynak, kendi sütununda ya da kartında «—» ve kısa nedeniyle yazılır: «okunuyor…»,
+  «okunamadı», «pano güncel değil», «yetki yok», «veri zinciri kesik», «bilinmiyor», «monitör şeridi kapalı». Asla 0
+  yazılmaz. Sıfırı yalnız güncel bir yanıt söyler (Karar 18): yanıt bekleyen alarm sütunu yalnız pano canlıyken
+  (bağlantı kopmuş sayılırken «pano güncel değil»), sessiz monitör sütunu yalnız cihaz panosu güncelken sayar.
+  Okuması başarısız olan bir kaynağın son sayısı da bugünün sayısı gibi gösterilmez.
+- **Ne zaman okunur:** canlı pano ve cihaz panosu uygulamanın kendi sürekli okumalarıdır, sayfa onlara bakar. Yapı,
+  görevler ve bekleyen devirler sayfa açılınca, «Yenile»de, sayfa görünürken her 60 saniyede bir ve sayfa yeniden
+  görünür olunca hemen okunur.
+- **Sunucuda iki küçük değişiklik:**
+  - yeni `GET /handovers/pending` (`summary.view`): birim başına karşı imza bekleyen devir sayısı ve en eskisinin imza
+    zamanı; yalnız sayılar ve zamanlar (hasta, not ya da kişi yok); çağıranın kurumu ve birimleriyle sınırlı;
+  - `GET /tasks` her hastanın birimini ve yatak anahtarını artık kartın kendi yerinden okuyor (önceden hep boştu; bir
+    düzeltme).
+- **Bu dilimde olmayanlar:** birim birim alarm kalitesi; «Rapor al» ya da dışa aktarma; «Günlük özet hazır»
+  bildirimi; geçmiş (sistem yeniden başlamadan önceki cihaz sessizliği, geçmiş vital ölçüm gecikmeleri); prototipin
+  kaynaksız sayıları; sorumlu hemşire, denetçi ya da başhekim için varsayılan erişim (göç ister); «Kalite
+  göstergeleri» ekranı.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-yonetici-ozeti-design.md`; plan
+  `docs/superpowers/plans/2026-11-11-g4-yonetici-ozeti.md`.
 
 ---
 
