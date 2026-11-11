@@ -206,9 +206,10 @@ describe("the audit page's route", () => {
       icon: "file", labelKey: "denetim.nav", shortKey: "denetim.navShort" });
     expect(screenOf(denetim())).not.toBeNull();
     expect(canReach(denetim(), ["board.view"])).toBe(false);
-    // G2-B5: the RRT screen now comes after it (its own block below), still before settings.
-    // G2-B3b: and the handover screen after that (its own block below), still before settings.
-    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["rrt", "devir", "settings"]);
+    // G2-B5, G2-B3b: the RRT screen and then the handover screen come right after it (their own blocks below). What
+    // follows them is pinned once, in the last route's own block (G4-02).
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids.slice(ids.indexOf("denetim"), ids.indexOf("denetim") + 3)).toEqual(["denetim", "rrt", "devir"]);
   });
 
   it("is the home of an audit.view-only session and moves nobody else's", () => {
@@ -229,8 +230,9 @@ describe("the RRT screen's route", () => {
     expect(rrt()).toMatchObject({ path: "/rrt", perms: ["alerts.escalate"], work: true, nav: "main",
       icon: "zap", labelKey: "rrt.nav", shortKey: "rrt.navShort" });
     expect(screenOf(rrt())).not.toBeNull();
-    // G2-B3b: the handover screen now comes after it (its own block below), still before settings.
-    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
+    // G2-B3b: the handover screen comes right after it (its own block below).
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids[ids.indexOf("rrt") + 1]).toBe("devir");
   });
 
   it("is not the nurse's; whoever may call the team reaches it", () => {
@@ -262,7 +264,8 @@ describe("the handover screen's route", () => {
     expect(devir()).toMatchObject({ path: "/devir", perms: ["handover.sign"], work: true, nav: "main",
       icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort" });
     expect(screenOf(devir())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["denetim", "rrt", "devir", "settings"]);
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids[ids.indexOf("devir") - 1]).toBe("rrt");
   });
 
   it("a nurse reaches it from the rail, and her home is still the beds", () => {
@@ -277,6 +280,34 @@ describe("the handover screen's route", () => {
     expect(canReach(devir(), AUDITOR)).toBe(false);
     expect(navRoutes(AUDITOR).main.map((r) => r.id)).not.toContain("devir");
     expect(homePath(AUDITOR)).toBe("/beds");
+  });
+});
+
+// G4-02 (spec D3): «Yönetici özeti» — for `summary.view`, which by default only the system administrator holds (the
+// system group holds every key by rule). Not a work screen; after the handover screen, so nobody's home moves.
+// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «devir» edits this line and no other —
+// the pharmacy slice (devir → eczane → ozet → settings) makes it ["eczane", "ozet", "settings"].
+describe("the management summary's route", () => {
+  afterEach(() => resetScreens());
+  const ozet = () => ROUTES.find((r) => r.id === "ozet");
+
+  it("is for summary.view, on the main rail, not a work screen, with its own names", () => {
+    expect(ozet()).toMatchObject({ path: "/ozet", perms: ["summary.view"], work: false, nav: "main",
+      icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort" });
+    expect(screenOf(ozet())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["devir", "ozet", "settings"]);
+  });
+
+  it("is the system administrator's by default, and moves nobody's home", () => {
+    expect(navRoutes(ADMIN).main.map((r) => r.id)).toContain("ozet");
+    expect(homePath(ADMIN)).toBe("/beds");
+    for (const perms of [NURSE, ["board.view", "audit.view"], ["alerts.escalate"], ["handover.sign"], ["devices.manage"]]) {
+      expect(canReach(ozet(), perms), perms.join(",")).toBe(false);
+    }
+  });
+
+  it("is no work screen: the key alone does not pass the entry rule", () => {
+    expect(hasWorkRoute(["summary.view"])).toBe(false);
   });
 });
 

@@ -50,6 +50,8 @@ const RrtScreen = lazyScreen(() => import("../screens/rrt/RrtScreen.jsx"), "RrtS
 
 const DevirScreen = lazyScreen(() => import("../screens/devir/DevirScreen.jsx"), "DevirScreen"); // G2-B3b
 
+const OzetScreen = lazyScreen(() => import("../screens/ozet/OzetScreen.jsx"), "OzetScreen"); // G4-02
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -81,6 +83,8 @@ const SCREENS = Object.freeze({
   rrt: RrtScreen, // G2-B5 — the rapid-response team's calls and the unanswered urgent alarms
 
   devir: DevirScreen, // G2-B3b — «Vardiya devri»: to countersign, mine, a new handover with its D-Ö-D-Ö note
+
+  ozet: OzetScreen, // G4-02 — «Yönetici özeti»: the cards, alarm quality, the units as of now; no patient
 
   settings: SettingsScreen,
 });
@@ -147,6 +151,12 @@ export const ROUTES = Object.freeze([
   // the physicians). After the RRT screen, so nobody's home moves; a session that only signs handovers lands here.
   route({ id: "devir", path: "/devir", icon: "swap", labelKey: "devir.nav", shortKey: "devir.navShort",
     perms: ["handover.sign"], work: true, nav: "main" }),
+
+  // G4-02 (spec D3) — «Yönetici özeti»: for whoever holds `summary.view` — the system administrator, by rule; another
+  // group only once a hospital gives it the key. Not a work screen: it is read, not worked in. After the handover
+  // screen, so nobody's home moves.
+  route({ id: "ozet", path: "/ozet", icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort",
+    perms: ["summary.view"], work: false, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),
