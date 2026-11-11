@@ -1,0 +1,165 @@
+# homunculus-engine/src/homunculus/tres/router.py
+"""Yönetim › TRƏS (TRƏS-01, spec §6, D2, D3, D23, D24): the tenant's settings for the national
+e-health feed, and a test of the connection. `tres.manage`, the caller's tenant only.
+
+GET /admin/tres/settings — the tenant's row, or the defaults while it has none (mode `off`). The
+answer carries `egress`, the install's lock (D2 (b)), so the tab can say that nothing leaves the
+server whatever is set here — and NEVER a password: `password_set` only.
+
+PUT /admin/tres/settings — reads the body first (mode, environment, the wait, the types, each
+base URL https, the lengths: a coded 422, nothing written). Then it makes the tenant's row if
+there is none, locks it and writes what differs. A password omitted or null keeps the stored one;
+an empty string clears it. The change is audited `tres.settings` AFTER the commit with the NAMES
+of the fields that changed (`mode`, `test.password`…) and never a value (D24; A-26: never a 500
+for a committed change). A save that changes nothing writes no audit row.
+
+POST /admin/tres/test — one sign-in at the platform with the stored account of the selected
+environment: `{"ok": true}` or `{"ok": false, "message": <the platform's words>}`, never the
+session id. 409 `egress_off` while the install's lock is closed — the route then builds no client
+at all; 409 `tres_account_incomplete` while the account lacks a part. It is allowed in the mode
+`off`: an administrator tests before turning the feed on. Not audited: it writes nothing.
+
+No patient data anywhere in this file."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from homunculus.admission import trail
+from homunculus.auth.dependencies import caller_tenant_id, require_permission
+from homunculus.auth.models import User
+from homunculus.db import get_db
+from homunculus.tres.client import TresClient, TresError
+from homunculus.tres.errors import EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, refusal
+from homunculus.tres.models import (
+    ACCOUNT_FIELDS, DEFAULT_SETTLE_HOURS, ENVIRONMENTS, RESOURCE_TYPES, TresSettings, account_of,
+)
+from homunculus.tres.schemas import (
+    TresAccountOut, TresSettingsIn, TresSettingsOut, TresTestOut, settings_refusal,
+)
+
+router = APIRouter(prefix="/admin/tres", tags=["tres"])
+
+
+def _egress(request: Request) -> bool:
+    """The install's lock as the app read it at start-up; closed for an app that never read it."""
+    return bool(getattr(request.app.state, "tres_egress", False))
+
+
+def _account_out(row: TresSettings | None, prefix: str) -> TresAccountOut:
+    def value(name: str) -> str | None:
+        return getattr(row, f"{prefix}_{name}") if row is not None else None
+
+    return TresAccountOut(base_url=value("base_url"), username=value("username"),
+                          password_set=bool(value("password")), provider_id=value("provider_id"),
+                          organization_id=value("organization_id"),
+                          organization_name=value("organization_name"))
+
+
+def _out(row: TresSettings | None, egress: bool) -> TresSettingsOut:
+    return TresSettingsOut(
+        mode=row.mode if row is not None else "off",
+        environment=row.environment if row is not None else "test",
+        settle_hours=row.settle_hours if row is not None else DEFAULT_SETTLE_HOURS,
+        enabled_types=list(row.enabled_types) if row is not None else list(RESOURCE_TYPES),
+        test=_account_out(row, "test"), live=_account_out(row, "live"), egress=egress,
+        updated_at=row.updated_at if row is not None else None)
+
+
+def _apply(row: TresSettings, payload: TresSettingsIn) -> list[str]:
+    """Writes what differs onto the row; answers the NAMES of the fields that changed."""
+    changed: list[str] = []
+
+    def put(column: str, value, name: str) -> None:
+        if getattr(row, column) != value:
+            setattr(row, column, value)
+            changed.append(name)
+
+    put("mode", payload.mode, "mode")
+    put("environment", payload.environment, "environment")
+    put("settle_hours", payload.settle_hours, "settle_hours")
+    # In the catalogue's order, whatever order the body listed them in.
+    put("enabled_types", [key for key in RESOURCE_TYPES if key in payload.enabled_types], "enabled_types")
+    for prefix in ENVIRONMENTS:
+        account = getattr(payload, prefix)
+        for name in ACCOUNT_FIELDS:
+            value = getattr(account, name)
+            if name == "password":
+                if value is None:
+                    continue                    # omitted or null: the stored one stays
+                value = value or None           # an empty string clears it
+            else:
+                value = (value or "").strip() or None
+            put(f"{prefix}_{name}", value, f"{prefix}.{name}")
+    return changed
+
+
+@router.get("/settings", response_model=TresSettingsOut)
+async def read_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = Depends(caller_tenant_id),
+    _user: User = Depends(require_permission("tres.manage")),
+) -> TresSettingsOut:
+    return _out(await db.get(TresSettings, caller_tenant), _egress(request))
+
+
+@router.put("/settings", response_model=TresSettingsOut)
+async def write_settings(
+    payload: TresSettingsIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = Depends(caller_tenant_id),
+    user: User = Depends(require_permission("tres.manage")),
+) -> TresSettingsOut:
+    refused = settings_refusal(payload)
+    if refused is not None:
+        raise refusal(422, refused).http()
+
+    actor, user_id = user.username, user.id
+    await db.execute(insert(TresSettings).values(tenant_id=caller_tenant)
+                     .on_conflict_do_nothing(index_elements=["tenant_id"]))
+    row = (await db.execute(
+        select(TresSettings).where(TresSettings.tenant_id == caller_tenant)
+        .with_for_update().execution_options(populate_existing=True))).scalar_one()
+    changed = _apply(row, payload)
+    if changed:
+        row.updated_at, row.updated_by = datetime.now(timezone.utc), user_id
+    answer = _out(row, _egress(request))
+    hospital = await trail.hospital_of(db, caller_tenant)
+    await db.commit()
+    if changed:
+        trail.record(request, hospital, "tres.settings", payload={"actor": actor, "changed": changed})
+    return answer
+
+
+@router.post("/test", response_model=TresTestOut)
+async def test_connection(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    caller_tenant: uuid.UUID = Depends(caller_tenant_id),
+    _user: User = Depends(require_permission("tres.manage")),
+) -> TresTestOut:
+    if not _egress(request):
+        raise refusal(409, EGRESS_OFF).http()
+    row = await db.get(TresSettings, caller_tenant)
+    account = account_of(row) if row is not None else None
+    if account is None:
+        raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http()
+    factory = getattr(request.app.state, "tres_client_factory", TresClient)
+    try:
+        client = factory(account)
+    except ValueError:                  # a base URL that is not https, written past this route
+        raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
+    try:
+        await client.token()
+    except TresError as exc:
+        return TresTestOut(ok=False, message=exc.message)
+    finally:
+        await client.aclose()
+    return TresTestOut(ok=True, message=None)

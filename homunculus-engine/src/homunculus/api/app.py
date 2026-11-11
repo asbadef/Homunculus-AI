@@ -872,6 +872,10 @@ def create_app(
     # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
     from homunculus.protocol.router import router as protocol_router
     app.include_router(protocol_router)
+    # TRƏS-01: Yönetim › TRƏS (`tres.manage`, the caller's tenant) — the national e-health feed's
+    # settings and its connection test (tres/router.py). nginx already proxies /admin.
+    from homunculus.tres.router import router as tres_router
+    app.include_router(tres_router)
     # G2-B1d (spec §5, D12): the bridge's patient query — the device token only, never proxied by
     # nginx. `_caller` is defined below; the lambda reads it when a request arrives (E2).
     from homunculus.api.edge_query import edge_query_router

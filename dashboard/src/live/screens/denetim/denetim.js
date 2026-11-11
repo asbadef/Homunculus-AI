@@ -96,6 +96,8 @@ export const EVENT_TYPES = Object.freeze([
   ["task_skipped", "taskSkipped"], ["vital_skipped", "vitalSkipped"], ["task_settings_changed", "taskSettings"],
   // G2-B1c (spec §5.5): the care team — an attending made (at sign-off, by a claim or an add), a member added, a row ended.
   ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
+  // TRƏS-01 (spec D24): the national feed's settings changed (tres/router.py) — who, and which fields.
+  ["tres.settings", "tresSettings"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));
