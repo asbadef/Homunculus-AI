@@ -83,7 +83,7 @@ export const EVENT_TYPES = Object.freeze([
   ["structure.close", "structureClose"], ["structure.reopen", "structureReopen"],
   // the admission's label and its board retry (admission/router.py, tenant/router.py):
   ["admission.label_print", "labelPrint"], ["admission.discharge_board_retry", "dischargeBoardRetry"],
-  // the monitor–bed table: a bed's new label followed, and the one-time import (devicebeds/seed.py):
+  // the monitor–bed table: a bed's new label followed, and its one-time seed from the approved file (devicebeds/seed.py):
   ["device_bed.relabel", "deviceRelabel"], ["device_bed.import", "deviceImport"],
   // G3-02 «Görevlerim» (api/tasks.py), in its own words:
   ["task_created", "taskCreated"], ["task_claimed", "taskClaimed"], ["task_done", "taskDone"],
