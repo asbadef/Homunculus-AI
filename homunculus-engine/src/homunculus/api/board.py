@@ -198,6 +198,9 @@ def _meds(engine: Engine, state, patient_id: str, now: datetime | None = None) -
         "antibiotic_at": given_at.isoformat() if given_at is not None else None,
         "antibiotic_clock": clock,
         "creatinine": _latest(state, SignalCode.CREATININE),
+        # G3-04 (D12): when that creatinine was observed, as `pressors_at` — a value without its time
+        # cannot be read as current. None when none was ever observed.
+        "creatinine_at": _iso(getattr(state.latest(SignalCode.CREATININE), "timestamp", None)),
         "weight_kg": _latest(state, SignalCode.WEIGHT_KG),
     }
 

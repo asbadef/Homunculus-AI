@@ -222,6 +222,10 @@ const AZ_SAME_AS_TR = new Set([
   "ozet.period.d7", "ozet.period.d30", //               7 gün · 30 gün
   "ozet.period.text1", "ozet.period.text7", "ozet.period.text30", // son 24 saat · son 7 gün · son 30 gün
 
+  // G3-04 (eczane) · az = tr
+  "eczane.col.creatinine", //  Kreatinin — the same word in Azerbaijani (as patient.creatinine's first word)
+  "eczane.fluid.balance", //   "{value} mL" — a number and the unit symbol (as sivi.ml)
+
 ]);
 
 describe("live UI dictionaries", () => {

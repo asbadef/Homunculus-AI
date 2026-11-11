@@ -953,6 +953,16 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * G3-04 «Eczane» (GET /pharmacy, `pharmacy.view`): one row per patient of the caller's scoped board —
+     * vasopressors, the antibiotic state, creatinine, today's fluid balance — sorted and counted by the engine
+     * (api/pharmacy.py): {now, antibiotic_window_min, antibiotic_window_source, fluid_day, fluid_truncated,
+     * counts, rows, scope, scope_note}. No parameter: nothing goes on the address.
+     */
+    pharmacy() {
+      return authed("/pharmacy");
+    },
+
+    /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
      * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list

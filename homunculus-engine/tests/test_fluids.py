@@ -7,8 +7,8 @@ from homunculus.api import fluids as fluids_module
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.clinical import RETRACT
 from homunculus.api.fluids import (
-    INTAKE, OUTPUT, SOFA_RENAL_REFERENCE, FluidEntry, fluid_day, hourly, hours_with, patient_fluids, totals,
-    urine_rate,
+    INTAKE, OUTPUT, SOFA_RENAL_REFERENCE, FluidEntry, fluid_day, hourly, hours_with, patient_fluids, read_entries,
+    read_entries_by_patient, totals, urine_rate,
 )
 
 BAKU = timezone(timedelta(hours=4))     # Asia/Baku keeps +04 all year; tzdata is not on every test host
@@ -326,3 +326,92 @@ class TestTheReadLimit:
         out = _ledger(rows, now=_at(5), monkeypatch=monkeypatch, limit=3)
         assert out["truncated"] is True
         assert [e["value"] for e in out["entries"]] == [40.0, 30.0, 20.0]
+
+
+class TestTheWardRead:
+    """G3-04 (spec D13): `read_entries_by_patient` — every patient's entries of the tenant in ONE read, for the
+    Eczane page's poll. It must say exactly what `read_entries` says patient by patient, a withdrawal must never
+    cross patients, and a cut read must say so."""
+    SINCE, UNTIL = DAY, _at(6)
+
+    def _trail(self):
+        audit = InMemoryAuditLog()
+        ids = {}
+
+        def chart(key, pid, code, value, at, tenant="h1"):
+            rec = audit.append(AuditEvent(tenant, "chart", pid, code, {
+                "value": value, "unit": "mL", "obs_ts": at.astimezone(timezone.utc).isoformat(),
+                "charted_by": "hem.ayse"}))
+            ids[key] = rec.id
+
+        def withdraw(pid, entry):
+            audit.append(AuditEvent("h1", RETRACT, pid, "urine_output_ml", {
+                "entry": entry, "reason": "yanlış hastaya girildi", "retracted_by": "hem.zeynep"}))
+
+        chart("a1", "S-001", "iv_fluid_ml", 500, _at(1))
+        chart("a2", "S-001", "urine_output_ml", 300, _at(2))
+        chart("a3", "S-001", "urine_output_ml", 100, _at(3))
+        chart("b1", "S-002", "enteral_ml", 200, _at(2))
+        chart("b2", "S-002", "urine_output_ml", 150, _at(4))
+        chart("c1", "S-003", "heart_rate", 80, _at(1))                          # not a fluid: no key for S-003
+        chart("x1", "S-001", "urine_output_ml", 999, _at(1), tenant="h2")       # another hospital
+        chart("old", "S-002", "urine_output_ml", 999, _at(-1))                  # before the window
+        chart("ahead", "S-002", "urine_output_ml", 999, _at(7))                 # after it
+        withdraw("S-001", ids["a3"])
+        withdraw("S-001", ids["b2"])           # names ANOTHER patient's entry: it withdraws nothing
+        return audit, ids
+
+    def test_it_agrees_with_the_single_patient_read_patient_by_patient(self):
+        audit, _ = self._trail()
+        by_patient, truncated = read_entries_by_patient(audit, "h1", since=self.SINCE, until=self.UNTIL)
+        assert truncated is False and set(by_patient) == {"S-001", "S-002"}
+        for pid in ("S-001", "S-002", "S-003"):
+            alone, cut = read_entries(audit, "h1", pid, since=self.SINCE, until=self.UNTIL)
+            assert cut is False and by_patient.get(pid, []) == alone, pid
+        assert [e.value for e in by_patient["S-001"]] == [500.0, 300.0, 100.0]       # oldest first
+        assert [e.value for e in by_patient["S-002"]] == [200.0, 150.0]
+
+    def test_a_withdrawal_never_crosses_patients(self):
+        audit, ids = self._trail()
+        by_patient, _ = read_entries_by_patient(audit, "h1", since=self.SINCE, until=self.UNTIL)
+        withdrawn = {(pid, e.entry) for pid, entries in by_patient.items() for e in entries if e.retracted}
+        assert withdrawn == {("S-001", ids["a3"])}
+        assert by_patient["S-001"][2].retracted["reason"] == "yanlış hastaya girildi"
+        assert by_patient["S-001"][2].retracted["by"] == "hem.zeynep"
+        assert totals(by_patient["S-001"], DAY, _at(24))["out"] == 300.0
+        assert totals(by_patient["S-002"], DAY, _at(24))["out"] == 150.0             # still counted
+
+    def test_another_hospitals_rows_are_never_read(self):
+        audit, _ = self._trail()
+        other, _ = read_entries_by_patient(audit, "h2", since=self.SINCE, until=self.UNTIL)
+        assert {pid: [e.value for e in entries] for pid, entries in other.items()} == {"S-001": [999.0]}
+        assert read_entries_by_patient(audit, "h3", since=self.SINCE, until=self.UNTIL) == ({}, False)
+
+    def test_it_is_one_read_of_the_trail_with_no_patient_named(self, monkeypatch):
+        audit, _ = self._trail()
+        reads, real = [], audit.records
+
+        def records(**kw):
+            reads.append(kw)
+            return real(**kw)
+
+        monkeypatch.setattr(audit, "records", records)
+        read_entries_by_patient(audit, "h1", since=self.SINCE, until=self.UNTIL)
+        assert len(reads) == 1 and "patient_id" not in reads[0]
+        assert reads[0]["tenant"] == "h1" and reads[0]["event_types"] == {"chart", RETRACT}
+        assert reads[0]["limit"] == fluids_module.WARD_READ_LIMIT + 1 == 20001 and reads[0]["newest"] is True
+
+    def test_a_read_at_the_limit_is_whole_and_one_past_it_says_so(self, monkeypatch):
+        audit = InMemoryAuditLog()
+        for i, pid in enumerate(("S-001", "S-002", "S-001")):
+            audit.append(AuditEvent("h1", "chart", pid, "urine_output_ml", {
+                "value": 10 * (i + 1), "unit": "mL", "obs_ts": _at(i).astimezone(timezone.utc).isoformat(),
+                "charted_by": "hem.ayse"}))
+        monkeypatch.setattr(fluids_module, "WARD_READ_LIMIT", 3)
+        by_patient, truncated = read_entries_by_patient(audit, "h1", since=self.SINCE, until=self.UNTIL)
+        assert truncated is False and sum(len(entries) for entries in by_patient.values()) == 3
+        monkeypatch.setattr(fluids_module, "WARD_READ_LIMIT", 2)
+        by_patient, truncated = read_entries_by_patient(audit, "h1", since=self.SINCE, until=self.UNTIL)
+        assert truncated is True                                                  # the OLDEST row is the one lost
+        assert {pid: [e.value for e in entries] for pid, entries in by_patient.items()} == {
+            "S-002": [20.0], "S-001": [30.0]}

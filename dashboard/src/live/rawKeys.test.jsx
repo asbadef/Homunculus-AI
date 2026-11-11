@@ -48,6 +48,7 @@ import { BANDS, channel, marker, point, trends } from "./screens/patient/trends/
 import { BED, UUID_TEXT, row as admissionRow, structure as wardStructure } from "./screens/kabul/kabul.testutil.js"; // G2-B1a
 import { device, list as mappingList, onBed } from "./screens/devices/esleme.testutil.js"; // G2-ESLEME
 import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
+import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -314,6 +315,11 @@ async function openAt(path, extra) {
 
       // G4-02: «Yönetici özeti» (screens/ozet) — the units' waiting handovers.
       api.pendingHandovers.mockResolvedValue(PENDING_SWEEP);
+
+      // G3-04: «Eczane» (screens/eczane) — a row in each of the six antibiotic states, with vasopressors, a creatinine
+      // and a fluid balance, so the sweep meets every word of the table. Unstubbed the page would say only that its
+      // list could not be read.
+      api.pharmacy.mockResolvedValue(pharmacyAnswer());
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -483,6 +489,32 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByRole("table", { name: "Şöbələr, indi" })).toBeInTheDocument();                 // ozet.units.caption
     expect(screen.getByText("07.10: 3 epizod")).toBeInTheDocument();                                  // ozet.q.dayCount
     expect(screen.getByText("Şöbəsi bəlli olmayan")).toBeInTheDocument();                            // ozet.units.unplaced
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G3-04 — «Eczane»: the sweep's answer is fresh, so the two past-tense twins and the «not fresh» alert are outside
+  // it; here the fresh page's words are anchored, and then a failed poll draws the rest.
+  it("the pharmacy page's keys resolve on its counters, its table and its notes — fresh and not fresh", async () => {
+    let fail = false;
+    const mounted = await openAt("/eczane", (api) => {
+      api.pharmacy.mockImplementation(() => (fail ? Promise.reject(new Error("kapsam şu anda okunamıyor")) : Promise.resolve(pharmacyAnswer())));
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Aptek" })).toBeInTheDocument();              // eczane.title
+    expect(screen.getByRole("table", { name: "Aptek siyahısı: 6 xəstə" })).toBeInTheDocument();         // eczane.caption
+    expect(screen.getByText("Müddət keçib · 25 dəq")).toBeInTheDocument();                               // eczane.ab.missed + eczane.dur.min
+    expect(screen.getByText("Müddət gedir · 20 dəq qalıb")).toBeInTheDocument();                         // eczane.ab.running
+    expect(screen.getByText("noradrenalin 0.12 mkq/kq/dəq · 20 dəq əvvəl")).toBeInTheDocument();         // patient.medsRunning, reused
+    expect(screen.getAllByText("Bu gün qeyd yoxdur").length).toBeGreaterThan(0);                         // eczane.fluid.none
+    expect(screen.getByText("sayılan tətbiq qeydi yoxdur: 2")).toBeInTheDocument();                          // eczane.count.noRecord
+    expect(rawKeys(document.body)).toEqual([]);
+    fail = true;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });   // the page reads again
+    expect(screen.getByText(/^Aptek siyahısı aktual deyil · son cavab /)).toBeInTheDocument();           // eczane.stale
+    expect(screen.getByText(/^Son cavabda müddət keçmişdi · bitmə /)).toBeInTheDocument();               // eczane.ab.staleMissed
+    expect(screen.getByText(/^Son cavabda müddət gedirdi · bitmə /)).toBeInTheDocument();                // eczane.ab.staleRunning
+    expect(screen.getByText(/^son cavab .* vəziyyətinə görə$/)).toBeInTheDocument();                     // eczane.asOf
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

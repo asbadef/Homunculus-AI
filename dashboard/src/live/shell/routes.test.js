@@ -285,8 +285,8 @@ describe("the handover screen's route", () => {
 
 // G4-02 (spec D3): «Yönetici özeti» — for `summary.view`, which by default only the system administrator holds (the
 // system group holds every key by rule). Not a work screen; after the handover screen, so nobody's home moves.
-// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «devir» edits this line and no other —
-// the pharmacy slice (devir → eczane → ozet → settings) makes it ["eczane", "ozet", "settings"].
+// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «devir» edits this line and no other.
+// G3-04 put the pharmacy page between the handover screen and this one: devir → eczane → ozet → settings.
 describe("the management summary's route", () => {
   afterEach(() => resetScreens());
   const ozet = () => ROUTES.find((r) => r.id === "ozet");
@@ -295,7 +295,7 @@ describe("the management summary's route", () => {
     expect(ozet()).toMatchObject({ path: "/ozet", perms: ["summary.view"], work: false, nav: "main",
       icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort" });
     expect(screenOf(ozet())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["devir", "ozet", "settings"]);
+    expect(ROUTES.map((r) => r.id).slice(-3)).toEqual(["eczane", "ozet", "settings"]);
   });
 
   it("is the system administrator's by default, and moves nobody's home", () => {
@@ -308,6 +308,56 @@ describe("the management summary's route", () => {
 
   it("is no work screen: the key alone does not pass the entry rule", () => {
     expect(hasWorkRoute(["summary.view"])).toBe(false);
+  });
+});
+
+// G3-04 (spec D2, D16): «Eczane» — the pharmacist's ward page, for `pharmacy.view`: the pharmacist and the physician
+// groups, not the nurse and not the auditor (the carried rule). Between the handover screen and the summary.
+describe("the pharmacy page's route", () => {
+  afterEach(() => resetScreens());
+  const eczane = () => ROUTES.find((r) => r.id === "eczane");
+  /** The groups as the engine seeds them (auth/permissions.py DEFAULT_GROUPS). */
+  const PHARMACIST = ["board.view", "admissions.view", "pharmacy.view"];
+  const PHYSICIAN = ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "handover.sign", "break_glass.use",
+    "clinical.chart", "scores.sign", "tasks.view", "tasks.manage", "pharmacy.view"];
+  const NURSE_GROUP = ["board.view", "alerts.ack", "admissions.view", "admissions.admit", "admissions.transfer.confirm",
+    "handover.sign", "clinical.chart", "beds.release", "tasks.view", "tasks.manage"];
+  const AUDITOR = ["board.view", "audit.view"];
+
+  it("is a work screen for pharmacy.view, on the main rail, with its own icon and names", () => {
+    expect(eczane()).toMatchObject({ path: "/eczane", perms: ["pharmacy.view"], work: true, nav: "main",
+      icon: "pill", labelKey: "eczane.nav", shortKey: "eczane.navShort" });
+    expect(screenOf(eczane())).not.toBeNull();
+    expect(ICON_NAMES).toContain("pill");
+    expect(["tr", "az", "ru", "en"].map((lang) => DICTIONARIES[lang]["eczane.nav"])).toEqual(["Eczane", "Aptek", "Аптека", "Pharmacy"]);
+  });
+
+  it("sits between the handover screen and the summary", () => {
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids.slice(ids.indexOf("devir"), ids.indexOf("devir") + 3)).toEqual(["devir", "eczane", "ozet"]);
+  });
+
+  it("the pharmacist and the physician reach it from the rail, and their home is still the beds", () => {
+    for (const perms of [PHARMACIST, PHYSICIAN]) {
+      expect(canReach(eczane(), perms)).toBe(true);
+      expect(navRoutes(perms).main.map((r) => r.id)).toContain("eczane");
+      expect(homePath(perms)).toBe("/beds");
+    }
+    expect(navRoutes(PHARMACIST).main.map((r) => r.id)).toEqual(["beds", "alarms", "kabul", "doluluk", "eczane"]);
+    expect(navRoutes(ADMIN).main.map((r) => r.id)).toContain("eczane");
+  });
+
+  it("is not the nurse's and not the auditor's", () => {
+    for (const perms of [NURSE, NURSE_GROUP, AUDITOR, ["devices.manage"], ["summary.view"]]) {
+      expect(canReach(eczane(), perms), perms.join(",")).toBe(false);
+      expect(navRoutes(perms).main.map((r) => r.id), perms.join(",")).not.toContain("eczane");
+    }
+  });
+
+  it("the key alone passes the entry rule and lands on the page", () => {
+    expect(hasWorkRoute(["pharmacy.view"])).toBe(true);
+    expect(navRoutes(["pharmacy.view"]).main.map((r) => r.id)).toEqual(["eczane"]);
+    expect(homePath(["pharmacy.view"])).toBe("/eczane");
   });
 });
 
