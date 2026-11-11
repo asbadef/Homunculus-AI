@@ -9,9 +9,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 import pytest_asyncio
 
 from homunculus.admission import service as adm_service
+from homunculus.admission import unitscope
+from homunculus.api import audit as audit_module
 from homunculus.admission.models import Admission, AdmissionState, Handover, HandoverStatus, Patient
 from homunculus.admission.numbers import next_patient_number
 from homunculus.api.audit import AuditEvent
@@ -21,6 +24,7 @@ from homunculus.quality import router as quality_router
 from homunculus.quality.indicators import QUALITY_KINDS
 from homunculus.quality.router import units_of_keys
 from homunculus.scope.models import StaffScope
+from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from tests.conftest import requires_db
 from tests.kabul_world import SLUG, build_ward, ward_client
@@ -203,6 +207,54 @@ async def test_days_is_one_seven_or_thirty(ward):
     for days in ("0", "2", "31", "abc"):
         r = await client.get("/quality", params={"days": days}, headers=w.auth["admin"])
         assert r.status_code == 422, (days, r.text)
+
+
+async def test_the_permission_is_checked_before_days(ward):
+    """Plan N4: without `quality.view` the answer is 403 whatever `days` says — never a 422 that tells a caller who
+    may not read the page how to ask for it."""
+    w, client, _ = ward
+    for days in ("2", "abc"):
+        r = await client.get("/quality", params={"days": days}, headers=w.auth["nurse"])
+        assert r.status_code == 403, (days, r.text)
+
+
+async def test_days_bounds_the_audit_read(ward, db_session):
+    """The trail is read from `now − days`, by each row's own `ts`: a row written two days ago is outside «Bugün»
+    (the last 24 hours) and inside «7 gün»."""
+    w, client, app = ward
+    await here(db_session, w, "rea", "1", protocol_no=K1)
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    with pytest.MonkeyPatch.context() as m:                             # the row's `ts`: the store stamps it
+        m.setattr(audit_module, "_now_iso", lambda: two_days_ago)
+        app.state.audit.append(AuditEvent(SLUG, "first_seen", K1, "news2", {"at": two_days_ago}))
+    assert app.state.audit.records(tenant=SLUG, limit=1, newest=True)[0].ts == two_days_ago
+    today = await quality(client, w.auth["admin"], 1)
+    week = await quality(client, w.auth["admin"], 7)
+    assert (today["coverage"]["episodes"], week["coverage"]["episodes"]) == (0, 1)
+    assert {u["unit_name"]: u["alarms"]["episodes"] for u in week["units"]} == {"Neonatal": 0, "Reanimasiya": 1}
+
+
+async def test_a_key_past_the_first_look_up_batch_is_placed(ward, db_session):
+    """Keys are looked up KEYS_PER_QUERY at a time (asyncpg's parameter limit): a key in the second batch is placed
+    as one in the first is."""
+    w, _, _ = ward
+    await here(db_session, w, "rea", "1", protocol_no=K1)
+    fillers = [f"1{n:011d}" for n in range(quality_router.KEYS_PER_QUERY)]   # no admission; each sorts before K1
+    assert sorted([*fillers, K1]).index(K1) == quality_router.KEYS_PER_QUERY == 2000
+    assert await units_of_keys(db_session, w.tenant.id, [K1, *fillers]) == {K1: w.units["rea"].id}
+
+
+async def test_a_scope_that_cannot_be_read_is_a_503_not_an_empty_reach(ward, monkeypatch):
+    """As `/alarm-quality` answers (G2-A2, D13): «we could not find out» is not «you reach nothing». Answered as an
+    empty reach, the page would say «Kapsamınızda birim yok» about a database blip."""
+    w, client, _ = ward
+
+    async def unreadable(db, user_id, tenant_id):
+        return UNKNOWN_SCOPE
+
+    monkeypatch.setattr(unitscope, "caller_scope", unreadable)
+    r = await client.get("/quality", headers=w.auth["admin"])
+    assert (r.status_code, r.json()["detail"]) == (503, "kapsam şu anda okunamıyor")
 
 
 async def test_each_unit_counts_its_alarms_snoozes_and_rrt_calls_from_the_trail(ward, db_session):

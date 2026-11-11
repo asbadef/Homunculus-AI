@@ -34,6 +34,7 @@ from homunculus.auth.dependencies import Principal, caller_tenant_id, get_princi
 from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.quality.indicators import QUALITY_KINDS, HandoverFacts, Reach, build_report
+from homunculus.scope.resolver import UNKNOWN as UNKNOWN_SCOPE
 from homunculus.tenant.models import Site, Unit
 
 #: G4-03 (spec D3): the Kalite göstergeleri's key.
@@ -87,6 +88,11 @@ async def get_quality(
     audit = getattr(request.app.state, "audit", None)
     if audit is None:
         raise HTTPException(status_code=503, detail="denetim kaydı okunamıyor")
+    scope = await unitscope.caller_scope(db, user.id, caller_tenant)
+    if scope.reason == UNKNOWN_SCOPE.reason:
+        # As `/alarm-quality` (G2-A2, D13): a scope that could not be read is not an empty reach — answered as one,
+        # the page would say «Kapsamınızda birim yok» about a database blip.
+        raise HTTPException(status_code=503, detail="kapsam şu anda okunamıyor")
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
     cap = READ_CAP
@@ -97,7 +103,6 @@ async def get_quality(
     kept = rows[1:] if truncated else rows
     window_from = kept[0].ts if truncated and kept else since.isoformat()
 
-    scope = await unitscope.caller_scope(db, user.id, caller_tenant)
     within = unitscope.unit_clause(scope, unit_id=Unit.id)
     units = (select(Unit.id, Unit.name, Unit.is_active).join(Site, Site.id == Unit.site_id)
              .where(Site.tenant_id == caller_tenant))
