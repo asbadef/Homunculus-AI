@@ -281,6 +281,9 @@ BOARD_EXPECTED = {
     ("GET", "/patients/{patient_id}/trends"): "board.view",
     # G3-03: the fluid ledger (api/fluids.py), read with the board's own right.
     ("GET", "/patients/{patient_id}/fluids"): "board.view",
+    # G3-04: «Eczane» (api/pharmacy.py) — the pharmacist's ward page, its own right; the device token passes
+    # as on every board route (spec D4, O6).
+    ("GET", "/pharmacy"): "pharmacy.view",
     ("POST", "/infinity-shadow/readings"): SHADOW_TOKEN,
     ("GET", "/infinity-shadow/board"): BOARD_OR_DEVICES,
     # Aşama B's «uyarsaydı» list: the board's own right, checked before the stage (409 here).

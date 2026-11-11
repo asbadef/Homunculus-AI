@@ -66,6 +66,7 @@ from homunculus.api.rehydrate import (
 )
 from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
+from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
 from homunculus.api.tickets import TicketStore
@@ -98,6 +99,7 @@ log = logging.getLogger(__name__)
 BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE = validate_permissions(
     ("board.view", "alerts.ack", "audit.view", "clinical.chart", "scores.sign", "devices.manage"))
 (ALERTS_ESCALATE,) = validate_permissions(("alerts.escalate",))   # G2-B5: «RRT çağır»
+(PHARMACY_VIEW,) = validate_permissions(("pharmacy.view",))       # G3-04: «Eczane»
 
 #: Aşama A: a patient's admitted beds are re-read for the monitor strip at most this often.
 SHADOW_OCCUPANCY_CACHE_S = 10.0
@@ -1759,6 +1761,23 @@ def create_app(
         return {"patients": result.boards,
                 "scope": result.as_dict(),
                 "scope_note": scope_report(result)}
+
+    @app.get("/pharmacy")
+    async def pharmacy(authorization: str | None = Header(default=None)):
+        """G3-04 «Eczane»: the pharmacist's ward page (`api/pharmacy.py`) — one row per card of the caller's scoped
+        board, read through `_board_for` as `/patients` and `/tasks` are: the vasopressors, the antibiotic state,
+        creatinine and today's fluid balance, sorted and counted here (spec D3, D4). The answer carries `/patients`'
+        own `scope` block and `scope_note`, so an empty list can say why it is empty. Read-only and not audited, as
+        `/patients` (D15): a poll would bury the record. `now` is taken right after the board was built: the cards
+        (and so `remaining_sec`) were judged a moment earlier in this request; the fluid day is computed at `now`,
+        from Görevlerim's first shift start in the tenant's zone, as `/patients/{id}/fluids` reads them."""
+        caller, _, result = await _board_for(authorization, PHARMACY_VIEW)
+        now = datetime.now(timezone.utc)
+        settings = tasks.settings(caller.hospital) or DEFAULT_TASK_SETTINGS
+        answer = ward_pharmacy(result.boards, audit, hospital=caller.hospital, now=now,
+                               zone=zone_of(tasks.timezone(caller.hospital)),
+                               start_a=settings.shift_start_a, start_b=settings.shift_start_b)
+        return {**answer, "scope": result.as_dict(), "scope_note": scope_report(result)}
 
     @app.get("/patients/{patient_id}/trends")
     async def trends(patient_id: str, hours: str = "24",
