@@ -104,13 +104,36 @@ async def test_an_administrator_signing_a_draft_that_names_nobody_is_refused(war
 
 
 async def test_a_form_naming_a_nurse_as_attending_is_refused_whoever_signs(ward, db_session):
-    w, client, _ = ward
+    w, client, app = ward
     nurse = w.users["nurse"].id
     admission = await _admit_naming(w, client, nurse)
     r = await client.post(f"/admissions/{admission['id']}/sign-off", headers=w.auth["doctor"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "care_team_not_physician")
     assert await _signature(db_session, admission["id"]) == (AdmissionState.DRAFT, None, nurse)
     assert await _rows(db_session, admission["id"]) == []
+    assert audited(app, "admission.sign_off") == audited(app, "care_team.attending") == []
+
+
+async def test_an_administrator_signs_a_draft_that_names_a_physician(ward, db_session):
+    """T1, §5.3: the signer need not be a physician, the attending must be. The administrator
+    signs; the ATTENDING row is the named physician's, granted by the administrator."""
+    w, client, app = ward
+    admin = w.users["admin"].id
+    named = await add_physician(db_session, w, "adli")
+    admission = await _admit_naming(w, client, named)
+    r = await client.post(f"/admissions/{admission['id']}/sign-off", headers=w.auth["admin"])
+    assert r.status_code == 200, r.text
+    assert (r.json()["state"], r.json()["attending_physician_id"], r.json()["signed_by"]) == (
+        "ACTIVE", str(named), str(admin))
+    assert [(m.user_id, m.role, m.is_active, m.granted_by_id)
+            for m in await _rows(db_session, admission["id"])] == [
+        (named, CareTeamRole.ATTENDING, True, admin)]
+    (signature,) = audited(app, "admission.sign_off")
+    assert (signature.payload["actor"], signature.payload["attending"]) == (
+        "admin@kabul.example.com", "adli@kabul.example.com")
+    (made,) = audited(app, "care_team.attending")
+    assert (made.payload["member"], made.payload["via"], made.payload["actor"]) == (
+        "adli@kabul.example.com", "sign_off", "admin@kabul.example.com")
 
 
 async def test_a_failure_writing_the_row_writes_no_signature_either(ward, db_session, monkeypatch):
