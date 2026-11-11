@@ -66,9 +66,8 @@ from homunculus.admission.schemas import (
     AlertRetire, CareTeamAdd, CareTeamMemberResponse, Colleague, DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
-    PendingHandovers, PendingUnit,
-    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse,
-    ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
+    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, PendingHandovers,
+    PendingUnit, ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
 )
 from homunculus.admission.errors import (
     BED_CLOSED, BED_RESERVED, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
