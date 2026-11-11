@@ -84,6 +84,9 @@ import ertele from "./strings/ertele.js";
 // G4-01: «Cihaz & Veri Akışı» — the device page's «veri geliyor mu?» sections (screens/devices/FeedSections.jsx).
 import cihaz from "./strings/cihaz.js";
 
+// G4-02: «Yönetici özeti» — the hospital at a glance (screens/ozet).
+import ozet from "./strings/ozet.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -135,6 +138,8 @@ export const NAMESPACES = {
   ertele, // G2-B5b
 
   cihaz, // G4-01
+
+  ozet, // G4-02
 };
 
 function flattenInto(out, prefix, entries) {

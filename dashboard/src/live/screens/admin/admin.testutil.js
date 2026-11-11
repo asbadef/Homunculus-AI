@@ -117,6 +117,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   // G3-02
   "tasks.view": "Open the Görevlerim queue and read the ward's tasks in one's own units",
   "tasks.manage": "Write, claim, close or skip a task; skip one vital measurement with a reason",
+  // G4-02
+  "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a countersignature (GET /handovers/pending), as counts and times only",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 
