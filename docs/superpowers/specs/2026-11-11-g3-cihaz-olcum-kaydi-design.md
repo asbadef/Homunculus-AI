@@ -479,5 +479,27 @@ What the blocks must say; Lane A writes them, the owner's «onay» runs them.
 
 ### 11.7 As run (local walk)
 
-The local walk's record lives in `/c/tmp/homunculus-plans/g3-cihaz/walk/notes.md`; its summary is added here by the
-controller.
+The local walk's record lives in `/c/tmp/homunculus-plans/g3-cihaz/walk/notes.md` (29 screenshots beside it). It ran
+on 2026-11-12 against images built from `33064adc`, on a separate compose project (`g3cihaz`, containers `g3walk-*`;
+another lane's stack was up), synthetic data only (tenant `cihaz-yuruyus`, «Test Hasta», protocol `202600000001`, typo
+`202600000010`). Result: **five of five items pass**, plus the extra check.
+
+1. Admit, device round: the probe answered with the name; five `recorded` device rows carry the admission id; «Ölçüm
+   kaydı» shows the set as «cihaz»; the NEWS2 is partial; Görevlerim's vital task is anchored on the round.
+2. Typo: the probe answered `NF`; no card was made; badge, list and identity question showed the set; the link put it
+   in the record at its own measurement time, marked «alındı» when linked late; the link's alert rows carry the link
+   time (D12 as amended).
+3. Discharge: the reading was listed «taburcu edilmiş hastanın numarası»; no ingest, alert or notification row.
+4. «Düzelt»: the device value struck through with reason, name and time, the hand value at the same time; NEWS2 3 → 0;
+   the trend table shows «cihaz» struck and «elle»; the same ORU re-sent answered `duplicate`.
+5. API restart: card, NEWS2, record, trend table and list identical (one channel aged out by the clock meanwhile).
+
+Extra: a set measured 2 min 33 s before a new stay began was refused with `reading_before_stay` and its Turkish
+sentence; one measured 42 s before linked, inside the 2-minute tolerance, as designed.
+
+Finding W-1 (layout): at 390 px the unmatched list row squeezed its text to one word per line and drew the button over
+the values — fixed after the walk (the buttons wrap under the text on a phone). Observations outside this slice, for
+their owners: error toasts do not dismiss themselves; Görevlerim's shift line read «12:00 → 12:00» although shifts were
+set at 8 and 20; a full page load of `/#/kabul` once showed «Bu sayfa yok». Setup the plan did not foresee: a site
+mapping, first sign-in with 2FA, a building before the unit, test-only NEWS2 band intervals, and a «Sorumlu Hekim» user
+to sign the admission and start the discharge.
