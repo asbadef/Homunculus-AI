@@ -399,17 +399,20 @@ async def test_a_type_switched_off_is_skipped_at_the_sender_and_never_asked_for(
 
 
 async def _change_settings(maker, tenant_id, **values) -> None:
-    """What an administrator's save does, from another session, while the round runs."""
+    """What an administrator's save does, from another session, while the round runs: the values,
+    and a new `updated_at` (router.py writes one with every change)."""
     async with maker() as other:
         row = await other.get(TresSettings, tenant_id)
         for name, value in values.items():
             setattr(row, name, value)
+        row.updated_at = datetime.now(timezone.utc)
         await other.commit()
 
 
 @requires_db
-@pytest.mark.parametrize("change", [{"mode": "off"}, {"environment": "live"}, {"mode": "validate"}],
-                         ids=["mode-off", "environment-live", "send-to-validate"])
+@pytest.mark.parametrize("change", [{"mode": "off"}, {"environment": "live"}, {"mode": "validate"},
+                                    {"test_username": "baska-hesap"}, {"settle_hours": 12}],
+                         ids=["mode-off", "environment-live", "send-to-validate", "account", "any-saved-change"])
 async def test_a_tenant_switched_off_or_moved_during_its_round_is_not_sent_another_package(feed, db_session, change):
     fake, tenants, round_ = feed
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
@@ -425,7 +428,8 @@ async def test_a_tenant_switched_off_or_moved_during_its_round_is_not_sent_anoth
 
 
 @requires_db
-async def test_types_switched_during_a_round_apply_to_the_next_package(feed, db_session):
+async def test_types_switched_during_a_round_end_it_and_the_next_round_applies_them(feed, db_session):
+    """Review M8: one rule — any saved change ends the tenant's round; the next starts on it."""
     fake, tenants, round_ = feed
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
     tenant_id = tenants["acik"].id
@@ -435,7 +439,10 @@ async def test_types_switched_during_a_round_apply_to_the_next_package(feed, db_
         await _change_settings(maker, tenant_id, enabled_types=["practitioner"])
 
     report, _, _ = await round_(source_of(then_patients_off, sends("hmn-p-0002")))
-    assert report.packages == 2
+    assert (report.packages, report.failed) == (1, 0)
+    assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]
+    report, _, _ = await round_(source_of(sends("hmn-p-0002")))
+    assert report.packages == 1
     assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]
     rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
     assert [(r.local_id, r.status, r.reason) for r in rows] == [

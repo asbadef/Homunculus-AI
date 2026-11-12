@@ -26,9 +26,10 @@ whole, one after the other, each on its own client:
   burns at most five rows by one attempt, and those then wait 30 minutes), and a package's own
   exception. A refusal about one resource (a 4xx) is a package that ran: it ends the streak
   (review I2);
-* THE TENANT'S SWITCHES HOLD DURING ITS ROUND (review #5): its settings row is read again before
-  every package — switched off, or its mode or environment changed, and its round ends; its types
-  as they are now go to the `Sender`, which skips (`type_off`) any resource of a type switched off.
+* THE TENANT'S SETTINGS HOLD DURING ITS ROUND (review #5, M8): its settings row is read again
+  before every package, and ANY saved change since the round began — its `updated_at` moved: the
+  mode, the environment, the types, the account — ends the tenant's round; the next round starts
+  on the new settings. The `Sender` skips (`type_off`) any resource of a type switched off.
 
 THE INSTALL'S LOCK (D2 (b)): with `egress` false `run_round` returns at once — no session is
 opened, no client is built, no connection is made, whatever a tenant's row says. `tres_loop` is
@@ -146,15 +147,17 @@ class _Pacer:
         self._started = True
 
 
-async def _still_on(db: AsyncSession, sender: Sender) -> bool:
+async def _still_on(db: AsyncSession, sender: Sender, version: datetime | None) -> bool:
     """Reads the tenant's settings row again (by its key, `populate_existing`: the row held in
     memory is refreshed, not trusted) — an administrator may have saved the tab since the round
-    began (review #5). False when the feed was switched off, or its mode or environment changed:
-    the tenant's round ends there, and the next one starts on what is set now. Otherwise the
-    sender takes the types as they are now."""
+    began (review #5). False when the row is gone, its mode or environment differs from the
+    round's, or its `updated_at` is no longer `version` (the one the round began on): ONE RULE,
+    any saved change ends the tenant's round (review M8 — a changed account included), and the
+    next one starts on what is set now. Otherwise the sender takes the types as they are."""
     current = await db.get(TresSettings, sender.tenant_id, populate_existing=True)
-    if current is None or current.mode != sender.mode or current.environment != sender.environment:
-        log.warning("TRƏS: tenant %s's mode or environment changed during its round; its round ends",
+    if (current is None or current.mode != sender.mode or current.environment != sender.environment
+            or (version is not None and current.updated_at != version)):
+        log.warning("TRƏS: tenant %s's settings changed during its round; its round ends",
                     sender.tenant_id)
         return False
     sender.enabled_types = frozenset(current.enabled_types or ())
@@ -173,14 +176,18 @@ async def _park(db: AsyncSession, sender: Sender, status: int | None = None) -> 
 
 
 async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: TresSettings,
-                source: PackageSource, report: RoundReport) -> None:
+                source: PackageSource, report: RoundReport, version: datetime | None = None) -> None:
     """One tenant's packages, until they end, a 429 or a refused session comes, MAX_CONSECUTIVE
-    fail in a row, or the tenant's settings change under it (re-read before every package)."""
+    fail in a row, or the tenant's settings change under it (re-read before every package).
+    `version` is the settings' `updated_at` the round began on (read now when not given)."""
     consecutive = 0
-    if not await _still_on(db, sender):
+    if version is None:
+        current = await db.get(TresSettings, sender.tenant_id, populate_existing=True)
+        version = current.updated_at if current is not None else None
+    if not await _still_on(db, sender, version):
         return
     async for package in source(db, settings):
-        if not await _still_on(db, sender):
+        if not await _still_on(db, sender, version):
             return
         try:
             await package(sender)
@@ -207,7 +214,7 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
             await db.rollback()
             # The rollback expired every row this session held, the settings the source reads
             # among them: read them again before the source runs on.
-            if not await _still_on(db, sender):
+            if not await _still_on(db, sender, version):
                 return
         else:
             report.packages += 1
@@ -231,10 +238,11 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
     async with session_factory() as db:
         rows = (await db.execute(select(TresSettings).where(TresSettings.mode != "off")
                                  .order_by(TresSettings.tenant_id))).scalars().all()
-        # Read before the first commit: (settings, account, tenant, environment, mode, parked).
+        # Read before the first commit: (settings, account, tenant, environment, mode, parked, and
+        # the `updated_at` the tenant's round begins on — any save after it ends that round).
         work = [(row, account_of(row), row.tenant_id, row.environment, row.mode,
-                 row.session_refused_at is not None) for row in rows]
-        for settings, account, tenant_id, environment, mode, parked in work:
+                 row.session_refused_at is not None, row.updated_at) for row in rows]
+        for settings, account, tenant_id, environment, mode, parked, version in work:
             if parked:
                 report.parked += 1
                 continue
@@ -257,7 +265,7 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
             sender = Sender(db, client, tenant_id=tenant_id, environment=environment, mode=mode, now=now,
                             enabled_types=())        # `_work` reads the tenant's types before each package
             try:
-                await _work(db, client, sender, settings, source, report)
+                await _work(db, client, sender, settings, source, report, version)
             except Exception as exc:  # noqa: BLE001 — one tenant's failure must not end the others'
                 report.failed += 1
                 log.error("TRƏS: the round failed for tenant %s (%s); the next tenant goes on",
