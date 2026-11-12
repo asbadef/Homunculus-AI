@@ -26,6 +26,18 @@ describe("the refresh at the shift's end (useShiftEnd)", () => {
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
 
+  // Re-review 1: the API client reports any skew under 2 s as 0 (backendApi SKEW_NOISE_MS), so a browser up to 2 s ahead
+  // looks right; the margin past the end clears that floor, so the read never lands in the old window.
+  it("waits clear of the clock's 2 s noise floor past the end", async () => {
+    expect(PAST_THE_END_MS).toBeGreaterThanOrEqual(5_000);
+    const onEnd = vi.fn();
+    renderHook(() => useShiftEnd({ endMs: END, skewMs: 0, onEnd }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * MIN + 2_000); });
+    expect(onEnd).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(PAST_THE_END_MS - 2_000); });
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
   it("reads the browser's clock when the skew is not known", async () => {
     const onEnd = vi.fn();
     renderHook(() => useShiftEnd({ endMs: END, skewMs: null, onEnd }));

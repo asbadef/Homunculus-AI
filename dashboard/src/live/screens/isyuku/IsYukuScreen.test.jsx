@@ -16,6 +16,7 @@ import { PERMISSION_KEYS } from "../admin/catalogue.js";
 import { SCOPE_ADMIN } from "../admin/admin.testutil.js";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
 import { IsYukuScreen } from "./IsYukuScreen.jsx";
+import { PAST_THE_END_MS } from "./useShiftEnd.js";
 import {
   BED, BOARD, NEXT, NOW_MS, NURSE, NURSES, PATIENT_NAME, REA, SHIFT, boardScopedTo, schedule, tasks, tree, unitSchedule,
 } from "./isyuku.testutil.js";
@@ -193,15 +194,30 @@ describe("Decision 18: a zero only from a fresh answer", () => {
 
   // Review 7: the shift's end is judged on the server's clock (the board's skew), and the page reads again once it is
   // over (one timer, useShiftEnd.test.js times it).
-  it("judges the shift's end on the server's clock, and reads again once it is over", async () => {
+  it("judges the shift's end on the server's clock, and reads again just past it", async () => {
+    vi.useRealTimers();                                                   // drop beforeEach's date mock, then fake the clock
+    vi.useFakeTimers({ shouldAdvanceTime: true });                        // real time still moves the mount along
+    vi.setSystemTime(NOW_MS);
     const skew = 10 * 60 * 60_000 + 30_000;                               // the server says 20:00:30; this browser 10:00
     const { api, board } = await mountIsYuku({ setup: (a) => a.serverClockSkewMs.mockReturnValue(skew) });
     expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — növbə dəyişdi, yenilənir");
     const reads = () => api.shiftSchedule.mock.calls.filter((call) => call.length === 1).length;
     const before = reads();
-    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 1_200); }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(PAST_THE_END_MS); });
     await settle();
     expect(reads()).toBeGreaterThan(before);
+    act(() => { board.clear(); });
+  });
+
+  // Re-review 1: the server's clock is the API client's, renewed with every answer — not the board's, measured once
+  // when it loaded (and never for a session without board.view).
+  it("takes the server's clock from the API client's latest answer, not from the board's load", async () => {
+    const { api, board } = await mountIsYuku();                           // no skew known when the board loaded
+    expect(document.querySelector("[data-shift]").textContent).toMatch(/^Bu növbə · /);
+    api.serverClockSkewMs.mockReturnValue(10 * 60 * 60_000 + 30_000);     // a later answer: the server says 20:00:30
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenilə" })); });
+    await settle();
+    expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — növbə dəyişdi, yenilənir");
     act(() => { board.clear(); });
   });
 

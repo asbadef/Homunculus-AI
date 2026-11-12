@@ -328,8 +328,11 @@ export function IsYukuScreen() {
   const [formLocked, setFormLocked] = useState(false);
   const occupancy = structureSource(tree, rights.structure);
   // The server decides which shift is current: an answer's end is judged on its clock — this browser's corrected by the
-  // board's skew (`useBoardNow`'s rule; unknown is 0) — and the page reads again when it comes (review 7).
-  const skewMs = Number.isFinite(board.clockSkewMs) ? board.clockSkewMs : 0;
+  // skew the API client measured on its latest answer (unknown is 0; renewed with every answer, the page's own reads
+  // included, so it holds without board.view — the board's is measured only when it loads) — and the page reads again
+  // when it comes (review 7, re-review 1).
+  const apiSkewMs = typeof store.api?.serverClockSkewMs === "function" ? store.api.serverClockSkewMs() : null;
+  const skewMs = Number.isFinite(apiSkewMs) ? apiSkewMs : 0;
   const { schedule, tasks } = workSources(reads.extra, rights, Date.now() + skewMs);
   const endMs = reads.extra.phase === "ok" && isWorkAnswer(reads.extra.data) ? Date.parse(reads.extra.data.schedule.shift.end)
     : null;
