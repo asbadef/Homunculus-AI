@@ -2,17 +2,26 @@
 """TRƏS-01 (spec §5, D5, D8, D10, D16, D17, D20, D22): the four mappers of phase F1 as golden tests —
 each resource exactly as spec §5 shapes it, every time in the tenant's zone with its offset, every
 skip with its catalogue reason — and the stay's bedside readings: the withdrawn ones left out, the
-first and last by measurement time. Pure functions: no database, no network. A synthetic stay of
-a synthetic person; the zone is a fixed +04:00 (Asia/Baku has had no DST since 2016), so the test
-needs no time zone database."""
+first and last by measurement time. Pure functions: no database, no network (the drift guards
+against the engine's `/clinical` door run it in memory: `create_app` with an `InMemoryAuditLog`).
+A synthetic stay of a synthetic person; the zone is a fixed +04:00 (Asia/Baku has had no DST since
+2016), so the test needs no time zone database."""
 from __future__ import annotations
 
 import uuid
 from dataclasses import replace
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-from homunculus.api.audit import AuditRecord
-from homunculus.tres import ids
+import pytest
+from fastapi.testclient import TestClient
+
+from homunculus.api import clinical
+from homunculus.api.app import create_app
+from homunculus.api.audit import AuditRecord, InMemoryAuditLog
+from homunculus.api.identity import Caller
+from homunculus.api.rehydrate import retracted_entries
+from homunculus.tres import ids, stay as stay_module
 from homunculus.tres.client import LOCAL_ID_EXTENSION
 from homunculus.tres.mapping.common import Built, Skip
 from homunculus.tres.mapping.encounter import encounter
@@ -218,3 +227,99 @@ def test_the_readings_are_the_charted_ones_less_the_withdrawn_and_the_unreadable
         _record(9, "chart", "map", {"value": 70.0, "unit": "mmHg", "obs_ts": obs}),
     ]
     assert readings_of(records) == (Reading("heart_rate", 88.0, at(1), 1), Reading("map", 70.0, at(1), 9))
+
+
+def _chart_row(id_, slug, value, hours, **payload) -> AuditRecord:
+    return _record(id_, "chart", slug, {"value": value, "unit": "/min", "obs_ts": at(hours).isoformat(), **payload})
+
+
+def _retract_row(id_, entry) -> AuditRecord:
+    return _record(id_, "chart_retract", "heart_rate", {"entry": entry, "reason": "yanlış hasta seçilmiş"})
+
+
+@pytest.mark.parametrize("entry", [True, 1.0, [1], "1", None, {"id": 1}, 1.5])
+def test_a_malformed_retract_withdraws_nothing_and_raises_nothing(entry):
+    """The engine's own guard (api/rehydrate.py `retracted_entries`): only an `int` that is not a `bool`
+    names a row. `True` and `1.0` equal 1 and would have withdrawn row 1; `[1]` is unhashable and
+    would have raised."""
+    records = [_chart_row(1, "heart_rate", 88.0, 1), _retract_row(2, entry)]
+    assert retracted_entries(records) == frozenset()
+    assert readings_of(records) == (Reading("heart_rate", 88.0, at(1), 1),)
+
+
+def test_withdrawing_the_earliest_or_the_latest_reading_promotes_the_next():
+    rows = [_chart_row(1, "heart_rate", 80.0, 1), _chart_row(2, "heart_rate", 82.0, 5),
+            _chart_row(3, "heart_rate", 84.0, 9)]
+
+    def ends(*withdrawn):
+        chosen = first_and_last(readings_of([*rows, *(_retract_row(10 + n, n) for n in withdrawn)]))
+        first, last = chosen["heart_rate"]
+        return first.entry, last.entry if last else None
+
+    assert ends() == (1, 3)
+    assert ends(1) == (2, 3)             # the earliest withdrawn: the next is the first
+    assert ends(3) == (1, 2)             # the latest withdrawn: the one before is the last
+    assert ends(1, 3) == (2, None)       # both: one value left, first only
+    assert "heart_rate" not in first_and_last(                    # all three: no reading, no vital sign
+        readings_of([*rows, *(_retract_row(10 + n, n) for n in (1, 2, 3))]))
+
+
+def test_a_row_the_device_token_charted_is_not_hand_charted_but_every_other_charter_is():
+    """D10 sends hand-charted values only. `/clinical` also takes the tenant (device) token and then
+    writes `charted_by` «tenant-token» (api/app.py): a machine's sample is unverified, so it is left out."""
+    records = [_chart_row(1, "heart_rate", 88.0, 1, charted_by=stay_module.DEVICE_CHARTER),
+               _chart_row(2, "heart_rate", 90.0, 2, charted_by="hem.ayse"),
+               _chart_row(3, "heart_rate", 92.0, 3)]
+    assert [r.entry for r in readings_of(records)] == [2, 3]
+    assert stay_module.DEVICE_CHARTER == "tenant-token"
+
+
+# ---------------------------------------------------------------- drift guards against the engine's doors
+def test_the_trail_names_the_stay_reads_are_the_engines_own():
+    """`chart_retract` is a constant of api/clinical.py; the `chart` row's type is a literal there, so the
+    guard runs the real door: a hand entry and a device entry in, the withdrawal out, through
+    `create_app` with an in-memory trail — a rename would leave `readings_of` silently empty."""
+    assert stay_module.RETRACT == clinical.RETRACT
+
+    async def resolve(credential):
+        return {"nurse": Caller(hospital="h1", actor="hem.ayse", groups=("nurse",),
+                                perms=frozenset({"board.view", "clinical.chart"}))}.get(credential)
+
+    audit = InMemoryAuditLog()
+    app = create_app({"tok": "h1"}, run_escalation_loop=False, resolve_jwt=resolve, audit=audit)
+    when = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    nurse = {"Authorization": "Bearer nurse"}
+
+    def chart(headers, value):
+        answer = client.post("/clinical/bed-3", headers=headers, json={
+            "entries": [{"code": "heart_rate", "value": value}], "recorded_at": when})
+        assert answer.status_code == 200, answer.text
+        return answer.json()["entries"][0]["entry"]
+
+    with TestClient(app) as client:
+        chart({"Authorization": "Bearer tok"}, 70)                    # the bridge's token: a device row
+        hand, wrong = chart(nurse, 80), chart(nurse, 160)
+        withdrawn = client.post(f"/clinical/bed-3/entries/{wrong}/retract", headers=nurse,
+                                json={"reason": "yazım hatası — 160 değil 60"})
+        assert withdrawn.status_code == 200, withdrawn.text
+    records = audit.records(tenant="h1", limit=1000)
+    assert {r.event_type for r in records} >= {stay_module.CHART, stay_module.RETRACT}
+    assert [r.payload["charted_by"] for r in records if r.event_type == stay_module.CHART] == [
+        stay_module.DEVICE_CHARTER, "hem.ayse", "hem.ayse"]
+    assert [r.entry for r in readings_of(records)] == [hand]          # not the device's, not the withdrawn
+
+
+def test_the_device_branch_of_charted_by_still_writes_the_literal_the_stay_skips():
+    """api/app.py `_charted_by` records the token path as exactly the string `stay.DEVICE_CHARTER`; the
+    engine's source is read, as the dashboard's tests read it, so a changed literal fails here."""
+    source = (Path(clinical.__file__).parent / "app.py").read_text(encoding="utf-8")
+    assert f'return "{stay_module.DEVICE_CHARTER}" if caller.is_device else caller.actor' in source
+
+
+# ---------------------------------------------------------------- no identity in a repr
+def test_a_persons_and_a_clinicians_repr_hold_none_of_their_identity():
+    """A `Stay` ends up in a log line or a pytest diff: its repr must not carry a FİN, a name, a birth date…"""
+    shown = repr(PERSON) + repr(stay().clinicians[0]) + repr(stay())
+    for value in ("ab12c3d", "AB12C3D", "zz99yy8", "ZZ99YY8", "Sentetikova", "Leyla", "Nur", "Sentetik", "Sentetikov",
+                  "Elçin", "female", "1980", "050 123 45 67"):
+        assert value not in shown, value

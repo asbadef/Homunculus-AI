@@ -14,7 +14,12 @@ last row's board key is the key of every chart row of the stay: one read (plan F
 `readings_of` reads the hand-charted bedside values (D10) from the trail's `chart` rows, less the
 ones a `chart_retract` withdrew; `first_and_last` picks each signal's first and last by the time it
 was measured (the audit id breaks a tie). A row the trail cannot read — not a finite number, a time
-with no zone, another unit than the door records — is left out, never sent as a guess."""
+with no zone, another unit than the door records — is left out, never sent as a guess. So is a row
+the device token charted: `/clinical` takes the bridge's tenant token as well as a clinician's, and
+records it as `DEVICE_CHARTER` — a machine's sample is unverified, and D10 sends what a person charted.
+
+Nothing here carries an identity into a repr: the person's and the clinician's fields are
+`repr=False`, so a stay in a log line, an assertion message or a debugger shows no FİN or name."""
 from __future__ import annotations
 
 import math
@@ -25,29 +30,32 @@ from datetime import datetime, tzinfo
 
 from homunculus.tres.codes import SIGNALS
 
-CHART = "chart"
+CHART = "chart"                    # the audit event type api/clinical.py writes (a literal there; a test runs the door)
 RETRACT = "chart_retract"          # api/clinical.py RETRACT: the withdrawal of one `chart` row
+#: `charted_by` of a `chart` row the static tenant token wrote (api/app.py `_charted_by`): a device's.
+DEVICE_CHARTER = "tenant-token"
 
 
 @dataclass(frozen=True)
 class Person:
-    """The patient row's identity, decrypted (spec D20). `fin` is `Patient.national_id`."""
-    fin: str | None
-    display_name: str | None
-    father_name: str | None
-    sex: str | None
-    date_of_birth: str | None
-    phone: str | None
+    """The patient row's identity, decrypted (spec D20). `fin` is `Patient.national_id`. Every field
+    is `repr=False`: this is PHI, and a repr reaches logs and assertion messages."""
+    fin: str | None = field(repr=False)
+    display_name: str | None = field(repr=False)
+    father_name: str | None = field(repr=False)
+    sex: str | None = field(repr=False)
+    date_of_birth: str | None = field(repr=False)
+    phone: str | None = field(repr=False)
 
 
 @dataclass(frozen=True)
 class Clinician:
     """An attending of the stay and the identity the tab holds for them (D16); the identity's three
-    fields are None when the tab has no row for this user."""
+    fields are None when the tab has no row for this user. The identity is `repr=False`."""
     user_id: uuid.UUID
-    fin: str | None = None
-    family_name: str | None = None
-    given_name: str | None = None
+    fin: str | None = field(default=None, repr=False)
+    family_name: str | None = field(default=None, repr=False)
+    given_name: str | None = field(default=None, repr=False)
     known: bool = False                # a `tres_practitioner_identity` row exists
 
 
@@ -92,6 +100,13 @@ def _instant(text) -> datetime | None:
     return at if at.tzinfo is not None and at.utcoffset() is not None else None
 
 
+def _row_id(value) -> bool:
+    """A `chart_retract`'s `entry` names a row only as an `int` that is not a `bool` — as
+    api/rehydrate.py `retracted_entries` holds it: `True` and `1.0` equal 1 and would withdraw row 1,
+    and a list is unhashable. (Copied, not imported: this module stays free of the engine's `api`.)"""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _finite(value) -> bool:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
@@ -104,13 +119,18 @@ def _finite(value) -> bool:
 def readings_of(records: Iterable) -> tuple[Reading, ...]:
     """The bedside values of `records` (audit records of one stay's board key, `chart` and
     `chart_retract`): every `chart` row of the six signals that no `chart_retract` withdrew, in the
-    door's unit, with a finite value and a zone-aware time."""
+    door's unit, with a finite value and a zone-aware time, that a person charted (not the device token)."""
     records = list(records)
-    withdrawn = {rec.payload.get("entry") for rec in records if rec.event_type == RETRACT}
+    withdrawn = set()
+    for rec in records:
+        if rec.event_type == RETRACT and _row_id(entry := rec.payload.get("entry")):
+            withdrawn.add(entry)
     out = []
     for rec in records:
         signal = SIGNALS.get(rec.subject)
         if rec.event_type != CHART or signal is None or rec.id in withdrawn:
+            continue
+        if rec.payload.get("charted_by") == DEVICE_CHARTER:
             continue
         value, at = rec.payload.get("value"), _instant(rec.payload.get("obs_ts"))
         if rec.payload.get("unit") != signal.charted_unit or not _finite(value) or at is None:
