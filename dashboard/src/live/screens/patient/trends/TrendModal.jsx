@@ -188,6 +188,9 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
   // is drawn: keys that do nothing are a trap, not a control. The cursor follows the card's FIRST series.
   const keyed = stops.length > 0 && validWindow(sinceMs, untilMs);
   const truncated = trends.data?.markers_truncated === true;
+  // The engine's read of the entries stopped at its limit — the hand ones (`manual_truncated`, G3-01) or the device
+  // ones (`device_truncated`, G3-05): the oldest are not listed. One note says so, in the legend and under the table.
+  const entriesCut = trends.data?.manual_truncated === true || trends.data?.device_truncated === true;
   const anyWithdrawn = series.some((s) => s.withdrawn.length > 0);
   // «No measurement for this channel» is said only of a window with nothing in it: no reading AND no hand entry. A
   // window whose only entries were withdrawn draws a struck mark (and lists a struck row), so it says that instead.
@@ -276,7 +279,8 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
             roleDescription={t("patient.trendsChartRole")}
           />
           {keyed ? <p id={hintId} className="m-0 mt-1 text-11 text-mute">{t("patient.trendsKeysHint")}</p> : null}
-          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={truncated} />
+          <TrendLegend card={card} channels={channels} source={trends.data.bands_source} truncated={truncated}
+            entriesCut={entriesCut} />
           {anyWithdrawn ? <p data-withdrawn-legend="" className="m-0 mt-1 text-11 text-mute">{t("olcum.legendWithdrawn")}</p> : null}
         </>
       ) : null}
@@ -289,7 +293,7 @@ export function TrendModal({ card, patient, bed, onClose, canRetract = false, on
             onWithdraw={(s, entry) => setWithdrawing({ series: s, entry })}
             canCorrect={canRetract && typeof onRetract === "function" && typeof onChart === "function"}
             onCorrect={(s, entry) => setCorrecting({ series: s, entry })} />
-          <TrendNotes card={card} channels={channels} truncated={truncated} />
+          <TrendNotes card={card} channels={channels} truncated={truncated} entriesCut={entriesCut} />
         </>
       ) : null}
       {!trends.data ? (

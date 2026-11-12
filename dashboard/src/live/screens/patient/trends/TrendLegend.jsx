@@ -42,8 +42,11 @@ const LIST = "m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1.5 p-0 text-11.5 
  *      said in words, so nobody reads the systolic rows as MAP's thresholds. The ENGINE decides which
  *      channel has bands (`bands.news2` null for MAP and lactate); this only notices the difference;
  *    * the server's own flag: its read of the marks stopped at its limit (api/trends.py);
+ *    * the server's own flags `manual_truncated` / `device_truncated` (`entriesCut`, G3-05): its read of the hand
+ *      and device entries stopped at its limit, so the oldest entries are not listed and their source and
+ *      withdrawal are not shown — said in one neutral line, never as a statement about the patient;
  *    * a channel the server thinned for drawing, and from how many. */
-function NoteItems({ card, channels, truncated }) {
+function NoteItems({ card, channels, truncated, entriesCut }) {
   const { t } = useI18n();
   const primary = channels[card.series[0].key] ?? null;
   const scored = Array.isArray(primary?.bands?.news2);
@@ -57,6 +60,7 @@ function NoteItems({ card, channels, truncated }) {
         </Item>
       ))}
       {truncated ? <Item>{t("patient.trendsLegendMarksTruncated")}</Item> : null}
+      {entriesCut ? <Item>{t("kayit.entriesTruncated")}</Item> : null}
       {thinned.map((s) => (
         <Item key={s.key}>
           {t("patient.trendsThinned", { channel: t(s.labelKey), kept: channels[s.key].points.length, total: channels[s.key].total_points })}
@@ -68,17 +72,17 @@ function NoteItems({ card, channels, truncated }) {
 
 /** What the table view keeps of the legend: no swatches (the table has no bands or glyphs), but every
  *  note that says how far to trust the numbers — and what a mark row is: an alarm's FIRST detection. */
-export function TrendNotes({ card, channels, truncated = false }) {
+export function TrendNotes({ card, channels, truncated = false, entriesCut = false }) {
   const { t } = useI18n();
   return (
     <ul role="list" data-notes="" className={LIST}>
       <Item>{t("patient.trendsLegendAlarm")}</Item>
-      <NoteItems card={card} channels={channels} truncated={truncated} />
+      <NoteItems card={card} channels={channels} truncated={truncated} entriesCut={entriesCut} />
     </ul>
   );
 }
 
-export function TrendLegend({ card, channels, source, truncated = false }) {
+export function TrendLegend({ card, channels, source, truncated = false, entriesCut = false }) {
   const { t } = useI18n();
   const primary = channels[card.series[0].key] ?? null;
   const scored = Array.isArray(primary?.bands?.news2);
@@ -101,7 +105,7 @@ export function TrendLegend({ card, channels, source, truncated = false }) {
           clears when its rule stops firing, and a return is a new episode with a mark of its own. */}
       <Item><Glyph kind="alarm" /> {t("patient.trendsLegendAlarm")}</Item>
       <Item><Glyph kind="antibiotic" /> {t("patient.trendsMarkerAntibiotic")}</Item>
-      <NoteItems card={card} channels={channels} truncated={truncated} />
+      <NoteItems card={card} channels={channels} truncated={truncated} entriesCut={entriesCut} />
     </ul>
   );
 }

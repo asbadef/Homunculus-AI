@@ -361,6 +361,19 @@ describe("the big chart's legend", () => {
     expect(legend()).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
   });
 
+  it("says, in one neutral line, when the engine's read of the hand or the device entries stopped at its limit (G3-05)", async () => {
+    const note = "Bu aralıqda ən köhnə ölçmələrin mənbəyi göstərilmir (çox qeyd var).";
+    for (const flag of ["manual_truncated", "device_truncated"]) {
+      await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 84, 0)])],
+        { hours, [flag]: true })));
+      expect(legend()).toHaveTextContent(note);
+      expect(legend().textContent.split(note)).toHaveLength(2);        // said once, not once per flag
+      cleanup();
+    }
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 84, 0)])], { hours })));
+    expect(legend()).not.toHaveTextContent("ən köhnə ölçmələrin");
+  });
+
   it("shows no NEWS2 band in the legend of a channel the engine scores none for", async () => {
     await open("lactate", answering((pid, hours) => trends(pid, [channel("lactate", [point(60, 4.1)])], { hours })));
     expect(legend()).not.toHaveTextContent("NEWS2");
@@ -600,6 +613,13 @@ describe("the big chart as a table", () => {
     expect(notes).toHaveTextContent("işarələrin hamısı oxunmadı: ən yeniləri çatışmaya bilər");
     expect(notes).toHaveTextContent("siqnalın başladığı an");
     expect(dialog().querySelector("[data-legend]")).toBeNull();
+  });
+
+  it("carries the cut-entries note into the table, where «elle» and «cihaz» are printed (G3-05)", async () => {
+    await open("heart_rate", answering((pid, hours) => trends(pid, [channel("heart_rate", [point(60, 84, 0)])],
+      { hours, device_truncated: true })));
+    await table();
+    expect(dialog().querySelector("[data-notes]")).toHaveTextContent("Bu aralıqda ən köhnə ölçmələrin mənbəyi göstərilmir (çox qeyd var).");
   });
 
   it("says MAP is not scored by NEWS2 under the pressure table too, and leaves out what does not apply", async () => {

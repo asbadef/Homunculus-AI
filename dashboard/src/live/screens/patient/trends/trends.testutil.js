@@ -95,6 +95,7 @@ export function trends(patientId = "S-001", channels = [], over = {}) {
     channels: KEYS.map((key) => byKey[key] ?? channel(key)),
     markers: [],
     manual_truncated: false,  // G3-01 (D13)
+    device_truncated: false,  // G3-05 (B8 review)
     ...over,
   };
 }

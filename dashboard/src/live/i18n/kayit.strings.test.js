@@ -11,8 +11,13 @@ const kayit = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => key
 
 describe("the measurement record's words (kayit)", () => {
   // The sweeps below read every key of the namespace: on an empty namespace they would pass having read nothing.
-  it("has its 75 keys in every language", () => {
-    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(75);
+  it("has its 76 keys in every language", () => {
+    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(76);
+  });
+
+  it("says in every language that the oldest entries' source is not shown when the read was cut", () => {
+    expect(DICTIONARIES.tr["kayit.entriesTruncated"]).toBe("Bu aralıkta en eski ölçümlerin kaynağı gösterilmiyor (çok fazla kayıt).");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["kayit.entriesTruncated"], lang).toMatch(/\S/);
   });
 
   it("says the spec's Turkish for the box, the two sources and the list", () => {
