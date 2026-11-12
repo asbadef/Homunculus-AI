@@ -69,6 +69,7 @@ export default {
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS ayarları değişti",
       tresPackage: "TRƏS: yatış paketi gönderildi",
+      tresMap: "TRƏS bölüm eşlemesi değişti", tresIdentity: "TRƏS hekim kimliği değişti",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -144,6 +145,7 @@ export default {
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS ayarları dəyişdirildi",
       tresPackage: "TRƏS: yatış paketi göndərildi",
+      tresMap: "TRƏS şöbə uyğunlaşdırması dəyişdirildi", tresIdentity: "TRƏS həkim identifikasiyası dəyişdirildi",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -219,6 +221,7 @@ export default {
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "Изменены настройки TRƏS",
       tresPackage: "TRƏS: пакет госпитализации отправлен",
+      tresMap: "Изменено сопоставление отделений TRƏS", tresIdentity: "Изменены данные врача для TRƏS",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -294,6 +297,7 @@ export default {
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS settings changed",
       tresPackage: "TRƏS: a stay's package was sent",
+      tresMap: "TRƏS department map changed", tresIdentity: "TRƏS practitioner identity changed",
     },
     heat: {
       title: "Alarm density — last {days} days",

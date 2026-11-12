@@ -279,6 +279,12 @@ export const TRES_CODE_KEYS = new Map([
   ["tres_account_incomplete", "tres.err.accountIncomplete"],
   ["tres_host_not_allowed", "tres.err.hostNotAllowed"],
   ["tres_live_closed", "tres.err.liveClosed"],          // F1: the live platform, closed in this version (O5, O11)
+  ["tres_unit_unknown", "tres.err.unitUnknown"],        // F1: the department map (D17)
+  ["tres_department_code", "tres.err.departmentCode"],
+  ["tres_department_display", "tres.err.departmentDisplay"],
+  ["tres_user_unknown", "tres.err.userUnknown"],        // F1: the practitioners' identities (D16)
+  ["tres_fin_format", "tres.err.finFormat"],
+  ["tres_name", "tres.err.name"],
 ]);
 /** TRƏS-01 (review M10): `tres_host_not_allowed` says which account's address, when the refusal names it
  *  (`err.apiEnvironment`, backendApi.js) — the install narrowed TRES_HOSTS, and the form holds two addresses. */

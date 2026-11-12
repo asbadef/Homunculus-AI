@@ -40,6 +40,7 @@ GUARDED_MODULES = {
     "homunculus.devicebeds.router",
     "homunculus.protocol.router",       # G2-B1d
     "homunculus.tres.router",           # TRƏS-01
+    "homunculus.tres.maps",             # TRƏS-01 F1: the two maps
 }
 
 _S = "structure.manage"
@@ -157,6 +158,11 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("GET", "/admin/tres/settings"): ANY("tres.manage"),
     ("PUT", "/admin/tres/settings"): ANY("tres.manage"),
     ("POST", "/admin/tres/test"): ANY("tres.manage"),
+    # tres/maps.py — TRƏS-01 F1 (spec D16, D17): the department map, the practitioners' identities
+    ("GET", "/admin/tres/departments"): ANY("tres.manage"),
+    ("PUT", "/admin/tres/departments"): ANY("tres.manage"),
+    ("GET", "/admin/tres/practitioners"): ANY("tres.manage"),
+    ("PUT", "/admin/tres/practitioners/{user_id}"): ANY("tres.manage"),
 }
 
 
@@ -242,7 +248,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 78      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end; G4-02: +1, GET /handovers/pending; TRƏS-01 F0: +3, the settings read and write, the connection test
+    assert len(EXPECTED) == 82      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end; G4-02: +1, GET /handovers/pending; TRƏS-01 F0: +3, the settings read and write, the connection test; F1: +4, the two maps
 
 
 def test_no_guarded_route_is_missing_from_the_table():

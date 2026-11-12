@@ -100,6 +100,8 @@ export const EVENT_TYPES = Object.freeze([
   ["tres.settings", "tresSettings"],
   // TRƏS-01 F1 (spec D24): a stay's package reached the platform whole for the first time (tres/source.py) — counts only.
   ["tres.package", "tresPackage"],
+  // TRƏS-01 F1 (spec D24): the department map and a practitioner's identity changed (tres/maps.py).
+  ["tres.map", "tresMap"], ["tres.identity", "tresIdentity"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

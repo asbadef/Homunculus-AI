@@ -24,10 +24,17 @@ EGRESS_OFF = "egress_off"                            # the install's lock is clo
 TRES_ACCOUNT_INCOMPLETE = "tres_account_incomplete"  # the selected environment's account lacks a part
 TRES_HOST_NOT_ALLOWED = "tres_host_not_allowed"      # a host the install does not allow (TRES_HOSTS)
 TRES_LIVE_CLOSED = "tres_live_closed"                # F1: the live platform is closed in this version (O5, O11)
+TRES_UNIT_UNKNOWN = "tres_unit_unknown"              # F1: a unit not the tenant's, or named twice (D17)
+TRES_DEPARTMENT_CODE = "tres_department_code"        # F1: a department code empty or over 32 characters
+TRES_DEPARTMENT_DISPLAY = "tres_department_display"  # F1: a department name empty or over 200 characters
+TRES_USER_UNKNOWN = "tres_user_unknown"              # F1: no active member of the tenant by that id (D16)
+TRES_FIN_FORMAT = "tres_fin_format"                  # F1: a FİN that is not seven Latin capitals or digits
+TRES_NAME = "tres_name"                              # F1: a practitioner's name part empty or over 100 characters
 
 CODES = frozenset({TRES_MODE, TRES_ENVIRONMENT, TRES_SETTLE_HOURS, TRES_TYPES, TRES_BASE_URL,
                    TRES_FIELD_LENGTH, EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_HOST_NOT_ALLOWED,
-                   TRES_LIVE_CLOSED})
+                   TRES_LIVE_CLOSED, TRES_UNIT_UNKNOWN, TRES_DEPARTMENT_CODE, TRES_DEPARTMENT_DISPLAY,
+                   TRES_USER_UNKNOWN, TRES_FIN_FORMAT, TRES_NAME})
 
 WORDS = {
     TRES_MODE: "The mode is off, validate or send.",
@@ -43,6 +50,12 @@ WORDS = {
     TRES_HOST_NOT_ALLOWED: "The base URL's host is not one this installation allows (TRES_HOSTS).",
     TRES_LIVE_CLOSED: "Sending patient data to the live platform is closed in this version: the legal basis "
                       "and the cut-over are open (O5, O11). Only the mode off is saved for a live account.",
+    TRES_UNIT_UNKNOWN: "A unit in the map is not one of this hospital's, or is named twice.",
+    TRES_DEPARTMENT_CODE: "A department code is required, at most 32 characters.",
+    TRES_DEPARTMENT_DISPLAY: "A department name is required, at most 200 characters.",
+    TRES_USER_UNKNOWN: "No active member of this hospital has that id.",
+    TRES_FIN_FORMAT: "A FİN is seven Latin capital letters or digits.",
+    TRES_NAME: "The family and the given name are required, each at most 100 characters.",
 }
 
 

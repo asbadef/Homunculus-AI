@@ -877,6 +877,9 @@ def create_app(
     # settings and its connection test (tres/router.py). nginx already proxies /admin.
     from homunculus.tres.router import router as tres_router
     app.include_router(tres_router)
+    # TRƏS-01 F1: the department map and the practitioners' identities (tres/maps.py, D16, D17).
+    from homunculus.tres.maps import router as tres_maps_router
+    app.include_router(tres_maps_router)
     # G2-B1d (spec §5, D12): the bridge's patient query — the device token only, never proxied by
     # nginx. `_caller` is defined below; the lambda reads it when a request arrives (E2).
     from homunculus.api.edge_query import edge_query_router
