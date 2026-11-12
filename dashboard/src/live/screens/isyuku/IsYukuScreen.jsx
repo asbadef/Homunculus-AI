@@ -18,7 +18,7 @@ import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/in
 import { WHY, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import {
-  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, meanOf, readWorkAlone,
+  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, meanOf, readWorkAlone,
   readWorkAndTasks, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
 
@@ -30,17 +30,19 @@ const COLUMNS = Object.freeze([
 /** A number with one decimal as the reader writes it: a decimal comma in tr, az and ru, a point in en. */
 const decimal = (lang, n) => (lang === "en" ? n.toFixed(1) : n.toFixed(1).replace(".", ","));
 
-/** «—» and why (ozet's `Missing`, with this page's own reason, «nöbet değişti»). */
+/** This page's own reasons (`isyuku.why.*`); every other is the summary page's (`ozet.why.*`). */
+const OWN_REASONS = new Set([SHIFT_CHANGED, NO_NURSE]);
+const whyText = (t, why) => t(OWN_REASONS.has(why) ? `isyuku.why.${why}` : `ozet.why.${why}`);
+
+/** «—» and why (ozet's `Missing`, with this page's own reasons: «nöbet değişti», «atanmış hemşire yok»). */
 function Gap({ t, why }) {
-  const key = why === SHIFT_CHANGED ? "isyuku.why.shiftChanged" : `ozet.why.${why}`;
   return (
     <span data-missing={why}>
       <span className="font-data font-bold">—</span>{" "}
-      <span className="text-12 font-normal text-mute">{t(key)}</span>
+      <span className="text-12 font-normal text-mute">{whyText(t, why)}</span>
     </span>
   );
 }
-const whyText = (t, why) => t(why === SHIFT_CHANGED ? "isyuku.why.shiftChanged" : `ozet.why.${why}`);
 
 /** A cell's text, or «—» and why. */
 const figure = (t, cell, render = (c) => c.value) => ("why" in cell ? <Gap t={t} why={cell.why} /> : render(cell));
@@ -56,7 +58,7 @@ function ShiftLine({ t, page }) {
 
 function UnitRow({ t, lang, row }) {
   const { patients, nurses, ratio, unassigned, late, remaining, waiting } = row.cells;
-  const ratioText = (c) => (c.none ? "—" : `${t("isyuku.units.ratio", { patients: c.patients, nurses: c.nurses })} · ${
+  const ratioText = (c) => (c.none ? <Gap t={t} why={NO_NURSE} /> : `${t("isyuku.units.ratio", { patients: c.patients, nurses: c.nurses })} · ${
     t("isyuku.units.mean", { mean: decimal(lang, meanOf(c.patients, c.nurses)) })}`);
   return (
     <tr>

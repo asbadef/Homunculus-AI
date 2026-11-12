@@ -88,8 +88,11 @@ describe("the workload page", () => {
     const { board } = await mountIsYuku();
     expect(unitRows()).toEqual([
       ["Reanimasiya", "4", "2", "3 xəstə / 2 tibb bacısı · orta 1,5", "1", "2", "2", "2"],
-      ["Neonatal", "1", "Bu növbə üçün təyinat yoxdur", "—", "1", "0", "1", "0"],
+      ["Neonatal", "1", "Bu növbə üçün təyinat yoxdur", "— təyin olunmuş tibb bacısı yoxdur", "1", "0", "1", "0"],
     ]);
+    // Review 8: the ratio's «—» says why, as every other «—» does.
+    const neonatal = within(screen.getByRole("table", { name: "Şöbələrə görə iş yükü, bu növbə" })).getAllByRole("row")[2];
+    expect(neonatal.querySelectorAll("td")[2].querySelector("[data-missing]")).not.toBeNull();
     expect(document.body.textContent).not.toContain("Növbə saatları dəyişdi");
     act(() => { board.clear(); });
   });

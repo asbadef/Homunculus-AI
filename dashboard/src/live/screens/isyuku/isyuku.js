@@ -37,6 +37,8 @@ import {
 export const ALL = "*";
 /** This page's own reason (§5 A6): the answer's shift has ended; the next read is coming. */
 export const SHIFT_CHANGED = "shiftChanged";
+/** This page's own reason for the ratio's «—»: the unit has no nurse this shift, so there is nothing to divide by. */
+export const NO_NURSE = "noNurse";
 /** The widest range GET /tasks takes (api/tasks.py MAX_WINDOW). */
 export const TASKS_SPAN_MS = 7 * 24 * 60 * 60_000;
 

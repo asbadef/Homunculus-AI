@@ -13,7 +13,7 @@ export default {
     title: "İş yükü",
     motto: "Sayım, puan değil · kişiler sıralanmaz",
     intro: "Bu nöbet için birim birim: hasta, atanan hemşire, atanmamış hasta, geciken ve kalan iş, yanıt bekleyen alarm. Hiçbir yerde hasta adı ya da kimliği yoktur; yataklar adlarıyla, hemşireler adlarıyla yazılır. Okunamayan bir sayı «—» ve nedeniyle yazılır, asla 0 yazılmaz. Sayfa açılınca, «Yenile» ile ve görünürken dakikada bir okunur.",
-    why: { shiftChanged: "nöbet değişti, yenileniyor" },
+    why: { shiftChanged: "nöbet değişti, yenileniyor", noNurse: "atanmış hemşire yok" },
     err: { conflict: "Bu arada başka biri değiştirdi — liste yenilendi; yeniden bakın.", shiftChanged: "Nöbet bu arada değişti — liste yenilendi; yeni nöbete yeniden bakın." },
     shift: {
       label: "Bu nöbet",
@@ -70,7 +70,7 @@ export default {
     title: "İş yükü",
     motto: "Sayma, bal deyil · şəxslər sıralanmır",
     intro: "Bu növbə üçün şöbə-şöbə: xəstə, təyin olunmuş tibb bacısı, təyinatsız xəstə, gecikən və qalan iş, cavab gözləyən siqnal. Heç yerdə xəstənin adı və ya kimliyi yoxdur; çarpayılar adı ilə, tibb bacıları adı ilə yazılır. Oxunmayan rəqəm «—» və səbəbi ilə yazılır, heç vaxt 0 yazılmır. Səhifə açılanda, «Yenilə» ilə və görünərkən dəqiqədə bir oxunur.",
-    why: { shiftChanged: "növbə dəyişdi, yenilənir" },
+    why: { shiftChanged: "növbə dəyişdi, yenilənir", noNurse: "təyin olunmuş tibb bacısı yoxdur" },
     err: { conflict: "Bu arada başqası dəyişdi — siyahı yeniləndi; yenidən baxın.", shiftChanged: "Növbə bu arada dəyişdi — siyahı yeniləndi; yeni növbəyə yenidən baxın." },
     shift: {
       label: "Bu növbə",
@@ -127,7 +127,7 @@ export default {
     title: "Нагрузка",
     motto: "Счёт, а не баллы · сотрудники не ранжируются",
     intro: "По отделениям за текущую смену: пациенты, назначенные медсёстры, пациенты без медсестры, просроченные и оставшиеся задачи, тревоги, ждущие ответа. Нигде нет имени или идентификатора пациента; койки — по названию, медсёстры — по имени. Непрочитанное число пишется «—» с причиной, никогда 0. Страница читается при открытии, по «Обновить» и раз в минуту, пока она видна.",
-    why: { shiftChanged: "смена сменилась, обновляется" },
+    why: { shiftChanged: "смена закончилась, обновляется", noNurse: "нет назначенных медсестёр" },
     err: { conflict: "Тем временем кто-то изменил — список обновлён; проверьте ещё раз.", shiftChanged: "Смена тем временем сменилась — список обновлён; проверьте новую смену." },
     shift: {
       label: "Текущая смена",
@@ -184,7 +184,7 @@ export default {
     title: "Workload",
     motto: "Counts, not scores · nobody is ranked",
     intro: "Unit by unit, for this shift: patients, assigned nurses, unassigned patients, late and remaining work, alarms waiting for an answer. No patient's name or id anywhere; beds by their name, nurses by name. A number that could not be read is written «—» with its reason, never 0. Read when the page opens, on «Refresh» and every minute while it is visible.",
-    why: { shiftChanged: "the shift changed, reloading" },
+    why: { shiftChanged: "the shift changed, reloading", noNurse: "no nurse assigned" },
     err: { conflict: "Someone else changed it meanwhile — the list was reloaded; please look again.", shiftChanged: "The shift changed meanwhile — the list was reloaded; please look at the new shift." },
     shift: {
       label: "This shift",
@@ -197,7 +197,7 @@ export default {
       colUnit: "Unit", colPatients: "Patients", colNurses: "Nurses", colRatio: "Patients per nurse",
       colUnassigned: "Unassigned patients", colLate: "Late work", colRemaining: "Remaining work", colWaiting: "Alarms waiting",
       noAssignment: "No assignment for this shift",
-      ratio: "{patients} patients / {nurses} nurses",
+      ratio: "patients: {patients} / nurses: {nurses}",
       mean: "mean {mean}",
       loading: "Reading the units…",
       missing: "The table cannot be drawn · {why}",

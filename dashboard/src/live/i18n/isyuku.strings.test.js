@@ -48,6 +48,16 @@ describe("the workload page's words (isyuku)", () => {
     }
   });
 
+  // G4-04 review 8: a ratio that reads right for one, a Russian reason that says something, and a reason for the
+  // ratio's «—» when the unit has no nurse.
+  it("says the ratio without a plural, the ended shift plainly, and why a unit with no nurse has no ratio", () => {
+    expect(fill(DICTIONARIES.en["isyuku.units.ratio"], { patients: 1, nurses: 1 })).toBe("patients: 1 / nurses: 1");
+    expect(DICTIONARIES.ru["isyuku.why.shiftChanged"]).toBe("смена закончилась, обновляется");
+    const noNurse = { tr: "atanmış hemşire yok", az: "təyin olunmuş tibb bacısı yoxdur", ru: "нет назначенных медсестёр",
+      en: "no nurse assigned" };
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["isyuku.why.noNurse"], lang).toBe(noNurse[lang]);
+  });
+
   it("names the unit in the nurse cards' and the form's titles, in every language", () => {
     for (const lang of LANG_CODES) {
       for (const key of ["isyuku.nurses.title", "isyuku.form.title"]) {
