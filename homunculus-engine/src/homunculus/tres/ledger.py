@@ -29,6 +29,22 @@ code, never text). `held` reads the platform's id of a row without locking it (a
 preview); `forget_skip` removes a skip that stood for no record at all (a Patient's placeholder,
 ids.patient_placeholder) once the resource has an id of its own.
 
+A ROW SHARED BY A PERSON'S STAYS (plan F1, amendment 25, A1). The Patient's row is keyed by the
+FİN, so every stay of one person reaches the same row — built from DIFFERENT patient rows (the
+admission form makes one per admission: a phone typed once, a name corrected later). Were each to
+send its own, the national Patient would flip between them every round. With `shared`, the
+person's NEWEST stay is the row's authority: once the row is held for a stay (its `admission_id`)
+whose last admission is newer than the caller's (`newer_stay`: the admission time, a tie broken by
+the larger id), the call YIELDS — nothing is asked, written or moved, the row comes back as it is
+(`row.yielded`) and the caller refers to the platform's id on it, if any. The comparison is made
+in `_row`, AFTER the row is locked, and the send that may follow happens under the same lock: two
+stays' deliverers of the person (a round and a hand, two processes) are serialised by the row, and
+the second always judges what the first left. A newer stay that has not run yet owns nothing, so it
+does not hold the older one back.
+
+`row.took_id` (A5): this `deliver` took the row's `remote_id` from None to a value, under its lock —
+the one run that gave the resource its platform id, whichever deliverer it was.
+
 A DELIVERER THAT MUST NOT WAIT (plan F1, N12): «Şimdi gönder» and «Yeniden dene» are a person's
 request, and a round may hold the row they need for minutes (its transaction spans its HTTP
 calls). With `lock_timeout_ms` the row is waited for that long at most, then `LedgerBusy` is
@@ -54,6 +70,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from homunculus.admission.models import Admission
 from homunculus.crypto import phi_digest
 from homunculus.tres.client import TresClient, TresError, is_outage
 from homunculus.tres.models import TresDelivery
@@ -104,6 +121,23 @@ def clip_error(message: str) -> str:
     return text.encode("utf-8")[:ERROR_MAX_BYTES].decode("utf-8", errors="ignore")
 
 
+def newer_stay(owner: tuple[datetime, uuid.UUID], caller: tuple[datetime, uuid.UUID]) -> bool:
+    """Is the stay that owns a shared row newer than the caller's? Each is (its last admission's
+    `admission_datetime`, that admission's id): the later time wins, and on the same time the larger
+    id — deterministic, so two stays never both take the row. Equal: not newer (the caller sends)."""
+    return owner > caller
+
+
+async def _owner_is_newer(db: AsyncSession, owner_id: uuid.UUID, admission_id: uuid.UUID) -> bool:
+    """`newer_stay` of the two admissions, read in the caller's transaction. An admission that is
+    not there (deleted since: the row's key is SET NULL with it) owns nothing."""
+    rows = dict((await db.execute(select(Admission.id, Admission.admission_datetime).where(
+        Admission.id.in_((owner_id, admission_id))))).all())
+    if owner_id not in rows or admission_id not in rows:
+        return False
+    return newer_stay((rows[owner_id], owner_id), (rows[admission_id], admission_id))
+
+
 def due(row: TresDelivery, now: datetime) -> bool:
     """May an UNCHANGED payload be tried now? Not while `stuck`, and not while a `failed` row's
     wait has not run out. Every other row may."""
@@ -116,7 +150,7 @@ def due(row: TresDelivery, now: datetime) -> bool:
 
 async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
                local_id: str, admission_id: uuid.UUID | None,
-               lock_timeout_ms: int | None = None) -> TresDelivery:
+               lock_timeout_ms: int | None = None, shared: bool = False) -> TresDelivery:
     """The row of this key, made if there is none, and LOCKED until the caller's commit — ONE
     WRITER PER KEY (review #2). Two deliverers of one resource at once (a round and «Şimdi gönder»)
     would otherwise both look the local id up, both find nothing and both POST: two national
@@ -126,7 +160,12 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
     trusted from memory. With `lock_timeout_ms`, a wait longer than that is `LedgerBusy` (the
     whole session transaction rolled back, nothing written); and once the row is held the bound is
     lifted (`SET LOCAL lock_timeout TO DEFAULT`, review M3): it covers the wait for the row and
-    nothing the caller does with it afterwards — the write after the HTTP calls, minutes later."""
+    nothing the caller does with it afterwards — the write after the HTTP calls, minutes later.
+
+    The row's `admission_id` follows the caller's stay — unless the row is `shared` (the person's
+    Patient, amendment 25, A1) and held for a NEWER stay: then nothing moves and `row.yielded` is set
+    (the module's docstring). Judged here, under the lock. `row.took_id` and `row.yielded` are reset
+    on every call (models.TresDelivery)."""
     key = (TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id)
     try:
@@ -146,8 +185,12 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
             raise
         await db.rollback()
         raise LedgerBusy(resource_type) from None
+    row.took_id, row.yielded = False, False
     if admission_id is not None and row.admission_id != admission_id:
-        row.admission_id = admission_id        # a person's row follows their latest stay
+        if shared and row.admission_id is not None and await _owner_is_newer(db, row.admission_id, admission_id):
+            row.yielded = True                 # the person's newest stay is the row's authority (A1)
+        else:
+            row.admission_id = admission_id    # the row follows the caller's stay
     return row
 
 
@@ -174,11 +217,16 @@ async def _write(client: TresClient, fhir_type: str, local_id: str, resource: di
 async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID, environment: str,
                   mode: str, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                   admission_id: uuid.UUID | None = None, now: datetime | None = None,
-                  force: bool = False, lock_timeout_ms: int | None = None) -> TresDelivery:
+                  force: bool = False, lock_timeout_ms: int | None = None,
+                  shared: bool = False) -> TresDelivery:
     """One resource to the platform, its outcome on its ledger row (the module's docstring).
     `resource_type` is the ledger's key (`vital`, `lab`, `patient`…); `fhir_type` the platform's
     (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
     (`client.is_outage`), the row left as it was; raises a counted 5xx again after recording it.
+
+    `shared` (the person's Patient, A1): a row held for a newer stay of the person is left as it is
+    and returned with `row.yielded` — nothing validated, sent or moved. `row.took_id` (A5) says
+    whether THIS call took the row's `remote_id` from None to a value, under the row's lock.
 
     The row is locked from `_row` to the commit, and the transaction SPANS THE HTTP CALLS — on
     purpose: the lock is what keeps a second deliverer of the same key from asking the platform
@@ -197,7 +245,12 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     now = now or datetime.now(timezone.utc)
     digest = payload_digest(resource)
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
+                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms,
+                     shared=shared)
+    if row.yielded:
+        await db.commit()
+        return row
+    before = row.remote_id
     same = row.payload_digest == digest
     done = ("sent", "validated") if mode == "validate" else ("sent",)
     if same and (row.status in done or (not force and not due(row, now))):
@@ -230,6 +283,7 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     row.status = "validated" if mode == "validate" else "sent"
     row.operation, row.remote_id, row.payload_digest = operation, remote_id, digest
     row.attempts, row.last_error, row.next_attempt_at, row.reason = 0, None, None, None
+    row.took_id = before is None and remote_id is not None
     await db.commit()
     return row
 
@@ -237,15 +291,18 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
 async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str,
                       resource_type: str, local_id: str, reason: str,
                       admission_id: uuid.UUID | None = None, keep_held: bool = False,
-                      lock_timeout_ms: int | None = None) -> TresDelivery:
+                      lock_timeout_ms: int | None = None, shared: bool = False) -> TresDelivery:
     """The resource was not built: its row reads `skipped` with the catalogue's reason code. With
     `keep_held`, a row the platform holds a record of (it has a `remote_id`) is left exactly as it
     is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7).
+    With `shared` (A1), a row held for a newer stay of the person is left exactly as it is too, and
+    comes back with `row.yielded`: an older stay's reason does not overwrite the newer one's record.
     With `lock_timeout_ms`, `LedgerBusy` rolls back the caller's WHOLE session transaction (review
     M8): the caller must hold no pending write it wants to keep."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
-    if keep_held and row.remote_id:
+                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms,
+                     shared=shared)
+    if row.yielded or (keep_held and row.remote_id):
         await db.commit()
         return row
     if row.status != "skipped" or row.reason != reason:

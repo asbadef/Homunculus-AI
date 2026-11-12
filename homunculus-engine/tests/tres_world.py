@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission.models import Admission, AdmissionState, Patient
 from homunculus.api.audit import AuditEvent
-from homunculus.tres.models import TresDepartmentMap, TresPractitionerIdentity, TresSettings
+from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
+from homunculus.tres.models import TresDelivery, TresDepartmentMap, TresPractitionerIdentity, TresSettings
 from tests.fake_tres import FakeTres
 from tests.kabul_world import SLUG, Ward
 
@@ -30,13 +31,15 @@ async def add_stay(db: AsyncSession, ward: Ward, *, protocol_no: str | None = "2
                    state: AdmissionState = AdmissionState.DISCHARGED, admitted_at: datetime = ADMITTED,
                    discharged_at: datetime | None = DISCHARGED, bed: str = "1", unit: str = "rea",
                    attending: str | None = "doctor", weight_kg: float | None = 72.5,
-                   source: Admission | None = None, patient: Patient | None = None) -> Admission:
-    """One admission of a synthetic person (a new patient row unless `patient` is given); with
-    `source`, the arriving row of a transfer from it."""
+                   source: Admission | None = None, patient: Patient | None = None,
+                   phone: str | None = "050 123 45 67") -> Admission:
+    """One admission of a synthetic person (a new patient row unless `patient` is given — the
+    admission form makes one per admission, so two stays of one FİN are two rows); with `source`,
+    the arriving row of a transfer from it."""
     if patient is None:
         patient = Patient(tenant_id=ward.tenant.id, patient_number=number, display_name="Sentetikova Leyla",
                           date_of_birth="1980-01-31", sex="female", father_name="Sentetik", national_id=fin,
-                          phone="050 123 45 67")
+                          phone=phone)
         db.add(patient)
         await db.flush()
     admission = Admission(
@@ -74,6 +77,39 @@ async def feed_settings(db: AsyncSession, ward: Ward, fake: FakeTres, *, mode: s
     db.add(settings)
     await db.commit()
     return settings
+
+
+async def other_tenants_stay(db: AsyncSession, *, discharged_at: datetime = DISCHARGED) -> Admission:
+    """Another hospital's discharged stay of a synthetic person, with a `stuck` ledger row of its own:
+    what the first tenant's rounds and reads must never reach (batch-3 review, A10)."""
+    tenant = Tenant(name="Sentetik Başka Hastane", slug="baska-hastane", country_code="AZ")
+    db.add(tenant)
+    await db.flush()
+    site = Site(tenant_id=tenant.id, name="Başqa bina")
+    db.add(site)
+    await db.flush()
+    unit = Unit(site_id=site.id, name="Reanimasiya", unit_type=UnitType.ADULT_ICU)
+    db.add(unit)
+    await db.flush()
+    room = Room(unit_id=unit.id, name="Otaq 9")
+    db.add(room)
+    await db.flush()
+    bed = Bed(room_id=room.id, label="9")
+    db.add(bed)
+    patient = Patient(tenant_id=tenant.id, patient_number="H2699901", display_name="Sentetikov Orxan",
+                      date_of_birth="1975-05-05", sex="male", father_name="Sentetik", national_id="ZZ11YY2")
+    db.add(patient)
+    await db.flush()
+    admission = Admission(patient_id=patient.id, tenant_id=tenant.id, state=AdmissionState.DISCHARGED,
+                          admission_datetime=discharged_at - timedelta(days=3), admitting_unit_id=unit.id,
+                          bed_id=bed.id, admission_diagnosis_free_text="Sentetik tanı", protocol_no="202699900001",
+                          discharge_at=discharged_at)
+    db.add(admission)
+    await db.flush()
+    db.add(TresDelivery(tenant_id=tenant.id, environment="test", resource_type="patient", local_id="hmn-p-baska.",
+                        status="stuck", attempts=5, admission_id=admission.id))
+    await db.commit()
+    return admission
 
 
 def chart(audit, key: str, slug: str, value: float, unit: str, at: datetime) -> int:

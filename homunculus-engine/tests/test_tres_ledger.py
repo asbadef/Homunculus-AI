@@ -24,7 +24,7 @@ from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient, TresError, is_outage
 from homunculus.tres.ledger import (
     ERROR_MAX_BYTES, ERROR_MAX_CHARS, HAND_LOCK_TIMEOUT_MS, MAX_ATTEMPTS, RETRY_AFTER, LedgerBusy, _row, clip_error,
-    deliver, due, forget_skip, held, is_lock_timeout, payload_digest, record_skip,
+    deliver, due, forget_skip, held, is_lock_timeout, newer_stay, payload_digest, record_skip,
 )
 from homunculus.tres.models import TresDelivery
 from tests.conftest import requires_db
@@ -48,6 +48,16 @@ def test_the_digest_ignores_the_id_and_the_key_order_and_sees_every_other_change
     assert payload_digest(base) != payload_digest(patient("Leyla"))
     assert payload_digest(base) != payload_digest({**base, "active": True})
     assert len(payload_digest(base)) == 64 and "Sentetik" not in payload_digest(base)
+
+
+def test_the_newer_stay_is_the_later_admission_and_on_a_tie_the_larger_id():
+    """Batch-3 review A1: the person's shared row belongs to their newest stay — deterministic, so two
+    stays never both take it."""
+    small, large = uuid.UUID(int=1), uuid.UUID(int=2)
+    assert newer_stay((T0 + timedelta(days=1), small), (T0, large))         # later wins, whatever the ids
+    assert not newer_stay((T0, large), (T0 + timedelta(days=1), small))
+    assert newer_stay((T0, large), (T0, small)) and not newer_stay((T0, small), (T0, large))   # a tie: the larger id
+    assert not newer_stay((T0, small), (T0, small))                         # the same stay is not newer
 
 
 def test_a_message_is_clipped_to_500_characters_and_1000_bytes():

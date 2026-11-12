@@ -27,6 +27,13 @@ the defaults: mode `off`, environment `test`):
 * `retried_at`   when the nightly retry of `stuck` rows last ran for this tenant (D21, O21): it runs
                  at the first round after 04:00 in the tenant's zone. Not a setting either: written
                  by its own statement, never touching `updated_at`.
+* `reached_to`   the rounds' watermark (plan F1, amendment 25, A3): the upper bound (`now −
+                 settle_hours`) of the last round that ran to its END for this tenant. While rounds
+                 stop completing (a parked tenant, the install's lock closed, an outage, 429s), the
+                 next round reaches back to it rather than only a week, so no stay discharged in the
+                 gap is dropped (D9). None until a round completes; reset by a save that changes the
+                 environment or the selected account's base URL (router.py). Written by its own
+                 statement, never touching `updated_at`.
 
 `tres_deliveries` — the ledger (D6): one row per (tenant, environment, resource type, local id).
 A sandbox success never counts for live: the environment is in the key. NO REQUEST OR RESPONSE
@@ -126,6 +133,7 @@ class TresSettings(Base):
     session_refused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     send_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reached_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TresDelivery(Base):
@@ -165,6 +173,16 @@ class TresDelivery(Base):
         DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now, onupdate=_now, server_default=func.now())
+
+    # NOT COLUMNS: what the ledger call that returned this row did with it (ledger.py `_row` sets
+    # both on every call, under the row's lock; plan F1, amendment 25). Plain class attributes, which
+    # the mapper does not map; a row read any other way carries the defaults.
+    #: This call took the row's `remote_id` from None to a value — the platform holds the resource
+    #: because of THIS delivery (A5: the stay's one `tres.package` row is written from that run).
+    took_id = False
+    #: This call left a SHARED row (the person's Patient) to the newer stay that owns it: nothing
+    #: was asked, written or moved (A1).
+    yielded = False
 
 
 class TresDepartmentMap(Base):

@@ -99,7 +99,9 @@ class Sender:
     (review M3, M4). `LedgerBusy` ROLLS BACK THE CALLER'S WHOLE SESSION TRANSACTION, not just the
     call (review M8): a caller of a Sender with a lock timeout must hold no pending write it wants
     to keep. `held` reads the platform's id a reference needs; `forget_skip` removes a
-    placeholder's skip."""
+    placeholder's skip. `shared` (plan F1, amendment 25, A1) marks the person's own row (the
+    Patient, keyed by the FİN and reached by every stay of theirs): the ledger leaves it to the
+    person's newest stay (`ledger.newer_stay`) and answers it with `row.yielded`."""
 
     def __init__(self, db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
                  environment: str, mode: str, now: datetime, enabled_types: Iterable[str],
@@ -110,24 +112,26 @@ class Sender:
         self.lock_timeout_ms = lock_timeout_ms
 
     async def send(self, *, resource_type: str, fhir_type: str, local_id: str, resource: dict,
-                   admission_id: uuid.UUID | None = None, force: bool = False) -> TresDelivery:
+                   admission_id: uuid.UUID | None = None, force: bool = False,
+                   shared: bool = False) -> TresDelivery:
         if resource_type not in self.enabled_types:
             # Recorded only where the platform holds nothing: a sent row keeps its id and status.
             return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                      resource_type=resource_type, local_id=local_id, reason=TYPE_OFF,
                                      admission_id=admission_id, keep_held=True,
-                                     lock_timeout_ms=self.lock_timeout_ms)
+                                     lock_timeout_ms=self.lock_timeout_ms, shared=shared)
         return await deliver(self._db, self._client, tenant_id=self.tenant_id,
                              environment=self.environment, mode=self.mode,
                              resource_type=resource_type, fhir_type=fhir_type, local_id=local_id,
                              resource=resource, admission_id=admission_id, now=self.now, force=force,
-                             lock_timeout_ms=self.lock_timeout_ms)
+                             lock_timeout_ms=self.lock_timeout_ms, shared=shared)
 
     async def skip(self, *, resource_type: str, local_id: str, reason: str,
-                   admission_id: uuid.UUID | None = None) -> TresDelivery:
+                   admission_id: uuid.UUID | None = None, shared: bool = False) -> TresDelivery:
         return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                  resource_type=resource_type, local_id=local_id, reason=reason,
-                                 admission_id=admission_id, lock_timeout_ms=self.lock_timeout_ms)
+                                 admission_id=admission_id, lock_timeout_ms=self.lock_timeout_ms,
+                                 shared=shared)
 
     async def held(self, *, resource_type: str, local_id: str) -> str | None:
         return await held(self._db, tenant_id=self.tenant_id, environment=self.environment,

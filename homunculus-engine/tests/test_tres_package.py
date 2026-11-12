@@ -39,22 +39,42 @@ class Row:
     status: str
     remote_id: str | None
     reason: str | None
+    took_id: bool = False          # this call gave the row its platform id (ledger.deliver, A5)
+    yielded: bool = False          # this call left a shared row to a newer stay (ledger._row, A1)
 
 
 class Recorder:
     """A sender that remembers what it was asked. Send mode hands out platform ids 7001, 7002…;
     validate mode hands out none (the platform stores nothing). `held` is what the ledger holds
-    already; a type in `refuse` fails without an id."""
+    already; a type in `refuse` fails without an id. `newer` holds the shared rows a NEWER stay of
+    the same person owns ({(type, local id): its platform id or None}): a shared send or skip of
+    one of them yields (A1) — asked nothing, the row as it is. `shared` records which rows were
+    sent or skipped as shared."""
 
-    def __init__(self, mode: str = "send", held: dict | None = None, refuse=()) -> None:
-        self.mode, self.ids, self.refuse = mode, dict(held or {}), set(refuse)
+    def __init__(self, mode: str = "send", held: dict | None = None, refuse=(), newer: dict | None = None) -> None:
+        self.mode, self.ids, self.refuse, self.newer = mode, dict(held or {}), set(refuse), dict(newer or {})
         self.calls: list[tuple] = []
+        self.shared: set[tuple[str, str]] = set()
         self._next = 7000
 
     async def held(self, *, resource_type, local_id):
         return self.ids.get((resource_type, local_id))
 
-    async def send(self, *, resource_type, fhir_type, local_id, resource, admission_id=None, force=False):
+    def _yields(self, resource_type, local_id, shared) -> Row | None:
+        key = (resource_type, local_id)
+        if shared:
+            self.shared.add(key)
+        if shared and key in self.newer:
+            self.calls.append(("yield", resource_type, local_id))
+            remote = self.newer[key]
+            return Row("sent" if remote else "skipped", remote, None, yielded=True)
+        return None
+
+    async def send(self, *, resource_type, fhir_type, local_id, resource, admission_id=None, force=False,
+                   shared=False):
+        yielded = self._yields(resource_type, local_id, shared)
+        if yielded is not None:
+            return yielded
         self.calls.append(("send", resource_type, local_id, force))
         self.last = resource
         key = (resource_type, local_id)
@@ -62,12 +82,16 @@ class Recorder:
             return Row("failed", self.ids.get(key), None)
         if self.mode == "validate":
             return Row("validated", self.ids.get(key), None)
-        if key not in self.ids:
+        took = key not in self.ids
+        if took:
             self._next += 1
             self.ids[key] = str(self._next)
-        return Row("sent", self.ids[key], None)
+        return Row("sent", self.ids[key], None, took_id=took)
 
-    async def skip(self, *, resource_type, local_id, reason, admission_id=None):
+    async def skip(self, *, resource_type, local_id, reason, admission_id=None, shared=False):
+        yielded = self._yields(resource_type, local_id, shared)
+        if yielded is not None:
+            return yielded
         self.calls.append(("skip", resource_type, local_id, reason))
         return Row("skipped", None, reason)
 
@@ -144,6 +168,76 @@ async def test_validate_after_a_send_checks_the_encounter_against_the_ids_the_le
     assert ("send", "encounter", ENCOUNTER_ID, False) in sender.calls
     assert sender.last["subject"] == {"reference": "Patient/7001"} and "participant" not in sender.last
     assert [c[1:] for c in sender.calls if c[0] == "skip"] == [("vital", v, NO_REFERENCE) for v in VITALS]
+
+
+# ---------------------------------------------------------------- batch-3 review (no database)
+@pytest.mark.parametrize("person, reason", [
+    (replace(PERSON, display_name="Sentetikova"), "name_single"),
+    (replace(PERSON, father_name=" "), "father_name_missing"),
+    (replace(PERSON, sex="unknown"), "sex_unmapped"),
+    (replace(PERSON, date_of_birth="31.01.1980"), "birth_date_invalid"),
+])
+async def test_a_person_keyed_by_a_fin_forgets_the_placeholder_even_when_skipped_for_another_reason(person, reason):
+    """A4: once a FİN keys the person, the stay's placeholder stands for nothing — whatever happens
+    to the Patient next."""
+    sender = Recorder()
+    outcome = await run(stay(person=person), sender, organization_id="ORG-0001")
+    assert sender.calls == [("forget", "patient", ids.patient_placeholder(ROOT)),
+                            ("skip", "patient", PATIENT_ID, reason)]
+    assert outcome.first_complete is False
+
+
+async def test_the_first_complete_package_is_the_run_whose_send_took_the_encounters_id():
+    """A5: not an unlocked read before the run. Here another run gave the Encounter its id after
+    this one could have looked (`held` still says None): this run's send took nothing."""
+    class LateLook(Recorder):
+        async def held(self, *, resource_type, local_id):
+            return None
+
+    sender = LateLook(held={("encounter", ENCOUNTER_ID): "6999"})
+    outcome = await run(stay(), sender, organization_id="ORG-0001")
+    assert ("send", "encounter", ENCOUNTER_ID, False) in sender.calls
+    assert sender.last["encounter"] == {"reference": "Encounter/6999"}
+    assert outcome.first_complete is False
+
+
+async def test_only_the_persons_row_is_shared_and_a_newer_stays_patient_is_the_reference():
+    """A1: a newer stay of the same person owns the Patient's row — this one sends nothing for it and
+    refers to that stay's Patient."""
+    sender = Recorder(newer={("patient", PATIENT_ID): "9001"})
+    outcome = await run(stay(), sender, organization_id="ORG-0001")
+    assert sender.shared == {("patient", PATIENT_ID)}                       # no other row is the person's
+    assert ("yield", "patient", PATIENT_ID) in sender.calls
+    assert not any(c[0] == "send" and c[1] == "patient" for c in sender.calls)
+    encounter = [c for c in sender.calls if c[1] == "encounter"]
+    assert encounter == [("send", "encounter", ENCOUNTER_ID, False)]
+    assert sender.last["subject"] == {"reference": "Patient/9001"}
+    assert outcome.first_complete is True
+
+
+@pytest.mark.parametrize("mode", ["send", "validate"])
+async def test_a_newer_stays_patient_the_platform_does_not_hold_stops_this_stay_before_the_encounter(mode):
+    sender = Recorder(mode=mode, newer={("patient", PATIENT_ID): None})
+    await run(stay(), sender, organization_id="ORG-0001")
+    assert not any(c[0] == "send" and c[1] in ("patient", "encounter", "vital") for c in sender.calls)
+    assert ("send", "practitioner", PRACTITIONER_ID, False) in sender.calls         # as for an unheld Patient
+    skipped = [c[1:] for c in sender.calls if c[0] == "skip"]
+    assert skipped == ([] if mode == "send" else
+                       [("encounter", ENCOUNTER_ID, NO_REFERENCE), *(("vital", v, NO_REFERENCE) for v in VITALS)])
+
+
+async def test_this_stays_own_skip_is_not_recorded_on_a_newer_stays_patient_which_it_then_refers_to():
+    """A1 on the skip path: this stay's person row lacks a father's name, but the newer stay is the
+    person's authority — no skip is written over its row, and the stay goes on with its Patient."""
+    sender = Recorder(newer={("patient", PATIENT_ID): "9001"})
+    await run(stay(person=replace(PERSON, father_name="")), sender, organization_id="ORG-0001")
+    assert not any(c[0] == "skip" and c[1] == "patient" for c in sender.calls)
+    assert ("send", "encounter", ENCOUNTER_ID, False) in sender.calls
+    assert sender.last["subject"] == {"reference": "Patient/9001"}
+    placeholder = Recorder(newer={("patient", ids.patient_placeholder(ROOT)): "9001"})
+    await run(stay(person=replace(PERSON, fin=None)), placeholder, organization_id="ORG-0001")
+    assert placeholder.shared == set()                                       # a stay's placeholder is its own
+    assert placeholder.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing")]
 
 
 # ---------------------------------------------------------------- through the ledger, against the stand-in (Postgres)

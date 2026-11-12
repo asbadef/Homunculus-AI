@@ -503,6 +503,42 @@ async def test_a_successful_connection_test_lets_a_parked_tenant_try_again_and_a
     assert await _parked_at(db_session) is None
 
 
+# ---------------------------------------------------------------- the rounds' reach (plan F1, amendment 25, A3)
+REACHED = datetime(2026, 11, 10, 8, 0, tzinfo=timezone.utc)
+
+
+async def _reach(db_session, value=REACHED):
+    """What a round that ran to its end leaves (source.py); then the value as stored."""
+    if value is not None:
+        await db_session.execute(text("UPDATE tres_settings SET reached_to = :t"), {"t": value})
+        await db_session.commit()
+    stored = (await db_session.execute(text("SELECT reached_to FROM tres_settings"))).scalar_one()
+    await db_session.commit()
+    return stored
+
+
+@requires_db
+async def test_a_save_that_moves_the_environment_or_its_address_resets_the_rounds_reach(ward, db_session):
+    """The ledger is per environment: another environment, or another address for the selected
+    account, starts the watermark again — the next round reaches back to the cut-off (or a week).
+    Any other change keeps it, and so does a change to the account not in use."""
+    w, client, app = ward
+    assert (await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])).status_code == 200
+    await _reach(db_session)
+    other = {**EMPTY, "base_url": "https://ehr.example.az"}
+    for kept in (body(test=SANDBOX, settle_hours=48), body(test=SANDBOX, settle_hours=48, mode="validate"),
+                 body(test=SANDBOX, settle_hours=48, mode="validate", live=other)):        # live: not in use
+        assert (await client.put(URL, json=kept, headers=w.auth["admin"])).status_code == 200
+        assert await _reach(db_session, None) == REACHED, kept
+    readdressed = body(test={**SANDBOX, "base_url": "https://ehr.example.az"}, live=other)
+    assert (await client.put(URL, json=readdressed, headers=w.auth["admin"])).status_code == 200
+    assert await _reach(db_session, None) is None
+    await _reach(db_session)
+    moved = body(test={**SANDBOX, "base_url": "https://ehr.example.az"}, live=other, environment="live")
+    assert (await client.put(URL, json=moved, headers=w.auth["admin"])).status_code == 200
+    assert await _reach(db_session, None) is None
+
+
 # ---------------------------------------------------------------- the install narrows its hosts (review M10)
 def test_a_stored_address_sent_back_unchanged_is_not_judged_against_the_hosts_again():
     stored = {"test": None, "live": "https://ehr.e-health.gov.az"}

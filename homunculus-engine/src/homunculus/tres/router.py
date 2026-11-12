@@ -17,6 +17,9 @@ the account to another server); an empty string clears it. A save that changes s
 AFTER the commit with the NAMES of the fields that changed (`mode`, `test.password`…) and, for a
 changed base URL, the HOST it now points at (no path, no credentials) — never another value (D24;
 A-26: never a 500 for a committed change). A save that changes nothing writes no audit row.
+A save that changes the `environment`, or the base URL of the account in use, resets the rounds'
+watermark `reached_to` (plan F1, amendment 25, A3: the ledger is per environment) — not a setting,
+not in the answer, not named in the audit row.
 
 POST /admin/tres/test — one sign-in at the platform with the stored account of the selected
 environment: `{"ok": true}` or `{"ok": false, "message": <the platform's words>}`, never the
@@ -175,6 +178,13 @@ async def write_settings(
         row.updated_at, row.updated_by = datetime.now(timezone.utc), user_id
         # A changed setting is the administrator's answer to a refused login: the rounds try again.
         row.session_refused_at = None
+
+    if "environment" in changed or f"{row.environment}.base_url" in changed:
+        # Plan F1, amendment 25 (A3): the rounds' watermark belongs to the ledger they reached — one
+        # environment's, on one server. Another environment, or another address for the one in use,
+        # starts it again: the next round reaches back to the cut-off (a week, without one).
+        row.reached_to = None
+
     answer = _out(row, _egress(request))
     hospital = await trail.hospital_of(db, caller_tenant)
     await db.commit()

@@ -10,32 +10,42 @@
 * a round with the app's source puts the stay on the stand-in — every time in +04:00 — and writes
   the one `tres.package` audit row; the next round asks nothing and writes none;
 * the nightly retry: at the first round after 04:00 in the tenant's zone, a `stuck` row's stay is
-  rebuilt and forced, however old; once a night.
+  rebuilt and forced, however old; once a night — never before 04:00 on a tenant's first night, never
+  twice by two processes (the mark is a compare-and-set), and a stuck stay that is due goes once;
+* batch-3 review: the person's newest stay is the authority for their one national Patient (A1); a
+  round and a hand on one stay write one `tres.package` (A5); the rounds' reach goes back to the last
+  round that ran to its end, never past the cut-off, and closes to the week again (A3); tenant
+  isolation and the window's two edges (A10).
 
-No database for the zone and the night; the rest runs on Postgres against the stand-in, the trail
-in memory. Synthetic ward (tests/kabul_world.py), synthetic stays (tests/tres_world.py)."""
+No database for the zone, the night and the window; the rest runs on Postgres against the
+stand-in, the trail in memory. Synthetic ward (tests/kabul_world.py), synthetic stays
+(tests/tres_world.py)."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
+import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission.models import AdmissionState
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.tres import ids, source
 from homunculus.tres.client import TresClient
-from homunculus.tres.ledger import payload_digest
+from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, payload_digest
 from homunculus.tres.mapping.patient import patient as map_patient
-from homunculus.tres.models import TresDelivery, TresSettings
-from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, zone_of
-from homunculus.tres.worker import run_round
+from homunculus.tres.models import RESOURCE_TYPES, TresDelivery, TresSettings
+from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, stuck_stays, window, zone_of
+from homunculus.tres.worker import Sender, run_round
 from tests.conftest import requires_db
 from tests.fake_tres import FakeTres
 from tests.kabul_world import SLUG, build_ward
 from tests.tres_world import (
     ADMITTED, BAKU, DISCHARGED, NOW, ORGANIZATION, add_stay, chart, feed_settings, identify, map_unit,
+    other_tenants_stay,
 )
 
 
@@ -48,10 +58,42 @@ def test_the_zone_is_the_tenants_and_an_unknown_one_is_none_never_utc():
 def test_the_nightly_retry_is_due_once_after_four_in_the_tenants_zone():
     before_four = datetime(2026, 11, 7, 23, 30, tzinfo=timezone.utc)        # 03:30 in Baku
     after_four = datetime(2026, 11, 8, 0, 30, tzinfo=timezone.utc)          # 04:30 in Baku
-    assert nightly_due(None, before_four, BAKU)                             # never ran: due now
+    # batch-3 review A6: a tenant that never ran it waits for 04:00 too — never a night run at 03:30
+    assert not nightly_due(None, before_four, BAKU)
+    assert nightly_due(None, after_four, BAKU)                              # the first round after 04:00
     assert not nightly_due(before_four - timedelta(hours=2), before_four, BAKU)   # ran after yesterday's 04:00
     assert nightly_due(before_four, after_four, BAKU)                       # 04:00 has come since
     assert not nightly_due(after_four, after_four + timedelta(hours=5), BAKU)
+
+
+def test_an_unknown_zone_is_said_by_the_tenants_id_and_the_night_falls_back_to_utc(caplog):
+    """A6: never silently — one warning, the tenant's id and nothing else (no zone name, no PHI)."""
+    tenant = SimpleNamespace(id=uuid.uuid4(), timezone="Mars/Olympus_Mons")
+    with caplog.at_level("WARNING"):
+        assert StaySource(InMemoryAuditLog()).night_zone(tenant) is timezone.utc
+    assert str(tenant.id) in caplog.text and "Mars" not in caplog.text
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert StaySource(InMemoryAuditLog(), zone=lambda name: BAKU).night_zone(tenant) is BAKU
+    assert caplog.text == ""
+
+
+def _settings(**over) -> SimpleNamespace:
+    return SimpleNamespace(**{"settle_hours": 24, "send_from": None, "reached_to": None, **over})
+
+
+def test_the_window_reaches_back_to_the_last_round_that_ran_to_its_end_and_closes_to_the_week():
+    """A3: `(after, upper)` — due when after < discharge_at <= upper (and >= send_from, in the query)."""
+    upper = NOW - timedelta(hours=24)
+    week = upper - REACH
+    assert window(_settings(), NOW) == (week, upper)                        # validate, no cut-off: the week
+    cut = NOW - timedelta(days=30)
+    assert window(_settings(send_from=cut), NOW) == (None, upper)           # no round completed: from the cut-off
+    gap = week - timedelta(days=3)
+    assert window(_settings(reached_to=gap), NOW) == (gap, upper)           # rounds stopped: back to the last one
+    assert window(_settings(send_from=cut, reached_to=gap), NOW) == (gap, upper)
+    assert window(_settings(reached_to=upper - timedelta(minutes=5)), NOW) == (week, upper)   # closed again
+    assert window(_settings(settle_hours=0, reached_to=gap), NOW) == (gap, NOW)
 
 
 # ---------------------------------------------------------------- Postgres
@@ -66,14 +108,14 @@ def _source(audit, now=NOW) -> StaySource:
     return StaySource(audit, clock=lambda: now, zone=lambda name: BAKU)
 
 
-async def _round(db_session, fake, audit, now=NOW):
+async def _round(db_session, fake, audit, now=NOW, transport=None):
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
     async def quiet(seconds: float) -> None:
         return None
 
     return await run_round(maker, egress=True, source=_source(audit, now), now=now, sleep=quiet,
-                           client_factory=lambda account: TresClient(account, transport=fake.transport))
+                           client_factory=lambda account: TresClient(account, transport=transport or fake.transport))
 
 
 @requires_db
@@ -222,3 +264,288 @@ async def test_a_stay_still_admitted_goes_by_hand_in_progress(db_session):
     assert encounter["status"] == "in-progress" and "end" not in encounter["period"]
     assert outcome.first_complete and ids.encounter(admission.id) in [row[1] for row in outcome.rows]
     await client.aclose()
+
+
+# ---------------------------------------------------------------- batch-3 review (Postgres)
+OLDER_PHONE, NEWER_PHONE = "050 123 45 67", "055 765 43 21"
+
+
+def _hand(db_session, fake, ward) -> tuple[Sender, TresClient]:
+    """«Şimdi gönder»'s sender: a person's lock timeout (N12), every type on."""
+    client = TresClient(fake.account, transport=fake.transport)
+    return Sender(db_session, client, tenant_id=ward.tenant.id, environment="test", mode="send", now=NOW,
+                  enabled_types=RESOURCE_TYPES, lock_timeout_ms=HAND_LOCK_TIMEOUT_MS), client
+
+
+def _phone(fake) -> str:
+    (person,) = fake.stored("Patient")
+    return person["telecom"][0]["value"]
+
+
+async def _patient_row(db_session) -> TresDelivery:
+    """The person's ledger row, read afresh (never `expire_all`: the test's own objects stay loaded)."""
+    return (await db_session.execute(select(TresDelivery).where(TresDelivery.resource_type == "patient")
+                                     .execution_options(populate_existing=True))).scalar_one()
+
+
+@requires_db
+async def test_a_person_readmitted_within_the_reach_keeps_one_patient_the_newer_stays_and_rounds_ask_nothing(db_session):
+    """A1: the admission form made a patient row per stay — the phone typed only on the second. Both
+    stays build `hmn-p-{digest}.`; the newer stay is the authority, so after the first round no round
+    (and no hand on the older stay) asks the platform anything, and its Patient holds the newer phone."""
+    ward, fake = await _world(db_session)
+    older = await add_stay(db_session, ward, phone=OLDER_PHONE)
+    newer = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                           admitted_at=DISCHARGED + timedelta(days=1), discharged_at=DISCHARGED + timedelta(days=2),
+                           phone=NEWER_PHONE)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    now = DISCHARGED + timedelta(days=2, hours=25)                    # both due: the older within its week
+    report = await _round(db_session, fake, audit, now=now)
+    assert (report.packages, report.failed) == (2, 0)
+    assert _phone(fake) == "+994557654321" and len(fake.stored("Encounter")) == 2
+    assert (await _patient_row(db_session)).admission_id == newer.id
+    asked = list(fake.requests)
+    for minutes in (5, 10):
+        report = await _round(db_session, fake, audit, now=now + timedelta(minutes=minutes))
+        assert report.packages == 2 and fake.requests == asked         # D7 holds: not a token, not a PUT
+    # «Şimdi gönder» of the older stay leaves the newer one's Patient alone as well
+    hand, client = _hand(db_session, fake, ward)
+    outcome = await _source(audit, now).package(db_session, settings, older.id)(hand)
+    assert fake.requests == asked and _phone(fake) == "+994557654321"
+    assert ("patient", ids.patient("AB12C3D"), "sent", None) in outcome.rows
+    assert (await _patient_row(db_session)).admission_id == newer.id
+    await client.aclose()
+
+
+@requires_db
+async def test_a_newer_stay_still_in_progress_holds_nothing_back_until_it_has_run(db_session):
+    """A1: the newer stay owns the person's row only once it has run — here, by hand while admitted."""
+    ward, fake = await _world(db_session)
+    await add_stay(db_session, ward, phone=OLDER_PHONE)
+    newer = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                           state=AdmissionState.ACTIVE, admitted_at=DISCHARGED + timedelta(hours=6),
+                           phone=NEWER_PHONE)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)                              # the older stay is due; the newer is not
+    assert _phone(fake) == "+994501234567"
+    hand, client = _hand(db_session, fake, ward)
+    await _source(audit).package(db_session, settings, newer.id)(hand)
+    assert _phone(fake) == "+994557654321"                             # the newer stay took the person
+    await client.aclose()
+    asked = list(fake.requests)
+    report = await _round(db_session, fake, audit, now=NOW + timedelta(minutes=5))
+    assert report.packages == 1 and fake.requests == asked and _phone(fake) == "+994557654321"
+
+
+class _RoundFirst:
+    """The hand's sender; just before its Encounter goes, a whole round runs the same stay."""
+
+    def __init__(self, inner: Sender, round_) -> None:
+        self.inner, self.round_ = inner, round_
+        self.mode, self.environment = inner.mode, inner.environment
+
+    async def held(self, **kw):
+        return await self.inner.held(**kw)
+
+    async def forget_skip(self, **kw):
+        return await self.inner.forget_skip(**kw)
+
+    async def skip(self, **kw):
+        return await self.inner.skip(**kw)
+
+    async def send(self, **kw):
+        if kw["resource_type"] == "encounter" and self.round_ is not None:
+            round_, self.round_ = self.round_, None
+            await round_()
+        return await self.inner.send(**kw)
+
+
+@requires_db
+async def test_a_round_and_a_hand_on_one_stay_write_one_package_row(db_session):
+    """A5: the `tres.package` row is written by the run whose delivery took the Encounter's id under its
+    row's lock — here the round, which ran between the hand's Patient and the hand's Encounter."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    hand, client = _hand(db_session, fake, ward)
+    sender = _RoundFirst(hand, lambda: _round(db_session, fake, audit))
+    outcome = await _source(audit).package(db_session, settings, admission.id)(sender)
+    assert sender.round_ is None and outcome.first_complete is False
+    assert len(fake.stored("Encounter")) == 1
+    assert len(audit.records(tenant=SLUG, event_type="tres.package")) == 1
+    await client.aclose()
+
+
+@requires_db
+async def test_an_outage_among_the_vitals_writes_no_package_row_then_or_later(db_session):
+    """Amendment 17, held by A5: the run that gave the Encounter its id was cut short; no later run
+    took it — the ledger holds every row, the audit has no `tres.package`."""
+    ward, fake = await _world(db_session)
+    await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+
+    def vitals_down(request: httpx.Request) -> httpx.Response:
+        if "/Observation" in request.url.path:
+            return httpx.Response(503, text="")
+        return fake.transport.handler(request)
+
+    report = await _round(db_session, fake, audit, transport=httpx.MockTransport(vitals_down))
+    assert (report.packages, report.failed) == (0, 1)
+    assert len(fake.stored("Encounter")) == 1 and fake.stored("Observation") == []
+    report = await _round(db_session, fake, audit, now=NOW + timedelta(minutes=5))
+    assert (report.packages, report.failed) == (1, 0) and len(fake.stored("Observation")) == 1
+    assert audit.records(tenant=SLUG, event_type="tres.package") == []
+
+
+async def _reached(db_session):
+    value = (await db_session.execute(text("SELECT reached_to FROM tres_settings"))).scalar_one()
+    await db_session.commit()
+    return value
+
+
+@requires_db
+async def test_a_round_that_runs_to_its_end_advances_the_reach_and_one_cut_short_does_not(db_session):
+    """A3: with no due stay a completed round still advances `reached_to` (to its `now − settle`);
+    a round ended by a 429 leaves it; the settings' `updated_at` is never touched."""
+    ward, fake = await _world(db_session)
+    await feed_settings(db_session, ward, fake)
+    version = (await db_session.execute(text("SELECT updated_at FROM tres_settings"))).scalar_one()
+    report = await _round(db_session, fake, InMemoryAuditLog())
+    assert (report.tenants, report.packages) == (1, 0)
+    assert await _reached(db_session) == NOW - timedelta(hours=24)
+    await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+
+    def throttled(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/fhir/"):
+            return httpx.Response(429, headers={"Retry-After": "60"})
+        return fake.transport.handler(request)
+
+    later = NOW + timedelta(hours=1)
+    report = await _round(db_session, fake, InMemoryAuditLog(), now=later, transport=httpx.MockTransport(throttled))
+    assert report.retry_after == 60
+    assert await _reached(db_session) == NOW - timedelta(hours=24)        # cut short: not advanced
+    report = await _round(db_session, fake, InMemoryAuditLog(), now=later)
+    assert report.packages == 1 and await _reached(db_session) == later - timedelta(hours=24)
+    assert (await db_session.execute(text("SELECT updated_at FROM tres_settings"))).scalar_one() == version
+
+
+@requires_db
+async def test_a_tenant_parked_for_ten_days_sends_the_gap_once_a_round_completes_and_never_crosses_the_cut_off(
+        db_session):
+    """A3 against D9: stays discharged while no round could complete are not dropped by the week."""
+    ward, fake = await _world(db_session)
+    await map_unit(db_session, ward)
+    cut = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+    before_cut = await add_stay(db_session, ward, protocol_no="202600000110", number="H2600110", fin="CD34E5F",
+                                admitted_at=cut - timedelta(days=3), discharged_at=cut - timedelta(hours=12))
+    await feed_settings(db_session, ward, fake, send_from=cut)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit, now=t1)                       # nothing due: it completes
+    assert await _reached(db_session) == t1 - timedelta(hours=24)
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = :t"), {"t": t1})   # parked
+    await db_session.commit()
+    gap = await add_stay(db_session, ward, protocol_no="202600000111", number="H2600111", fin="EF56G7H", bed="2",
+                         admitted_at=t1, discharged_at=t1 + timedelta(days=1))
+    recent = await add_stay(db_session, ward, protocol_no="202600000112", number="H2600112", fin="GH78J9K", bed="3",
+                            admitted_at=t1 + timedelta(days=6), discharged_at=t1 + timedelta(days=8))
+    for day in range(1, 10):
+        report = await _round(db_session, fake, audit, now=t1 + timedelta(days=day))
+        assert report.parked == 1
+    assert await _reached(db_session) == t1 - timedelta(hours=24)         # passed over: not advanced
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = NULL"))
+    await db_session.commit()
+    t2 = t1 + timedelta(days=10)
+    settings = await db_session.get(TresSettings, ward.tenant.id, populate_existing=True)
+    assert await due_stays(db_session, settings, t2) == [gap.id, recent.id]   # the gap, beyond the week
+    report = await _round(db_session, fake, audit, now=t2)
+    assert report.packages == 2 and len(fake.stored("Encounter")) == 2
+    assert await _reached(db_session) == t2 - timedelta(hours=24)
+    settings = await db_session.get(TresSettings, ward.tenant.id, populate_existing=True)
+    assert await due_stays(db_session, settings, t2 + timedelta(minutes=5)) == [recent.id]   # closed to the week
+    settings.reached_to = cut - timedelta(days=20)                          # even reaching far back…
+    assert before_cut.id not in await due_stays(db_session, settings, t2)   # …the cut-off is never crossed
+
+
+@requires_db
+async def test_two_processes_cannot_both_run_the_night(db_session):
+    """A6: the night's mark is a compare-and-set on the value each read — the second changes no row
+    and leaves the night alone (Dockerfile.api runs one process; this holds if that ever changes)."""
+    ward, fake = await _world(db_session)
+    old = DISCHARGED - timedelta(days=14)
+    admission = await add_stay(db_session, ward, admitted_at=old - timedelta(days=2), discharged_at=old)
+    await feed_settings(db_session, ward, fake, retried_at=datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc))
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="patient",
+                                local_id="hmn-p-takili.", status="stuck", attempts=5, admission_id=admission.id))
+    await db_session.commit()
+    night = datetime(2026, 11, 8, 0, 5, tzinfo=timezone.utc)                # 04:05 in Baku
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as one, maker() as two:
+        first_settings = await one.get(TresSettings, ward.tenant.id)
+        second_settings = await two.get(TresSettings, ward.tenant.id)       # read before the first marks
+        first = [package async for package in _source(InMemoryAuditLog(), night)(one, first_settings)]
+        second = [package async for package in _source(InMemoryAuditLog(), night)(two, second_settings)]
+    assert (len(first), len(second)) == (1, 0)
+    assert (await db_session.execute(text("SELECT retried_at FROM tres_settings"))).scalar_one() == night
+
+
+@requires_db
+async def test_a_stay_both_stuck_and_due_is_packaged_once_in_the_nightly_round(db_session):
+    """A8: forced once — not forced and then again as due."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+    await feed_settings(db_session, ward, fake)                             # never retried: NOW is 16:00 in Baku
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="practitioner",
+                                local_id="hmn-pr-takili.", status="stuck", attempts=5, admission_id=admission.id))
+    await db_session.commit()
+    report = await _round(db_session, fake, InMemoryAuditLog())
+    assert (report.packages, report.failed) == (1, 0)
+
+
+@requires_db
+async def test_another_tenants_stay_is_never_due_stuck_or_loaded(db_session):
+    """A10: every read of the source is the tenant's own."""
+    ward, fake = await _world(db_session)
+    ours = await add_stay(db_session, ward)
+    theirs = await other_tenants_stay(db_session)
+    settings = await feed_settings(db_session, ward, fake)
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="patient",
+                                local_id="hmn-p-bizim.", status="stuck", attempts=5, admission_id=ours.id))
+    await db_session.commit()
+    assert await due_stays(db_session, settings, NOW) == [ours.id]
+    assert await stuck_stays(db_session, settings) == [ours.id]
+    assert await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, theirs.id) is None
+    assert (await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, ours.id)).last_id == ours.id
+
+
+@requires_db
+async def test_the_window_holds_its_upper_edge_and_leaves_its_lower_one(db_session):
+    """A10: due when `now − settle − REACH < discharge_at <= now − settle` — the upper edge inclusive
+    (a stay is due the moment its wait is over), the lower exclusive (a week is seven days, not seven
+    and a moment). No cut-off, no completed round: the week alone."""
+    ward, fake = await _world(db_session)
+    upper = NOW - timedelta(hours=24)
+    at_upper = await add_stay(db_session, ward, discharged_at=upper)
+    await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                   admitted_at=upper - REACH - timedelta(days=2), discharged_at=upper - REACH)
+    inside = await add_stay(db_session, ward, protocol_no="202600000103", number="H2600103", bed="3",
+                            admitted_at=upper - REACH - timedelta(days=2),
+                            discharged_at=upper - REACH + timedelta(microseconds=1))
+    await add_stay(db_session, ward, protocol_no="202600000104", number="H2600104", bed="10",
+                   discharged_at=upper + timedelta(microseconds=1))
+    settings = await feed_settings(db_session, ward, fake, mode="validate")
+    assert await due_stays(db_session, settings, NOW) == [inside.id, at_upper.id]
