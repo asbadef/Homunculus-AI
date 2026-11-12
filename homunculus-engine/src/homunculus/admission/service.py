@@ -444,8 +444,12 @@ async def transfer_patient(
        the move and reads the new admission. COMPLETED and EXPIRED handovers stay as they were
        written. The handover's unit follows her when every admission it names lies in the
        arriving unit now (X22; the others of a handover of several patients decide it).
-       `admission_ids` is JSON (JSONB on Postgres, JSON on SQLite for scripts/dev_local.py), so
-       the match is made here, not in SQL."""
+       Only the handovers that name her are locked (final review M-2): on Postgres the read asks
+       for them by containment (`admission_ids @> '["<source>"]'`, the column is JSONB), so a move
+       never locks the hospital's other handovers in hand — OUTGOING_SIGNED never expires (G4-02),
+       and every signature would wait for every move. SQLite (scripts/dev_local.py) keeps plain
+       JSON, which has no containment: there the read takes every one in hand, as before. The
+       match is made again here on every database, the list as stored."""
     if admission.state != AdmissionState.ACTIVE:
         raise WorkflowError(
             f"Only an ACTIVE admission is transferred (current: {admission.state.value}).")
@@ -495,6 +499,9 @@ async def transfer_patient(
 
     # Owner 2026-11-10 (X17): a handover still in hand follows the patient, as her team does (T7).
     source_id, arriving_id = str(admission.id), str(arriving.id)
+    # Final review M-2: only hers are locked — by JSONB containment on Postgres, before the lock.
+    names_her = ((Handover.admission_ids.contains([source_id]),)
+                 if db.get_bind().dialect.name == "postgresql" else ())
     in_hand = (await db.execute(
         select(Handover)
         .join(Unit, Unit.id == Handover.unit_id)
@@ -502,7 +509,8 @@ async def transfer_patient(
         .where(Site.tenant_id == admission.tenant_id,
                or_(Handover.status == HandoverStatus.OUTGOING_SIGNED,
                    and_(Handover.status == HandoverStatus.OPEN,
-                        Handover.bridge_expires_at > now)))
+                        Handover.bridge_expires_at > now)),
+               *names_her)
         .order_by(Handover.id)
         .with_for_update(of=Handover)
         .execution_options(populate_existing=True))).scalars().all()

@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
 from homunculus.admission import service
 from homunculus.admission.boardkey import board_key
@@ -519,6 +520,51 @@ async def test_a_handover_in_hand_takes_the_patients_new_unit_once_all_its_patie
     now = await stored()
     assert now["pair"] == (there, [str(first.id), str(second.id)])        # the last one came over
     assert now["ghost"] == (home, [str(first.id), ghost])
+
+
+async def _locked_elsewhere(db, handover_ids) -> set:
+    """The handovers another transaction holds a row lock on: each is asked for with `FOR UPDATE
+    NOWAIT` on a connection of its own, which a held lock refuses at once."""
+    held = set()
+    for handover_id in handover_ids:
+        async with db.bind.connect() as other:
+            try:
+                await other.execute(text("SELECT id FROM handovers WHERE id = :id FOR UPDATE NOWAIT"),
+                                    {"id": handover_id})
+            except DBAPIError as exc:
+                assert "lock" in str(exc).lower(), exc
+                held.add(handover_id)
+            await other.rollback()
+    return held
+
+
+async def test_a_move_locks_only_the_handovers_in_hand_that_name_her(db_session):
+    """Final review M-2 (X17, X23): the move locks the handovers it re-points, not every handover
+    of the hospital in hand. OUTGOING_SIGNED never expires (G4-02), so a lock on all of them would
+    make every signature in the hospital wait for every move. Hers — OPEN inside its bridge, and
+    OUTGOING_SIGNED — are locked and re-pointed; another patient's, in hand in the same unit, is
+    neither locked nor touched. The move's transaction is held open while another connection asks."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    beside = str(uuid.uuid4())                          # another patient's admission
+    handovers = {name: await service.open_handover(
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=named) for name, named in (
+            ("mine_open", [beside, adm.id]), ("mine_signed", [adm.id]),
+            ("other_open", [beside]), ("other_signed", [beside]))}
+    for name in ("mine_signed", "other_signed"):
+        handovers[name].status = HandoverStatus.OUTGOING_SIGNED
+    ids = {name: h.id for name, h in handovers.items()}
+    await db_session.commit()                           # seen by the other connection
+    arriving, _team_moved, followed = await service.transfer_patient(
+        db_session, adm, target_bed=beds[1], target_unit_id=unit.id, reason="CLINICAL_NEED",
+        note=None)                                      # its locks held: nothing committed
+    assert await _locked_elsewhere(db_session, ids.values()) == {ids["mine_open"],
+                                                                 ids["mine_signed"]}
+    assert followed == sorted([ids["mine_open"], ids["mine_signed"]])
+    stored = dict((await db_session.execute(select(Handover.id, Handover.admission_ids))).all())
+    assert list(stored[ids["mine_open"]]) == [beside, str(arriving.id)]
+    assert list(stored[ids["mine_signed"]]) == [str(arriving.id)]
+    assert list(stored[ids["other_open"]]) == list(stored[ids["other_signed"]]) == [beside]
 
 
 # ---------------------------------------------------------------------------
