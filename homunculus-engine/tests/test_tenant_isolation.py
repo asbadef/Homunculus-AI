@@ -42,6 +42,7 @@ from homunculus.admission.models import (
     Admission, CareTeamMember, Handover, NurseBedAssignment, Patient,
 )
 from homunculus.admission.numbers import next_patient_number
+from homunculus.api.shiftclock import shift_windows
 from homunculus.protocol.models import ProtocolSettings
 from homunculus.auth.dependencies import caller_tenant_id
 from homunculus.auth.groups import ensure_default_groups
@@ -219,10 +220,11 @@ def _admission_body(unit: uuid.UUID, bed: uuid.UUID, attending: uuid.UUID | None
 
 
 def _shift_body(unit: uuid.UUID, bed: uuid.UUID, nurse: uuid.UUID) -> dict:
-    start = datetime.now(timezone.utc).replace(microsecond=0)
-    return {"unit_id": unit,
-            "assignments": [{"bed_id": bed, "nurse_id": nurse, "shift_start": start.isoformat(),
-                             "shift_end": (start + timedelta(hours=8)).isoformat()}]}
+    """G4-04 (spec §5 A1, A7): PUT /shift-schedule's body — one bed to one nurse in the NEXT window of the default starts
+    in UTC (the world's zone): a window still current or next even if a shift changes during the call. Nothing held."""
+    following = shift_windows(datetime.now(timezone.utc), timezone.utc, 8, 20)[1]
+    return {"unit_id": unit, "shift_start": following.start.isoformat(), "items": [{"bed_id": bed, "nurse_id": nurse}],
+            "expected": []}
 
 
 def _handover_body(unit: uuid.UUID, incoming: uuid.UUID, admissions: list[uuid.UUID]) -> dict:
@@ -317,6 +319,9 @@ BY_ID: dict[str, ById] = {
                                lambda a: {"reason": "FAULT"}),
     "bed return to service": ById("POST", lambda s: f"/tenant/beds/{s.free_bed}/return-to-service",
                                   control=409),
+    # G4-04 (spec D4): the shift's assignment and the form's people, the unit named in the query.
+    "shift-schedule read": ById("GET", lambda s: f"/shift-schedule?shift=current&unit_id={s.unit}"),
+    "shift-schedule nurses": ById("GET", lambda s: f"/shift-schedule/nurses?unit_id={s.unit}"),
 }
 
 
@@ -387,12 +392,13 @@ IN_BODY: dict[str, InBody] = {
     "handover naming another tenant's admission": InBody(
         "POST", lambda a: "/handovers",
         lambda a, x: _handover_body(a.unit, a.member, [a.admission, x.admission]), 201),
+    # G4-04: the PUT replaced the POST. The caller's own ids save the window (200).
     "shift on another tenant's unit": InBody(
-        "POST", lambda a: "/shift-schedule",
-        lambda a, x: _shift_body(x.unit, a.free_bed, a.member), 201),
+        "PUT", lambda a: "/shift-schedule",
+        lambda a, x: _shift_body(x.unit, a.free_bed, a.member), 200),
     "shift on another tenant's bed": InBody(
-        "POST", lambda a: "/shift-schedule",
-        lambda a, x: _shift_body(a.unit, x.free_bed, a.member), 201),
+        "PUT", lambda a: "/shift-schedule",
+        lambda a, x: _shift_body(a.unit, x.free_bed, a.member), 200),
 }
 
 
@@ -432,8 +438,9 @@ USERS: dict[str, InBody] = {
     "handover incoming user": InBody(
         "POST", lambda a: "/handovers", lambda a, u: _handover_body(a.unit, u, [a.admission]),
         201),
+    # G4-04: a nurse of the caller's tenant (the default nurse group) is offered: the window is saved (200).
     "shift nurse": InBody(
-        "POST", lambda a: "/shift-schedule", lambda a, u: _shift_body(a.unit, a.free_bed, u), 201),
+        "PUT", lambda a: "/shift-schedule", lambda a, u: _shift_body(a.unit, a.free_bed, u), 200),
 }
 
 
