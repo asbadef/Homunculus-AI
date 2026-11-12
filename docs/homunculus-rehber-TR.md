@@ -353,8 +353,8 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 29 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
-  `quality.view`, «Kalite göstergeleri», §3.25).
+- *Homunculus'ta:* 30 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
+  `workload.view`, «İş yükü», §3.26).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -2529,6 +2529,88 @@ adlar uydurmadır.
 - **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-kalite-gostergeleri-design.md`; plan
   `docs/superpowers/plans/2026-11-11-g4-kalite-gostergeleri.md`.
+
+### 3.26 «İş yükü»: bu nöbet kim hangi yatağa bakıyor (Grup 4 · G4-04)
+
+- **Ne:** Sol raydaki **«İş yükü»** sayfası (`/is-yuku`; Azerbaycanca da «İş yükü», Rusça «Нагрузка», İngilizce
+  «Workload»). İki iş görür: sorumlu hemşire nöbetin başında hemşireleri yataklara atar (**«Nöbet ataması»**), ve sayfa
+  her birim için bu nöbetin iş yükünü sayar. «Sayım, puan değil · kişiler sıralanmaz»: puan, ölçek ya da hedef oran
+  yoktur; geciken iş birime yazılır, kişiye yazılmaz. Hiçbir yerde hasta adı ya da kimliği yoktur; yataklar adlarıyla,
+  hemşireler adlarıyla yazılır. Örneklerdeki adlar ve sayılar uydurmadır.
+- **Durum:** kodda (`feat/g4-is-yuku`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Sunucuda göç `0022`
+  çalışmalıdır.
+- **Kim görür, kim atar:** sayfayı yeni yetki `workload.view` («“İş yükü” sayfasını açar …») ya da `shifts.manage`
+  açar; atama formu yalnız `shifts.manage` ile görünür. `shifts.manage`'ın açıklaması bu dilimde değişti: eskiden «Nöbet
+  çizelgesi oluşturur», şimdi «Nöbet atamasını yapar: bu ve sonraki nöbet için, birim birim, hemşireleri yataklara
+  atar». Varsayılan **«Sorumlu Hemşire»** grubu ikisini de taşır (göç `0022` var olan hastanelere `workload.view`'ı
+  verir; sonra kurulan bir hastanenin grubu kendiliğinden taşır); Sistem Yöneticisi her yetkiyi kural gereği taşır;
+  başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz verilebilir. Bir çalışma ekranıdır: bu iki yetkiden yalnız
+  birini taşıyan bir hesap bununla oturum açar ve girişte bu sayfaya düşer. Rayda «Kalite göstergeleri»nden sonra gelir;
+  kimsenin giriş sayfası değişmedi (Sorumlu Hemşire yine «Yataklar»a düşer). Sayıların her biri kendi kaynağının
+  yetkisini ister: görevler `tasks.view`, alarmlar ve hemşire kartlarının «Kalan iş»i `board.view`, yataklar bir kabul ya
+  da yapı yetkisi; olmayan yerde «— yetki yok» yazar.
+- **Nöbet:** Görevlerim'in iki nöbet başlangıcı (Yönetim › Görevler; varsayılan 08 ve 20) ve hastanenin saat dilimi. A
+  nöbeti ilk başlangıçtan ikincisine, B nöbeti ikincisinden ertesi günün ilk başlangıcına kadardır (gece yarısını aşar ve
+  başladığı güne aittir); sınır anı yeni nöbeti başlatır. İki başlangıç arasında 12 saat olmak zorunda değildir (08 ve
+  16: 8 ve 16 saatlik nöbetler). «Bu nöbet» şu anı içeren, «Sonraki nöbet» ondan sonraki nöbettir. Sınırlar yerel
+  saattir: yaz saati uygulanan bir dilimde (Bakü ve İstanbul uygulamaz) saatin geri alındığı gece B 13, ileri alındığı
+  gece 11 saat sürer. Sıvı dengesinin günü (§3.17) bu dilimde değişmedi ve her zaman 24 saattir; ikisi yalnız o iki
+  gece bir saat ayrışır.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **Başlık:** «İş yükü», nöbet («Bu nöbet · 08:00–20:00»), son tam okumanın saati («10:42 itibarıyla»), «Sayım, puan
+     değil · kişiler sıralanmaz», «Yenile».
+  2. **«Birimler · bu nöbet»:** her açık birim için bir satır. «Hasta»: dolu yatak (dolu, taburcu ya da nakil
+     bekleyen). «Hemşire»: bu nöbet atanan hemşire sayısı; hiç atama yoksa «Bu nöbet için atama yok». «Hemşire başına
+     hasta»: «3 hasta / 2 hemşire · ortalama 1,5» — hemşiresi olan dolu yataklar ÷ hemşire; hedef yok, renk yok.
+     «Atanmamış hasta»: hemşiresi olmayan dolu yataklar. «Geciken iş»: sunucunun geç dediği açık el görevleri ve
+     zamanı geçmiş vital ölçüm. «Kalan iş»: nöbet bitmeden zamanı gelen, henüz geç olmayan açık el görevleri (vital
+     ölçüm dahil değil). «Yanıt bekleyen alarm»: canlı pano, yalnız pano canlıyken. Kapalı birim yazılmaz. Nöbet
+     saatleri nöbetin ortasında değiştirilirse tablonun üstünde «Nöbet saatleri değişti; bu nöbetin ataması yeniden
+     yapılmalı.» yazar: eski saatlerle yapılan atama yeni nöbete sayılmaz; o birimin bir sonraki kaydı onu kapatır.
+  3. **«Hemşireler · {birim}»:** «Birim» seçici («Tüm birimler» ya da bir birim), «Alfabetik; sıralama değildir» ve
+     seçilen birim(ler)de yatağı olan her hemşire için bir kart, ada göre: yatakları (yapıdaki adlarıyla, ör. «1 · Otaq
+     1 · Reanimasiya»), hastaları (dolu yatakları) ve o hastaların «Kalan iş»i. Kartta geciken iş ve alarm sayısı yoktur
+     (sahibin kararı, 2026-11-12: «Hayır, yalnız birimde»). Aynı adı taşıyan iki hemşire kullanıcı adıyla ayrılır.
+     Sonra «Atanmamış»: hemşiresi olmayan dolu yataklar.
+  4. **«Nöbet ataması · {birim}»** (yalnız `shifts.manage`): «Bu nöbet» / «Sonraki nöbet», nöbetin saatleri, birimin
+     her açık yatağı için bir seçici («— atanmadı —» ve sunulan kişiler), «Kaydet». Sunulan kişiler: hastanenin
+     varsayılan «Hemşire» ve «Sorumlu Hemşire» gruplarındaki etkin üyeler (Hızlı Yanıt Ekibi değil; hastanenin kendi
+     hemşire grubu da değil). Kendi kapsamı bu birime ulaşmayan biri «bu birimi göremez» diye işaretlenir; atanabilir,
+     ama kaydedince bir uyarı çıkar: kendi panosunda bu yatakların hastaları görünmez. Nöbetin ortasında hesabı ya da
+     üyeliği kapanan biri tuttuğu yatağı koruyabilir, yeni yatak alamaz («artık atanamaz»). Kaydetmek o birimin o
+     nöbetteki atamasını bütünüyle değiştirir; bırakılan atamalar silinmez, kapatıldıkları anla birlikte kapatılır.
+     Form, yapı, nöbet ve kişi listesi okunamadıysa çizilmez, nedenini söyler.
+- **Aynı anda iki kayıt, ve nöbet değişirken:** form okuduğu atamayı kaydederken sunucuya geri gönderir; arada başka
+  biri kaydettiyse kayıt yapılmaz ve form «Bu arada başka biri değiştirdi — liste yenilendi; yeniden bakın.» der. Form
+  19:50'de açılıp 20:00'den sonra kaydedilirse gösterdiği nöbet artık ne «bu» ne «sonraki» olabilir: kayıt yapılmaz,
+  «Nöbet bu arada değişti — liste yenilendi; yeni nöbete yeniden bakın.» Başka bir red «Kaydedilmedi: {neden}» der,
+  seçimler korunur.
+- **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Okunurken, okunamadığında, reddedildiğinde, pano canlı
+  değilken («pano güncel değil») ya da yanıtın nöbeti bitmişken («nöbet değişti, yenileniyor») sayının yerine «—» ve
+  nedeni yazar; asla 0 yazılmaz. «Bu nöbet için atama yok» yalnız taze bir yanıt birimi atamasız gösterdiğinde yazılır;
+  kullanıcının birim ataması dışındaki bir birimde (yalnız yatak ataması da birimi kapsamaz) «yetki yok» yazar.
+- **Ne zaman okunur:** sayfa açılınca, «Yenile»de ve sayfa görünürken dakikada bir — yapı, kapsam, nöbet ataması ve
+  görevler birlikte. Görevler nöbetin bitişinden geriye 7 gün okunur: nöbet değişirken zaten gecikmiş bir görev sayılır,
+  yarının görevleri sayılmaz. Form kendi birimini ve nöbetini ayrıca okur; dakikalık okuma düzenlenmekte olan bir formu
+  bozmaz.
+- **Sunucuda:**
+  - yeni `GET /shift-schedule?shift=current|next` (`workload.view` ya da `shifts.manage`): nöbet ve kapsamdaki her
+    birim, bu nöbetin etkin atamalarıyla (bir satırın birimi yatağının birimidir); `GET /shift-schedule/nurses` ve
+    `PUT /shift-schedule` (`shifts.manage`). Kayıt nöbeti başlangıç anıyla adlandırır; her kayıt denetim kaydına
+    `shift.assign` olarak yazılır («Denetim bütünlüğü»nde «Nöbet ataması»; yalnız kimlikler). Hiçbir ekranın
+    kullanmadığı eski `POST /shift-schedule` ve S-25'in «hemşire başına en çok yatak» uyarısı kaldırıldı (uyarı,
+    kaynağı olmayan bir kod varsayılanına dayanıyordu);
+  - göç `0022`: Sorumlu Hemşire gruplarına `workload.view`; tabloya kapanış anı (`closed_at`); yanlış birime yazılmış
+    ve aynı yatak ile nöbet için birden fazla etkin olan eski satırlar kapatılır (en yenisi kalır); sonra bir yatak bir
+    nöbette yalnız bir etkin hemşire tutar. Göç geri alınırsa kapatılan satırlar yeniden açılmaz.
+- **Bu dilimde olmayanlar:** saat saat iş dağılımı; «Yeniden dağıtım önerisi»; puan, ölçek ya da hedef oran; atanan
+  hemşirenin yatak kartında ya da hasta ekranında görünmesi; atamanın pano kapsamı, görev yönlendirmesi ya da alarm
+  çağrısı için kullanılması; hastanenin kendi hemşire grupları; nöbet geçmişi ekranı. HBYS yatak eşlemesiyle yerleşen
+  bir hastada yapının yatağı ile panonun yatağı ayrışabilir: kart «0» hasta gösterirken görevleri panodan gelir
+  («Yönetici özeti»ndeki gibi, §3.24).
+- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
+- **Kaynak:** `docs/superpowers/specs/2026-11-12-g4-is-yuku-design.md` (§5 değişiklikleriyle); plan
+  `docs/superpowers/plans/2026-11-12-g4-is-yuku.md`.
 
 ---
 
