@@ -66,6 +66,9 @@ const NEUTRAL = new Set([
   "devir.sum.spo2", //             SpO₂
   "devir.fromTo", //               "{from} → {to}" — no word in it
 
+  // G4-03 (kalite) · neutral — a number and the percent sign: the Russian «{pct} %» has no word to write in Cyrillic
+  "kalite.pct",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity

@@ -77,7 +77,9 @@ SHADOW_KINDS = ("shadow_alert", "shadow_alert_cleared")      # the only audit ro
 # `/alarm-quality` read with a cap this small bites within the scenario (`truncated`): the report is
 # its window's newest rows, so a shadow row counted toward the cap would move every counter (T6
 # review: 91 shadow rows flipped `truncated` and changed the episodes). Read raw — nothing stripped.
-ALARM_QUALITY_LIMIT = 20
+# G4-03 (spec A2): 20 bit only through the `alert` rows, which the report no longer reads; the cap is
+# now small enough to bite on the episode rows themselves.
+ALARM_QUALITY_LIMIT = 4
 # The card's keys judged at the instant the card is BUILT (`board._meds`: `now` minus the
 # recognition, the deadline minus `now`), not at any input's time. A republish built later on the
 # clinical clock than the frame it repeats shows them moved — by exactly that clock's advance

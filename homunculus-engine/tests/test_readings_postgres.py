@@ -165,18 +165,29 @@ def test_a_closed_admission_is_no_target(migrated):
 
 def test_after_a_transfer_the_key_names_the_arriving_admission(migrated):
     """O8: the arriving row takes the protocol over and the source row, TRANSFERRED, gives it up — so a reading
-    that arrives after the transfer is stamped with the new stay's row, and `patient_key` spans both."""
+    that arrives after the transfer is stamped with the new stay's row, and `patient_key` spans both. The arriving
+    row names its source (G2-B1b, spec T6) as admission/service.py `transfer_patient` writes it: the readings store
+    still stamps by the open row — its start is the move (`open_stays`), so a reading from before the move is not
+    this row's — while the task store walks back to the stay's first kabul (X18, `tasks_postgres.STAY_WALK_BACK`)."""
+    from homunculus.api.tasks_postgres import PostgresTaskStore
     with migrated.begin() as conn:
         tenant = _tenant(conn, "h1")
         patient = _patient(conn, tenant, "H-0000001")
         source = _admission(conn, tenant, patient, "TRANSFERRED", protocol=None, hours_ago=30)
         arriving = _admission(conn, tenant, patient, "ACTIVE", protocol=KEY, hours_ago=2)
-    store = PostgresReadingStore(TEST_DATABASE_URL)
+        conn.execute(text("UPDATE admissions SET source_admission_id = CAST(:source AS uuid) "
+                          "WHERE id = CAST(:arriving AS uuid)"), {"source": source, "arriving": arriving})
+    store, tasks = PostgresReadingStore(TEST_DATABASE_URL), PostgresTaskStore(TEST_DATABASE_URL)
     try:
         assert store.admission_of("h1", KEY) == arriving != source
         assert store.admission_of("h1", "H-0000001") is None       # the open row has a protocol: the H-number is no key
+        [(key, began)] = store.open_stays("h1").items()
+        now = datetime.now(timezone.utc)
+        assert key == KEY and timedelta(minutes=110) < now - began < timedelta(minutes=130)       # the move
+        assert timedelta(hours=29) < now - tasks.admitted_at("h1", KEY) < timedelta(hours=31)     # the first kabul
     finally:
         store.close()
+        tasks.close()
 
 
 def test_a_claim_that_fails_changes_no_row(migrated):

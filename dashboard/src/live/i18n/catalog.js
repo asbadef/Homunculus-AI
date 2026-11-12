@@ -96,6 +96,9 @@ import eczane from "./strings/eczane.js";
 // G3-05: «Cihaz ölçüm kaydı» — the record box, «Düzelt», the unmatched list (screens/patient/readings, bedside).
 import kayit from "./strings/kayit.js";
 
+// G4-03: «Kalite göstergeleri» — care-process quality per unit (screens/kalite).
+import kalite from "./strings/kalite.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -155,6 +158,8 @@ export const NAMESPACES = {
   eczane, // G3-04
 
   kayit, // G3-05
+
+  kalite, // G4-03
 };
 
 function flattenInto(out, prefix, entries) {

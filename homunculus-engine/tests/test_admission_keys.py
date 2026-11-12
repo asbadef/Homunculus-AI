@@ -23,8 +23,9 @@ def test_the_key_is_the_protocol_or_a_legacy_admissions_h_number():
 
 def test_both_stores_read_the_one_fragment():
     assert not hasattr(tasks_postgres, "_OPEN_STATES")            # the copy is gone
-    assert tasks_postgres.ADMITTED_AT == ("SELECT a.admission_datetime " + admission_keys.OPEN_ADMISSION_OF_KEY
-                                          + admission_keys.NEWEST_FIRST)
+    # The task store's open row is the fragment's; G2-B1b (X18) then walks back along the stay's moves.
+    assert tasks_postgres.ADMITTED_AT == ("WITH RECURSIVE open_row AS (SELECT a.id " + admission_keys.OPEN_ADMISSION_OF_KEY
+                                          + admission_keys.NEWEST_FIRST + "), " + tasks_postgres.STAY_WALK_BACK)
     assert readings_postgres.ADMISSION_OF == ("SELECT CAST(a.id AS text) " + admission_keys.OPEN_ADMISSION_OF_KEY
                                               + admission_keys.NEWEST_FIRST)
     assert readings_postgres.OPEN_STAYS == admission_keys.OPEN_STAYS

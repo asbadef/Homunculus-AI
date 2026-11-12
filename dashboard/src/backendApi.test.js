@@ -522,6 +522,21 @@ describe("backendApi — what the work screens call", () => {
     expect(init.body).toBeUndefined();
   });
 
+  // G4-03 (spec D4): «Kalite göstergeleri» — per unit, alarm response, snoozes, RRT calls, handover countersignatures.
+  it("reads the quality indicators for a period with an authed GET /quality?days=, 7 by default", async () => {
+    const answer = { days: 30, units: [] };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(answer)));
+    const api = signedIn(fetchMock);
+    expect(await api.qualityIndicators(30)).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/quality?days=30");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    expect(init.body).toBeUndefined();
+    await api.qualityIndicators();
+    expect(fetchMock.mock.calls[1][0]).toBe("/quality?days=7");
+  });
+
   it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
     const row = { id: "h-1", status: "OPEN" };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));
@@ -1678,6 +1693,22 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     expect((await signedIn(odd).admit({}).catch((e) => e)).patientNumber).toBeUndefined();
   });
 
+  // G2-B1b re-read R-2: a request_conflict also names the bed its admission lies on now — after a
+  // move not the form's — as an id the screen names from its structure. Kept for that code only.
+  it("a request_conflict carries the bed its admission lies on now, as an id, and no other refusal does", async () => {
+    const BED_ID = "55555555-5555-4555-8555-555555555505";
+    const conflict = vi.fn().mockResolvedValue(jsonResponse({ detail: {
+      code: "request_conflict", message: "x", board_key: "202600000001", bed_id: BED_ID,
+    } }, { ok: false, status: 409 }));
+    expect(await signedIn(conflict).admit({}).catch((e) => e)).toMatchObject({ apiCode: "request_conflict", bedId: BED_ID });
+    const odd = vi.fn().mockResolvedValue(jsonResponse({ detail: { code: "request_conflict", message: "x", bed_id: 5 } },
+      { ok: false, status: 409 }));
+    expect((await signedIn(odd).admit({}).catch((e) => e)).bedId).toBeUndefined();
+    const other = vi.fn().mockResolvedValue(jsonResponse({ detail: { code: "bed_reserved", message: "x", bed_id: BED_ID } },
+      { ok: false, status: 409 }));
+    expect((await signedIn(other).admit({}).catch((e) => e)).bedId).toBeUndefined();
+  });
+
   // G2-B1d (E6): the number a screen shows beside a refusal is the card's — `board_key` when the
   // detail carries it (a protocol number), else `patient_number` (an API before the protocol).
   it("a refusal's number is its board key when the detail carries one", async () => {
@@ -1768,6 +1799,14 @@ describe("backendApi — Hasta Kabul: admission, discharge, the structure and th
     ]);
     expect(sent(fetchMock, 0).body).toEqual({ patient: { display_name: "Sentetik" }, note: {} });
     expect(sent(fetchMock, 2).body).toEqual({ disposition: "HOME" });
+  });
+
+  it("moves a patient by the one transfer route (G2-B1b)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = signedIn(fetchMock);
+    await api.transfer("a/1", { target_bed_id: "b-2", reason: "OTHER", note: "Sentetik nakil notu" });
+    expect([sent(fetchMock, 0).method, sent(fetchMock, 0).url]).toEqual(["POST", "/admissions/a%2F1/transfer"]);
+    expect(sent(fetchMock, 0).body).toEqual({ target_bed_id: "b-2", reason: "OTHER", note: "Sentetik nakil notu" });
   });
 
   it("reads the beds' names and notes and moves a bed by its own routes (G2-B3a)", async () => {

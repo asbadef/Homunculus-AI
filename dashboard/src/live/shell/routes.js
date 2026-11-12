@@ -54,6 +54,8 @@ const EczaneScreen = lazyScreen(() => import("../screens/eczane/EczaneScreen.jsx
 
 const OzetScreen = lazyScreen(() => import("../screens/ozet/OzetScreen.jsx"), "OzetScreen"); // G4-02
 
+const KaliteScreen = lazyScreen(() => import("../screens/kalite/KaliteScreen.jsx"), "KaliteScreen"); // G4-03
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -90,6 +92,8 @@ const SCREENS = Object.freeze({
 
   ozet: OzetScreen, // G4-02 — «Yönetici özeti»: the cards, alarm quality, the units as of now; no patient
 
+  kalite: KaliteScreen, // G4-03 — «Kalite göstergeleri»: per unit, alarm response, snoozes, RRT, handovers; no patient
+
   settings: SettingsScreen,
 });
 
@@ -120,9 +124,12 @@ export const ROUTES = Object.freeze([
     perms: ["devices.manage", "devices.map_beds"], work: true, nav: "main" }),   // G2-ESLEME: + the editor's key
 
   // G2-B1a — Hasta Kabul (spec §5.1): for whoever reads admissions, admits or confirms a discharge
-  // (releasing a bed moved to Doluluk, X7). After the board's screens in the table, so nobody's home moves.
+  // (releasing a bed moved to Doluluk, X7) — and, G2-B1b (X5), for whoever moves a patient, by either
+  // of its two keys. After the board's screens in the table, so nobody's home moves.
   route({ id: "kabul", path: "/kabul", icon: "userPlus", labelKey: "kabul.nav", shortKey: "kabul.navShort",
-    perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm"], work: true, nav: "main" }),   // G2-B3a (X7)
+    perms: ["admissions.view", "admissions.admit", "admissions.discharge.confirm",
+      "admissions.move.initiate", "admissions.transfer.confirm"],   // G2-B1b (X5)
+    work: true, nav: "main" }),   // G2-B3a (X7)
 
   // G2-B3a — Doluluk (spec D2): for whoever reads admissions, admits, confirms a discharge or releases
   // a bed — the right to its names (GET /tenant/occupancy). After Kabul, so nobody's home moves.
@@ -167,6 +174,12 @@ export const ROUTES = Object.freeze([
   // screen, so nobody's home moves.
   route({ id: "ozet", path: "/ozet", icon: "chart", labelKey: "ozet.nav", shortKey: "ozet.navShort",
     perms: ["summary.view"], work: false, nav: "main" }),
+
+  // G4-03 (spec D3) — «Kalite göstergeleri»: for whoever holds `quality.view` — the auditor group by default (migration
+  // 0020), the system administrator by rule, any group a hospital gives it. A work screen: a hospital's own quality
+  // group, given this key alone, signs in to it. After the management summary, so nobody's home moves.
+  route({ id: "kalite", path: "/kalite", icon: "star", labelKey: "kalite.nav", shortKey: "kalite.navShort",
+    perms: ["quality.view"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

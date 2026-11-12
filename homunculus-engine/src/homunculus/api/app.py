@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.alarm_quality import EPISODE_KINDS, alarm_quality
+from homunculus.api.alarm_quality import EPISODE_READ_KINDS, alarm_quality
 from homunculus.api.alert_lifecycle import (
     Cleared, DISCHARGED, READING_DROPPED, acknowledge_latched, entered_in_error_latches, is_tombstone,
     live_keys, retire_patient, retire_state, sync_alerts,
@@ -930,6 +930,9 @@ def create_app(
     # G2-B1d: Yönetim › Protokol ve etiket (`structure.manage`, the caller's tenant).
     from homunculus.protocol.router import router as protocol_router
     app.include_router(protocol_router)
+    # G4-03: «Kalite göstergeleri» — GET /quality (`quality.view`, the caller's tenant and units).
+    from homunculus.quality.router import router as quality_router
+    app.include_router(quality_router)
     # G2-B1d (spec §5, D12): the bridge's patient query — the device token only, never proxied by
     # nginx. `_caller` is defined below; the lambda reads it when a request arrives (E2).
     from homunculus.api.edge_query import edge_query_router
@@ -2745,10 +2748,14 @@ def create_app(
         # more to know whether it held more — then the report says `truncated` rather than reading
         # as the whole window (the trends pattern, api/trends.py `_markers`). Only the kinds the
         # report counts (Aşama B, T6 review): a row of any other kind — an `ingest`, the shadow
-        # lane's `shadow_alert` — would take a place under the cap and move every counter.
+        # lane's `shadow_alert` — would take a place under the cap and move every counter. Not the
+        # `alert` rows either (G4-03, spec A2): one per active alert on every ingest, they filled the
+        # cap within hours and fed only a repeat count the report no longer sends.
         cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
-        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True,
-                             event_types=EPISODE_KINDS)
+        # On a worker thread, as `/quality` reads it: the store's read is synchronous (psycopg2 on
+        # Postgres), and the board stream, SSE and the hub's `/ingest` keep the event loop meanwhile.
+        recs = await asyncio.to_thread(audit.records, tenant=hospital, since=since, limit=cap + 1,
+                                       newest=True, event_types=EPISODE_READ_KINDS)
         truncated = len(recs) > cap
         report = alarm_quality(recs[1:] if truncated else recs, now)
         return {**report.as_dict(), "days": days, "truncated": truncated}

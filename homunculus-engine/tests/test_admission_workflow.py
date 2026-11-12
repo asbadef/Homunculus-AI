@@ -10,12 +10,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
 from homunculus.admission import service
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.models import (
-    Admission, AdmissionState, CareTeamRole, DischargeDisposition, HandoverStatus, Patient,
+    Admission, AdmissionState, AdmissionType, BloodGroup, CareTeamMember, CareTeamRole,
+    DischargeDisposition, Handover, HandoverStatus, Patient,
 )
 from homunculus.admission.service import WorkflowError
 from homunculus.auth.models import User
@@ -227,110 +229,342 @@ async def test_shift_schedule_soft_overcapacity_warning(db_session):
 
 
 # ---------------------------------------------------------------------------
-# Transfer (§4.6, S-27)
+# Transfer (§4.6) — one step (Group 2 · B1b, spec D1, D2, T3–T7, §5.3)
 # ---------------------------------------------------------------------------
-async def test_transfer_creates_new_active_and_closes_source(db_session):
-    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
-    p = await _new_patient(db_session, tenant)
-    adm = await service.create_draft_admission(
-        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
-    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    await service.set_attending(db_session, adm, user_id=attending.id, granted_by_id=attending.id)
-
-    await service.initiate_transfer(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    assert adm.state == AdmissionState.PENDING_TRANSFER
-
-    new_adm = await service.confirm_transfer_arrival(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    assert adm.state == AdmissionState.TRANSFERRED
-    assert new_adm.state == AdmissionState.ACTIVE
-    assert new_adm.source_admission_id == adm.id
-    assert new_adm.transfer_confirm_deadline is not None  # S-27
-    assert beds[1].state == BedState.OCCUPIED
-    # Care team copied.
-    from sqlalchemy import select
-    from homunculus.admission.models import CareTeamMember
-    copied = (await db_session.execute(
-        select(CareTeamMember).where(CareTeamMember.admission_id == new_adm.id))).scalars().all()
-    assert len(copied) == 1
-
-
-async def test_a_transfer_to_a_bed_that_is_not_available_is_refused_by_its_code(db_session):
-    """Both checks — when the transfer starts and when the arrival is confirmed — answer
-    `bed_not_available`, the code the admission's own bed check answers."""
-    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
-    p = await _new_patient(db_session, tenant)
-    adm = await service.create_draft_admission(
-        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
-    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-
-    beds[1].state = BedState.MAINTENANCE
-    await db_session.flush()
-    with pytest.raises(WorkflowError, match="not AVAILABLE") as refused:
-        await service.initiate_transfer(
-            db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    assert refused.value.code == "bed_not_available"
-
-    beds[1].state = BedState.AVAILABLE
-    await db_session.flush()
-    await service.initiate_transfer(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    beds[1].state = BedState.MAINTENANCE            # taken out of service before the arrival
-    await db_session.flush()
-    with pytest.raises(WorkflowError, match="no longer AVAILABLE") as refused:
-        await service.confirm_transfer_arrival(
-            db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    assert refused.value.code == "bed_not_available"
-
-
 #: A synthetic protocol number (G2-B1d: twelve digits; each test's tenant is its own, so no clash).
 PROTOCOL = "202600000001"
+#: The columns each row keeps its own (spec T6, X8); every other column of the stay is carried.
+#: The discharge's five stay with the row it was decided on (Task 2 review).
+DISCHARGE = ("discharge_disposition", "discharge_institution", "discharge_reported_by",
+             "discharge_at", "discharge_note")
+OWN = frozenset({
+    "id", "state", "bed_id", "admitting_unit_id", "admission_datetime", "request_id",
+    "request_digest", "engine_writes", "draft_reminder_sent", "source_admission_id",
+    "transfer_confirm_deadline", "transfer_reason", "transfer_note", "protocol_no",
+    "created_at", "updated_at", *DISCHARGE,
+})
+
+
+async def _active(db, *, n_beds=3, protocol_no=None):
+    """An ACTIVE admission on the first bed of a fresh tenant, with B1a's form fields and the
+    person's identity digest set, as the admission route writes them."""
+    tenant, unit, beds, attending, nurse = await _fixture_env(db, n_beds=n_beds)
+    p = await _new_patient(db, tenant)
+    note = {**_note(unit, beds[0], attending), "admission_type": AdmissionType.ICU,
+            "blood_group": BloodGroup.A_POS, "allergies_text": "Sentetik alerji",
+            "comorbidity_codes": ["copd"], "comorbidities_text": "Sentetik eşlik eden hastalık",
+            "weight_kg": 50.0}
+    adm = await service.create_draft_admission(
+        db, tenant_id=tenant.id, patient=p, note_fields=note, identity_digest="d" * 64,
+        protocol_no=protocol_no)
+    await service.sign_off_admission(db, adm, signing_user_id=attending.id)
+    return unit, beds, attending, nurse, p, adm
+
+
+async def _move(db, adm, bed, unit, *, reason="CLINICAL_NEED", note=None, reserved_ok=False):
+    """The arriving row and how many care-team rows moved. The ids of the handovers that followed
+    her, the service's third answer (X17), are read by its own test below."""
+    arriving, team, _handovers = await service.transfer_patient(
+        db, adm, target_bed=bed, target_unit_id=unit.id, reason=reason, note=note,
+        reserved_ok=reserved_ok)
+    return arriving, team
+
+
+async def _team(db, admission_id, *, active=None) -> list:
+    stmt = select(CareTeamMember).where(CareTeamMember.admission_id == admission_id)
+    if active is not None:
+        stmt = stmt.where(CareTeamMember.is_active.is_(active))
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def _shape(rows) -> list:
+    """Who, in which role, for which window, granted by whom: what a copied row keeps."""
+    return sorted(((r.user_id, r.role, r.window_start, r.window_end, r.granted_by_id)
+                   for r in rows), key=repr)
+
+
+async def test_a_transfer_moves_the_patient_in_one_step(db_session):
+    """D1, T3: the source is TRANSFERRED and its bed in cleaning; the arriving row is ACTIVE on the
+    target, in the unit the route read from the bed, now; the target is OCCUPIED. S-27's deadline
+    is not written (T6)."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    arriving, _ = await _move(db_session, adm, beds[1], unit)
+    assert (adm.state, beds[0].state) == (AdmissionState.TRANSFERRED, BedState.HOUSEKEEPING)
+    assert (arriving.state, arriving.bed_id, arriving.admitting_unit_id) == (
+        AdmissionState.ACTIVE, beds[1].id, unit.id)
+    assert beds[1].state == BedState.OCCUPIED
+    assert (arriving.source_admission_id, arriving.transfer_confirm_deadline) == (adm.id, None)
+    assert arriving.admission_datetime >= adm.admission_datetime
+    assert service._OWN_TO_EACH_ROW == OWN
+
+
+async def test_the_arriving_row_is_the_stay_whole_with_the_moves_own_reason_and_note(db_session):
+    """T6, F4, D8, X8: every column of the stay is carried — the identity digest and B1a's form
+    fields among them. The reason and the note are this move's: a later move writes its own and
+    copies neither. The discharge's fields stay with the row they were decided on: a row that
+    carries them (a discharge started, then cancelled) does not hand them to the arriving one."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    adm.discharge_disposition, adm.discharge_note = DischargeDisposition.HOME, "Sentetik not"
+    await db_session.flush()
+    arriving, _ = await _move(db_session, adm, beds[1], unit, reason="OTHER",
+                              note="Sentetik nakil notu")
+    assert [getattr(arriving, c) for c in DISCHARGE] == [None] * len(DISCHARGE)
+    assert (adm.discharge_disposition, adm.discharge_note) == (DischargeDisposition.HOME,
+                                                               "Sentetik not")
+    for column in Admission.__table__.columns:
+        if column.key not in OWN:
+            assert getattr(arriving, column.key) == getattr(adm, column.key), column.key
+    assert arriving.identity_digest == "d" * 64
+    assert (arriving.admission_type, arriving.blood_group, arriving.comorbidity_codes) == (
+        AdmissionType.ICU, BloodGroup.A_POS, ["copd"])
+    assert (arriving.transfer_reason, arriving.transfer_note) == ("OTHER", "Sentetik nakil notu")
+    assert (adm.transfer_reason, adm.transfer_note) == (None, None)
+    second, _ = await _move(db_session, arriving, beds[2], unit, reason="ISOLATION")
+    assert (second.transfer_reason, second.transfer_note) == ("ISOLATION", None)
+    assert second.source_admission_id == arriving.id
 
 
 async def test_a_transfer_keeps_the_protocol_it_moves_to_the_arriving_admission(db_session):
-    """O8 (spec 2026-11-02): a transfer is inside one visit, so it keeps the visit's protocol. The
-    number moves to the arriving row — `uq_admissions_tenant_protocol` allows one row per number —
-    and the card's key (`board_key`) does not change: the label and the devices keep their number."""
-    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
-    p = await _new_patient(db_session, tenant)
-    adm = await service.create_draft_admission(
-        db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending),
-        protocol_no=PROTOCOL)
-    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    number = p.patient_number
-    key_before = board_key(adm.protocol_no, number)
-
-    await service.initiate_transfer(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    new_adm = await service.confirm_transfer_arrival(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-
-    assert (new_adm.protocol_no, adm.protocol_no) == (PROTOCOL, None)
-    assert board_key(new_adm.protocol_no, number) == key_before == PROTOCOL
+    """O8 (spec D2): a transfer is inside one visit, so it keeps the visit's protocol. The number
+    moves to the arriving row — `uq_admissions_tenant_protocol` allows one row per number — and the
+    card's key (`board_key`) does not change: the label and the devices keep their number."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session, protocol_no=PROTOCOL)
+    arriving, _ = await _move(db_session, adm, beds[1], unit)
+    assert (arriving.protocol_no, adm.protocol_no) == (PROTOCOL, None)
+    assert board_key(arriving.protocol_no, p.patient_number) == PROTOCOL
     holders = (await db_session.execute(
         select(Admission.state, Admission.protocol_no)
-        .where(Admission.tenant_id == tenant.id, Admission.protocol_no.is_not(None)))).all()
-    assert [tuple(row) for row in holders] == [(AdmissionState.ACTIVE, PROTOCOL)]   # the open one
+        .where(Admission.tenant_id == adm.tenant_id, Admission.protocol_no.is_not(None)))).all()
+    assert [tuple(row) for row in holders] == [(AdmissionState.ACTIVE, PROTOCOL)]
 
 
 async def test_a_transfer_of_a_legacy_admission_keeps_its_h_number_key(db_session):
-    """O8: an admission from before G2-B1d has no protocol — both rows stay without one, and the card's
-    key is the H-number, as before."""
+    """O8: an admission from before G2-B1d has no protocol. Both rows stay without one, and the
+    card's key is the H-number, as before."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    arriving, _ = await _move(db_session, adm, beds[1], unit)
+    assert (arriving.protocol_no, adm.protocol_no) == (None, None)
+    assert board_key(arriving.protocol_no, p.patient_number) == p.patient_number
+
+
+@pytest.mark.parametrize("state", [BedState.OCCUPIED, BedState.HOUSEKEEPING, BedState.MAINTENANCE,
+                                   BedState.BLOCKED, BedState.RESERVED, BedState.PENDING_DISCHARGE,
+                                   BedState.PENDING_TRANSFER_OUT])
+async def test_a_target_that_is_not_free_is_refused_by_its_code(db_session, state):
+    """T5: only an AVAILABLE bed, or a RESERVED one the route confirmed, takes the patient.
+    Nothing moves."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    beds[1].state = state
+    await db_session.flush()
+    with pytest.raises(WorkflowError) as refused:
+        await _move(db_session, adm, beds[1], unit)
+    assert refused.value.code == "bed_not_available"
+    assert (adm.state, beds[0].state) == (AdmissionState.ACTIVE, BedState.OCCUPIED)
+
+
+async def test_a_reserved_target_takes_the_patient_when_the_route_confirmed_it(db_session):
+    """B3a R5: the confirmation is the route's. The transition clears the reservation's note
+    (F10)."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    beds[1].state, beds[1].state_note = BedState.RESERVED, "Sentetik planlı kabul"
+    await db_session.flush()
+    await _move(db_session, adm, beds[1], unit, reserved_ok=True)
+    assert (beds[1].state, beds[1].state_note) == (BedState.OCCUPIED, None)
+
+
+@pytest.mark.parametrize("started", [False, True])
+async def test_only_an_active_admission_moves(db_session, started):
+    """T4: a DRAFT is signed first; a patient whose discharge has started is not moved."""
     tenant, unit, beds, attending, nurse = await _fixture_env(db_session, n_beds=2)
     p = await _new_patient(db_session, tenant)
     adm = await service.create_draft_admission(
         db_session, tenant_id=tenant.id, patient=p, note_fields=_note(unit, beds[0], attending))
-    await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
-    number = p.patient_number
+    if started:
+        await service.sign_off_admission(db_session, adm, signing_user_id=attending.id)
+        await service.initiate_discharge(db_session, adm, disposition=DischargeDisposition.HOME)
+    with pytest.raises(WorkflowError) as refused:
+        await _move(db_session, adm, beds[1], unit)
+    assert refused.value.code == "invalid_transition"
+    assert beds[1].state == BedState.AVAILABLE
 
-    await service.initiate_transfer(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
-    new_adm = await service.confirm_transfer_arrival(
-        db_session, adm, target_bed_id=beds[1].id, target_unit_id=unit.id)
 
-    assert (new_adm.protocol_no, adm.protocol_no) == (None, None)
-    assert board_key(new_adm.protocol_no, number) == number
+async def test_a_source_bed_that_is_not_occupied_is_refused_before_anything_moves(db_session):
+    """Task 2 review: the source bed is checked up front, so the house refusal (`WorkflowError`,
+    not the bed machine's `ValueError`) comes before any in-memory transition: the admission, the
+    protocol, the care team and the target are as they were."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session, protocol_no=PROTOCOL)
+    beds[0].state = BedState.MAINTENANCE                # the patient's own bed, out of step
+    db_session.add(CareTeamMember(admission_id=adm.id, user_id=nurse.id,
+                                  role=CareTeamRole.ASSOCIATE_PHYSICIAN,
+                                  granted_by_id=attending.id))
+    await db_session.flush()
+    with pytest.raises(WorkflowError) as refused:
+        await _move(db_session, adm, beds[1], unit)
+    assert refused.value.code == "invalid_transition"
+    assert (adm.state, adm.protocol_no, beds[0].state, beds[1].state) == (
+        AdmissionState.ACTIVE, PROTOCOL, BedState.MAINTENANCE, BedState.AVAILABLE)
+    assert len(await _team(db_session, adm.id, active=True)) >= 1
+
+
+async def test_the_care_team_is_closed_on_the_source_and_copied_onto_the_arriving_row(db_session):
+    """T7: the source keeps no active row — its key is the H-number now (O8), and an open row on
+    it would point the own-patient scope away from the card. The arriving row holds the same
+    members, roles, windows and grantors, active; the count is answered. (B1c's sign-off route
+    writes the attending's row, its service does not: one ATTENDING row is added only when none
+    is there. B1c's indexes allow one active ATTENDING and one active row per member per
+    admission; the copy keeps both true on the arriving row.)"""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    start = _now()
+    if not any(r.role == CareTeamRole.ATTENDING
+               for r in await _team(db_session, adm.id, active=True)):
+        db_session.add(CareTeamMember(admission_id=adm.id, user_id=attending.id,
+                                      role=CareTeamRole.ATTENDING, granted_by_id=attending.id))
+    db_session.add(CareTeamMember(admission_id=adm.id, user_id=nurse.id,
+                                  role=CareTeamRole.ONCALL_PHYSICIAN, granted_by_id=attending.id,
+                                  window_start=start, window_end=start + timedelta(hours=12)))
+    await db_session.flush()
+    expected = _shape(await _team(db_session, adm.id, active=True))
+    arriving, moved = await _move(db_session, adm, beds[1], unit)
+    assert await _team(db_session, adm.id, active=True) == []
+    assert all(r.closed_at is not None for r in await _team(db_session, adm.id))
+    copied = await _team(db_session, arriving.id, active=True)
+    assert _shape(copied) == expected
+    assert moved == len(expected) >= 2
+
+
+async def test_a_handover_in_hand_follows_the_patient_and_a_closed_one_stays(db_session):
+    """Owner 2026-11-10 (X17): a handover still in hand — OPEN inside its bridge, or
+    OUTGOING_SIGNED — names the arriving row after the move, in the source's place and nothing
+    else changed. A COMPLETED one, an EXPIRED one and an OPEN one past its bridge (which reads
+    EXPIRED, S-24) keep the source, as they were written. A handover in hand that names only
+    another patient is left alone. The ids of the two that followed are answered, by handover id.
+    What is read back is the database's, not the session's objects: a JSON list edited in place
+    is not tracked, so the objects would show it and the row would never change."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    beside = str(uuid.uuid4())                          # another admission the handovers name
+    handovers = {name: await service.open_handover(
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=[beside, adm.id]) for name in ("open", "signed", "completed", "expired",
+                                                     "lapsed")}
+    handovers["elsewhere"] = await service.open_handover(   # in hand, another patient's only
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=[beside])
+    handovers["signed"].status = HandoverStatus.OUTGOING_SIGNED
+    handovers["completed"].status = HandoverStatus.COMPLETED
+    handovers["expired"].status = HandoverStatus.EXPIRED
+    handovers["lapsed"].bridge_expires_at = _now() - timedelta(minutes=1)
+    await db_session.flush()
+    source_id = str(adm.id)
+    ids = {name: h.id for name, h in handovers.items()}
+    arriving, _team_moved, followed = await service.transfer_patient(
+        db_session, adm, target_bed=beds[1], target_unit_id=unit.id, reason="CLINICAL_NEED",
+        note=None)
+    stored = dict((await db_session.execute(
+        select(Handover.id, Handover.admission_ids))).all())
+    named = {name: list(stored[i]) for name, i in ids.items()}
+    assert followed == sorted([ids["open"], ids["signed"]])
+    assert named["open"] == named["signed"] == [beside, str(arriving.id)]
+    assert named["completed"] == named["expired"] == named["lapsed"] == [beside, source_id]
+    assert named["elsewhere"] == [beside]
+
+
+async def test_a_handover_in_hand_takes_the_patients_new_unit_once_all_its_patients_lie_there(
+        db_session):
+    """G2-B1b (X22, the controller's rule on G4-02): a handover's unit is its admissions' beds'
+    (`GET /handovers/pending` counts by it), so a handover that follows a patient into another unit
+    takes that unit — when EVERY admission it names lies there. One naming only her moves with her;
+    one naming a patient who stays behind, or an id that is no admission, keeps its unit until the
+    move that brings the last patient over."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session, n_beds=3)
+    tenant = await db_session.get(Tenant, adm.tenant_id)
+    neighbour = await service.create_draft_admission(
+        db_session, tenant_id=tenant.id, patient=await _new_patient(db_session, tenant),
+        note_fields=_note(unit, beds[1], attending))
+    await service.sign_off_admission(db_session, neighbour, signing_user_id=attending.id)
+    other = Unit(site_id=unit.site_id, name="Yenidoğan YBÜ", unit_type=UnitType.NICU)
+    db_session.add(other)
+    await db_session.flush()
+    far_room = Room(unit_id=other.id, name="Oda N")
+    db_session.add(far_room)
+    await db_session.flush()
+    far = [Bed(room_id=far_room.id, label=f"N{i}", state=BedState.AVAILABLE) for i in (1, 2)]
+    db_session.add_all(far)
+    await db_session.flush()
+    mover, ghost = adm.id, str(uuid.uuid4())            # ids named; `ghost` is no admission
+    handovers = {name: await service.open_handover(
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=named) for name, named in (
+            ("alone", [mover]), ("pair", [mover, neighbour.id]), ("ghost", [mover, ghost]))}
+    for handover in handovers.values():
+        handover.status = HandoverStatus.OUTGOING_SIGNED
+    await db_session.flush()
+    ids, home, there = {n: h.id for n, h in handovers.items()}, unit.id, other.id
+
+    async def stored() -> dict:
+        """What the database holds: each handover's unit and the admissions it names."""
+        rows = {i: (u, list(a)) for i, u, a in (await db_session.execute(
+            select(Handover.id, Handover.unit_id, Handover.admission_ids))).all()}
+        return {name: rows[i] for name, i in ids.items()}
+
+    first, _t, followed = await service.transfer_patient(
+        db_session, adm, target_bed=far[0], target_unit_id=there, reason="CLINICAL_NEED", note=None)
+    assert followed == sorted(ids.values())
+    now = await stored()
+    assert now["alone"] == (there, [str(first.id)])
+    assert now["pair"] == (home, [str(first.id), str(neighbour.id)])      # her neighbour stays behind
+    assert now["ghost"] == (home, [str(first.id), ghost])                 # no admission to lie there
+    second, _t, followed = await service.transfer_patient(
+        db_session, neighbour, target_bed=far[1], target_unit_id=there, reason="CLINICAL_NEED",
+        note=None)
+    assert followed == [ids["pair"]]
+    now = await stored()
+    assert now["pair"] == (there, [str(first.id), str(second.id)])        # the last one came over
+    assert now["ghost"] == (home, [str(first.id), ghost])
+
+
+async def _locked_elsewhere(db, handover_ids) -> set:
+    """The handovers another transaction holds a row lock on: each is asked for with `FOR UPDATE
+    NOWAIT` on a connection of its own, which a held lock refuses at once."""
+    held = set()
+    for handover_id in handover_ids:
+        async with db.bind.connect() as other:
+            try:
+                await other.execute(text("SELECT id FROM handovers WHERE id = :id FOR UPDATE NOWAIT"),
+                                    {"id": handover_id})
+            except DBAPIError as exc:
+                assert "lock" in str(exc).lower(), exc
+                held.add(handover_id)
+            await other.rollback()
+    return held
+
+
+async def test_a_move_locks_only_the_handovers_in_hand_that_name_her(db_session):
+    """Final review M-2 (X17, X23): the move locks the handovers it re-points, not every handover
+    of the hospital in hand. OUTGOING_SIGNED never expires (G4-02), so a lock on all of them would
+    make every signature in the hospital wait for every move. Hers — OPEN inside its bridge, and
+    OUTGOING_SIGNED — are locked and re-pointed; another patient's, in hand in the same unit, is
+    neither locked nor touched. The move's transaction is held open while another connection asks."""
+    unit, beds, attending, nurse, p, adm = await _active(db_session)
+    beside = str(uuid.uuid4())                          # another patient's admission
+    handovers = {name: await service.open_handover(
+        db_session, unit_id=unit.id, outgoing_user_id=attending.id, incoming_user_id=nurse.id,
+        admission_ids=named) for name, named in (
+            ("mine_open", [beside, adm.id]), ("mine_signed", [adm.id]),
+            ("other_open", [beside]), ("other_signed", [beside]))}
+    for name in ("mine_signed", "other_signed"):
+        handovers[name].status = HandoverStatus.OUTGOING_SIGNED
+    ids = {name: h.id for name, h in handovers.items()}
+    await db_session.commit()                           # seen by the other connection
+    arriving, _team_moved, followed = await service.transfer_patient(
+        db_session, adm, target_bed=beds[1], target_unit_id=unit.id, reason="CLINICAL_NEED",
+        note=None)                                      # its locks held: nothing committed
+    assert await _locked_elsewhere(db_session, ids.values()) == {ids["mine_open"],
+                                                                 ids["mine_signed"]}
+    assert followed == sorted([ids["mine_open"], ids["mine_signed"]])
+    stored = dict((await db_session.execute(select(Handover.id, Handover.admission_ids))).all())
+    assert list(stored[ids["mine_open"]]) == [beside, str(arriving.id)]
+    assert list(stored[ids["mine_signed"]]) == [str(arriving.id)]
+    assert list(stored[ids["other_open"]]) == list(stored[ids["other_signed"]]) == [beside]
 
 
 # ---------------------------------------------------------------------------

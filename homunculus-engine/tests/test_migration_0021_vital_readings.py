@@ -1,7 +1,7 @@
 # homunculus-engine/tests/test_migration_0021_vital_readings.py
 """Migration 0021 (G3-05, spec §3, D19, D20) on the real chain (`clean_db`, never `create_all`): the table with
 its checks and its foreign key, the seven indexes, the audit index that closes G3-01's O3; schema only — no row is
-written; the downgrade drops exactly this, and 0019 → 0021 → 0019 → 0021 runs. Synthetic rows only."""
+written; the downgrade drops exactly this, and 0020 → 0021 → 0020 → 0021 runs. Synthetic rows only."""
 from __future__ import annotations
 
 import importlib.util
@@ -36,11 +36,11 @@ def _module():
     return module
 
 
-def test_the_revision_follows_0019_on_this_branch():
-    """No database: the file's own word. `"0020"` instead, at the merge, if Kalite's migration is on main first
-    (spec §8) — then this line changes with it, and tests/test_audit_postgres.py still finds one head."""
+def test_the_revision_follows_kalites_0020():
+    """No database: the file's own word. It followed G3-04's 0019 on its own branch; the merge of main, where G4-03
+    Kalite's 0020 landed first, moved it on (spec §8) — and tests/test_audit_postgres.py still finds one head."""
     module = _module()
-    assert (module.revision, module.down_revision) == ("0021", "0019")
+    assert (module.revision, module.down_revision) == ("0021", "0020")
 
 
 def _row(conn, **over):
@@ -132,14 +132,14 @@ def test_an_admission_with_a_reading_cannot_be_deleted(clean_db):
 def test_downgrade_drops_exactly_this_and_the_round_trip_runs(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "0019")
+    command.downgrade(cfg, "0020")
     with engine.connect() as conn:
         tables = {r[0] for r in conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))}
         audit = {r[0] for r in conn.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'audit'"))}
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     assert "vital_readings" not in tables and "tasks" in tables and "audit" in tables
     assert "ix_audit_tenant_patient_id" not in audit and "ix_audit_tenant_event_id" in audit
-    assert version == "0019"
+    assert version == "0020"
     command.upgrade(cfg, "head")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM vital_readings")).scalar_one() == 0

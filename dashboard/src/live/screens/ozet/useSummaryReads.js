@@ -74,8 +74,14 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
   return { tasks, pending, scope, fullAt, busy, refresh: read };
 }
 
-export function useQuality({ store, may, period }) {
-  const [read, setRead] = useState(LOADING);
+/** One read of a page for a period, `read(api, period)`: on open, on a period change and on `retry` (a user's action —
+ *  «Yeniden dene», «Yenile»), never on a timer. The newest read wins; an answer `valid` refuses is a failed read (plan
+ *  N10). `read` and `valid` must be module constants: a new function each render would read again each render.
+ *  G4-03: «Kalite göstergeleri» reads `/quality` through it, as `useQuality` reads `/alarm-quality`.
+ *  An answer or a failure is kept with the period it was read for: in the render right after a period change, before
+ *  the new read starts, it is not this period's, so the hook says «loading» (G4-03 review). */
+export function usePeriodRead({ store, may, period, read, valid }) {
+  const [state, setState] = useState(LOADING);
   const [attempt, setAttempt] = useState(0);
   const seq = useRef(0);
   const retry = useCallback(() => { setAttempt((n) => n + 1); }, []);
@@ -84,16 +90,23 @@ export function useQuality({ store, may, period }) {
     seq.current += 1;
     const mine = seq.current;
     let alive = true;
-    setRead(LOADING);
-    store.track(() => store.api.alarmQuality(period)).then(
+    setState(LOADING);
+    store.track(() => read(store.api, period)).then(
       (data) => {
         if (!alive || mine !== seq.current) return;
-        setRead(isReport(data) ? { phase: "ok", data, atMs: Date.now(), error: null }
-          : { phase: "failed", data: null, atMs: null, error: null });
+        setState(valid(data) ? { phase: "ok", data, atMs: Date.now(), error: null, period }
+          : { phase: "failed", data: null, atMs: null, error: null, period });
       },
-      (error) => { if (alive && mine === seq.current) setRead({ phase: "failed", data: null, atMs: null, error }); },
+      (error) => { if (alive && mine === seq.current) setState({ phase: "failed", data: null, atMs: null, error, period }); },
     );
     return () => { alive = false; };
-  }, [store, may, period, attempt]);
-  return useMemo(() => ({ ...read, retry }), [read, retry]);
+  }, [store, may, period, attempt, read, valid]);
+  return useMemo(() => ({ ...(state.phase === "loading" || state.period === period ? state : LOADING), retry }),
+    [state, period, retry]);
+}
+
+const readAlarmQuality = (api, days) => api.alarmQuality(days);
+
+export function useQuality({ store, may, period }) {
+  return usePeriodRead({ store, may, period, read: readAlarmQuality, valid: isReport });
 }

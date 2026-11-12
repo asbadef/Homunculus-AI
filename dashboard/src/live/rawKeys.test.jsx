@@ -51,6 +51,7 @@ import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 import { readings } from "./screens/patient/readings/readings.testutil.js"; // G3-05
 import { unmatched } from "./screens/bedside/unmatched.testutil.js"; // G3-05
 import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
+import { ANSWER as QUALITY_SWEEP } from "./screens/kalite/kalite.testutil.js"; // G4-03
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
  *  fileURLToPath refuses — the note apiErrors.test.js carries.) */
@@ -327,6 +328,9 @@ async function openAt(path, extra) {
       // and a fluid balance, so the sweep meets every word of the table. Unstubbed the page would say only that its
       // list could not be read.
       api.pharmacy.mockResolvedValue(pharmacyAnswer());
+
+      // G4-03: «Kalite göstergeleri» (screens/kalite) — a whole week: the units, the unplaced row, the snoozes.
+      api.qualityIndicators.mockResolvedValue(QUALITY_SWEEP);
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -440,7 +444,7 @@ describe("no screen shows a reader a translation key", () => {
     let mounted = await openAt("/kabul");
     expect(screen.getByText("Çatışmayan sahələr")).toBeInTheDocument();                 // kabul.missingTitle
     expect(screen.getByRole("button", { name: /^Reanimasiya/ })).toBeInTheDocument();  // the picker, by name
-    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" })); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" })); await settle(); });
     expect(screen.getByText("Vəfat (exitus)", { exact: false })).toBeInTheDocument();  // kabul.disp.exitus
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Evə yazılmanı başlat: / })); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Çıxış forması");             // kabul.f.disposition
@@ -522,6 +526,21 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/^Son cavabda müddət keçmişdi · bitmə /)).toBeInTheDocument();               // eczane.ab.staleMissed
     expect(screen.getByText(/^Son cavabda müddət gedirdi · bitmə /)).toBeInTheDocument();                // eczane.ab.staleRunning
     expect(screen.getByText(/^son cavab .* vəziyyətinə görə$/)).toBeInTheDocument();                     // eczane.asOf
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G4-03 — «Kalite göstergeleri»: its cards and its table, then — only once a unit is chosen — the snooze reasons'
+  // second column and that unit's alarms by kind.
+  it("the quality page's keys resolve on its cards, its table and a unit's selection", async () => {
+    const mounted = await openAt("/kalite");
+    expect(screen.getByRole("heading", { level: 1, name: "Keyfiyyət göstəriciləri" })).toBeInTheDocument();      // kalite.title
+    const table = screen.getByRole("table", { name: "Şöbələrə görə keyfiyyət göstəriciləri" });                  // kalite.units.caption
+    expect(within(table).getByText("Şöbəsi bəlli olmayan")).toBeInTheDocument();                                 // kalite.units.unplaced
+    expect(screen.getByText("1 ədədi öz-özünə düzəldi")).toBeInTheDocument();                                     // kalite.cards.selfResolved
+    await act(async () => { fireEvent.click(within(table).getByRole("button", { name: "Reanimasiya" })); await settle(); });
+    expect(screen.getByRole("heading", { level: 2, name: "Növə görə siqnallar · Reanimasiya" })).toBeInTheDocument(); // kalite.kinds.title
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

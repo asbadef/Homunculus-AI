@@ -3,6 +3,14 @@
 // "Hasta çıktı · onayla", and the patients lying in. A physician (`admissions.move.initiate`)
 // starts a discharge from the second; a DRAFT is signed first (the strip on the patient screen).
 //
+// NAKİL (G2-B1b, spec §4). The tab is «Nakil / Taburcu». Each ACTIVE row of the second list has
+// «Nakil» for a holder of `admissions.move.initiate` or `admissions.transfer.confirm`
+// (TransferDialog.jsx). It is never held: a critical alarm nobody acknowledged is said in the
+// dialog, once the board has loaded, and holds nothing (D7). A move whose card did not reach the
+// new bed (`board: failed`) leaves a note that stays, with «Kartı yeniden taşı»: the same move sent
+// again, which the server answers by moving the card again and writing nothing (T9). One at a time;
+// the note goes when it lands.
+//
 // "Taburcuyu başlat" is held, with the reason in words, while the board shows this patient a
 // critical alarm nobody acknowledged — and while the board has not loaded yet (connecting) or
 // could not (unavailable): an empty board that never loaded rules no alarm out. A DEGRADED board
@@ -31,7 +39,9 @@
 // note, and in the name of each row's button and each note's retry, after its words (M-4). And
 // when the re-read takes away the button the write was sent from — a started discharge moves up,
 // a confirmed one goes — the focus that fell with it goes to the started discharges' list, never
-// left on <body> (spec §5.7).
+// left on <body> (spec §5.7). After a landed move (G2-B1b) the source row is gone too: the focus goes
+// to the arriving row, where she lies now — or, when the list does not hold it (her new unit is
+// outside the caller's), to that list.
 import React, { useEffect, useId, useRef, useState } from "react";
 import { CONNECTION } from "../../../liveConnection.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -44,6 +54,7 @@ import { FOCUS_RING } from "../../ui/focus.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import { doneFor, reasonOf, refusedFor } from "../admin/refusal.js";
 import { DISPOSITIONS, DischargeDialog } from "./DischargeDialog.jsx";
+import { TransferDialog } from "./TransferDialog.jsx"; // G2-B1b
 import { useAdmissions } from "./useAdmissions.js";
 import { boardKeyOf } from "./boardKey.js"; // G2-B1d
 
@@ -67,11 +78,13 @@ const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateStrin
 /** When a discharge was decided: its time, and its date as well unless that is today. */
 const whenOf = (ms) => (sameDay(ms, Date.now()) ? hhmm(ms) : `${ddmm(ms)} ${hhmm(ms)}`);
 
-/** One admission, its bed line first; `children` are the row's actions. */
-function Row({ row, children }) {
+/** One admission, its bed line first; `children` are the row's actions. `rowRef` (G2-B1b) makes the
+ *  row a place the focus can be sent to by script — after a move, the arriving row — never a tab stop. */
+function Row({ row, children, rowRef }) {
   const { t } = useI18n();
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-ctl border border-line bg-card px-3 py-2.5">
+    <li ref={rowRef} tabIndex={rowRef ? -1 : undefined}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-ctl border border-line bg-card px-3 py-2.5${rowRef ? ` ${FOCUS_RING}` : ""}`}>
       <div className="min-w-0 flex-1">
         <p className="m-0 text-14 font-semibold">
           <span className="font-data">{row.bed_label}</span> · {row.room_name} · {row.unit_name}
@@ -134,6 +147,29 @@ function UndoneNote({ undone, retrying, heldBy, onRetry }) {
   );
 }
 
+/** G2-B1b (spec §4): a move whose card did not reach the new bed, kept until it has. Its retry
+ *  (`onRetry`, for whoever may move a patient) sends the same move again. It is named by its words,
+ *  then the new bed (M-4), described by the note's own words — and, while another note's retry is
+ *  out, held (`held`), described by `heldBy` too (the one being retried), as UndoneNote's is. */
+function UnmovedNote({ n, busy, held, heldBy, onRetry }) {
+  const { t } = useI18n();
+  const said = useId();
+  return (
+    <Note icon="alert">
+      <span id={said}>{doneFor(t, n.to, t("kabul.transfer.cardNotMoved"))}</span>
+      {onRetry ? (
+        <span className="mt-1.5 block">
+          <Button size="sm" aria-label={`${t("kabul.transfer.retry")}: ${n.to}`}
+            aria-describedby={held ? `${said} ${heldBy}` : said}
+            busy={busy} aria-disabled={held ? "true" : undefined} onClick={() => { if (!held) onRetry(n); }}>
+            {t("kabul.transfer.retry")}
+          </Button>
+        </span>
+      ) : null}
+    </Note>
+  );
+}
+
 export function DischargeTab() {
   const { t } = useI18n();
   const { user, store } = useSession();
@@ -147,18 +183,27 @@ export function DischargeTab() {
   const [undone, setUndone] = useState([]);           // confirmed, with something left undone: {id, subject, kind}
   const [retrying, setRetrying] = useState(null);     // the admission whose card is being taken off the board again
   const [refocus, setRefocus] = useState(0);          // a write's dialog closed: where did its focus go?
+  const [moving, setMoving] = useState(null);          // G2-B1b: the admission whose «Nakil» is open
+  const [unmoved, setUnmoved] = useState([]);          // moved, the card not on the new bed: {id, to, body, arriving}
+  const [movingAgain, setMovingAgain] = useState(null); // the move being sent again
   const pendingRef = useRef(null);
+  const rowEls = useRef(new Map());                    // G2-B1b: the lying-in rows' elements, by admission id
+  const arrivedId = useRef(null);                      // G2-B1b: the admission a landed move made, until the focus is placed
   const pendingTitle = useId();                       // each section is named by its Box's own heading
   const lyingTitle = useId();
   const retryHeld = useId();                          // why the other notes' retry waits
   const leavingHeld = useId();                        // why the question's own confirmation waits
+  const movedHeld = useId();                          // G2-B1b: why the other cards' retry waits
   useEffect(() => {
     if (!refocus) return;
     const active = document.activeElement;
-    if (!active || active === document.body) pendingRef.current?.focus();
+    // G2-B1b: after a landed move, her new row when the list holds it; else the list, as a discharge's.
+    if (!active || active === document.body) (rowEls.current.get(arrivedId.current) ?? pendingRef.current)?.focus();
+    arrivedId.current = null;
   }, [refocus]);
   const can = (key) => user?.perms?.includes(key) ?? false;
   const starts = can("admissions.move.initiate");
+  const moves = starts || can("admissions.transfer.confirm");   // G2-B1b (D5): either key moves
   const confirms = can("admissions.discharge.confirm");
   const seesBoard = can("board.view");
   // A board that never loaded, or whose load failed, is empty and rules no alarm out.
@@ -172,6 +217,9 @@ export function DischargeTab() {
     if (!known) return HOLDS[step].unknown;
     return criticalOpen(number) ? HOLDS[step].critical : null;
   };
+  /** G2-B1b (D7): whether the «Nakil» dialog warns — the loaded board shows this patient a critical
+   *  alarm nobody acknowledged. Before the board has loaded it says nothing: a hint, not a hold. */
+  const warnsOf = (number) => seesBoard && known && criticalOpen(number);
   /** A refused confirmation's reason: an open critical alarm is said as the confirmation's own. */
   const confirmReason = (err) => (err?.apiCode === "critical_alarm_open"
     ? t("kabul.err.criticalAlarmOpenAtConfirm") : reasonOf(t, err));
@@ -224,9 +272,51 @@ export function DischargeTab() {
     setRefocus((n) => n + 1);
   }
 
+  /** G2-B1b: a move from the dialog. A card that did not reach the new bed (`board: failed`) is kept
+   *  as a note, with the admission it arrived as (`arriving`). A note whose own arriving row this move
+   *  leaves goes: the patient has moved on, and its retry could only be refused (T9 answers a retry
+   *  only while the arriving row is open on that bed). The dialog stays held until the list is read
+   *  again (A-17), as a discharge's does. */
+  async function moved(row, { answer, body, to }) {
+    setUnmoved((prev) => [...prev.filter((n) => n.id !== row.id && n.arriving !== row.id),
+      ...(answer?.board === "failed" ? [{ id: row.id, to, body, arriving: answer?.id ?? null }] : [])]);
+    arrivedId.current = answer?.id ?? null;           // the source row is gone after the re-read: the focus goes to this one
+    reloadStructure();
+    await reload();
+    setMoving(null);
+    setRefocus((n) => n + 1);
+  }
+
+  /** «Kartı yeniden taşı»: the same move sent again. The server moves the card again and writes
+   *  nothing (spec T9). One at a time; the note goes when the card has moved — or when the server
+   *  says it never can: `invalid_transition` is its answer once her arriving row is no longer open
+   *  on that bed (she moved again, or was discharged; the old bed's release is the backstop). */
+  async function moveAgain(n) {
+    if (movingAgain !== null) return;
+    setMovingAgain(n.id);
+    try {
+      const answer = await store.track(() => store.api.transfer(n.id, n.body));
+      if (answer?.board === "failed") {
+        toast(doneFor(t, n.to, t("kabul.transfer.cardNotMoved")), "warn");
+      } else {
+        toast(doneFor(t, n.to, t("kabul.transfer.cardMoved")));
+        setUnmoved((prev) => prev.filter((x) => x.id !== n.id));
+      }
+    } catch (err) {
+      toast(refusedFor(t, n.to, reasonOf(t, err)), "error");
+      if (err?.apiCode === "invalid_transition") setUnmoved((prev) => prev.filter((x) => x.id !== n.id));
+    } finally {
+      await reload();
+      setMovingAgain(null);
+      setRefocus((k) => k + 1);                       // a landed retry takes its note and button away, as retry()'s does
+    }
+  }
+
   if (phase === "unasked") return <Note tone="info" icon="eye">{t("kabul.noView")}</Note>;
   const retried = undone.find((n) => n.id === retrying);
   const retryingText = retried ? t("kabul.retryingBoard", { bed: retried.subject }) : "";
+  const movedAgain = unmoved.find((n) => n.id === movingAgain);   // G2-B1b: the card retry that is out
+  const movingText = movedAgain ? doneFor(t, movedAgain.to, t("kabul.transfer.retrying")) : "";
   // The question's own «Hasta çıktı · onayla» is held as the row's is — read again on every render,
   // so an alarm that fires (or a board that is lost) while the question is open holds it (review I-2).
   const leavingHold = leaving ? holdOf(boardKeyOf(leaving), "confirm") : null;
@@ -240,8 +330,14 @@ export function DischargeTab() {
       {/* A-30: the server cut the list at its cap — the two lists below are not the whole of it. */}
       {truncated ? <Note icon="alert">{t("kabul.listTruncated")}</Note> : null}
       {undone.map((n) => <UndoneNote key={n.id} undone={n} retrying={retrying} heldBy={retryHeld} onRetry={confirms ? retry : null} />)}
+      {unmoved.map((n) => (
+        <UnmovedNote key={`moved-${n.id}`} n={n} busy={movingAgain === n.id} heldBy={movedHeld}
+          held={movingAgain !== null && movingAgain !== n.id} onRetry={moves ? moveAgain : null} />
+      ))}
       {retried ? <span id={retryHeld} className="sr-only">{retryingText}</span> : null}
-      <Announce text={retryingText} />
+      {movedAgain ? <span id={movedHeld} className="sr-only">{movingText}</span> : null}
+      {/* One polite region for the retries that are out (a card off the board, a card moved): each holds only its own kind. */}
+      <Announce text={[retryingText, movingText].filter(Boolean).join(" ")} />
       {/* Where the focus lands after a write (refocus): it shows the ring, as the strip's line does. */}
       <section ref={pendingRef} tabIndex={-1} aria-labelledby={pendingTitle} className={`rounded-box ${FOCUS_RING}`}>
       <Box title={<span id={pendingTitle}>{t("kabul.pendingTitle")}</span>} icon="out" level={2}>
@@ -271,12 +367,21 @@ export function DischargeTab() {
         {rows === null ? loading : lying.length === 0 ? <Empty icon="bed">{t("kabul.lyingNone")}</Empty> : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {lying.map((row) => (
-              <Row key={row.id} row={row}>
-                {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p>
-                  : starts ? (
-                    <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "start")}
-                      icon="out" onPress={() => setStarting(row)} />
-                  ) : null}
+              <Row key={row.id} row={row}
+                rowRef={(el) => { if (el) rowEls.current.set(row.id, el); else rowEls.current.delete(row.id); }}>
+                {row.state === "DRAFT" ? <p className="m-0 text-12.5 text-mute">{t("kabul.signFirst")}</p> : (
+                  <>
+                    {/* G2-B1b: «Nakil», never held (D7: the dialog warns). */}
+                    {moves ? (
+                      <RowAction words={t("kabul.transfer.action")} subject={bedOf(row)} hold={null}
+                        icon="swap" onPress={() => setMoving(row)} />
+                    ) : null}
+                    {starts ? (
+                      <RowAction words={t("kabul.startDischarge")} subject={bedOf(row)} hold={holdOf(boardKeyOf(row), "start")}
+                        icon="out" onPress={() => setStarting(row)} />
+                    ) : null}
+                  </>
+                )}
               </Row>
             ))}
           </ul>
@@ -286,6 +391,10 @@ export function DischargeTab() {
       {starting ? (
         <DischargeDialog row={starting} subject={bedOf(starting)} onClose={() => setStarting(null)}
           onDone={started} onRefused={() => reload()} />
+      ) : null}
+      {moving ? (
+        <TransferDialog row={moving} subject={bedOf(moving)} critical={warnsOf(boardKeyOf(moving))}
+          onClose={() => setMoving(null)} onDone={(done) => moved(moving, done)} onRefused={() => reload()} />
       ) : null}
       {leaving ? (
         <Modal open title={t("kabul.confirmLeftTitle")} onClose={() => setLeaving(null)} busy={confirming}

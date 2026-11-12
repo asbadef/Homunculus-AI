@@ -26,7 +26,7 @@ API_PATHS = [
     "/handovers", "/handovers/pending", "/alerts/x", "/break-glass", "/scope/me", "/clinical/p1",
     "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state",
     "/infinity-shadow/board", "/infinity-shadow/readings", "/infinity-shadow/device-beds",
-    "/infinity-waves/192.0.2.10", "/patients", "/pharmacy", "/ack",
+    "/infinity-waves/192.0.2.10", "/patients", "/pharmacy", "/quality", "/ack",
     "/ingest", "/view", "/audit", "/audit/verify", "/health", "/stream", "/stream-ticket",
     "/notifications", "/readings/unmatched",       # G3-05: «Eşleşmeyen ölçümler»
 ]

@@ -27,7 +27,6 @@ NAME_TAKEN = "name_taken"                        # another room of the unit has 
 BED_LABEL_TAKEN = "bed_label_taken"              # another bed of the UNIT (any room) has that label
 REQUEST_CONFLICT = "request_conflict"            # this request_id came before with another form
 BOARD_NOT_CLEARED = "board_not_cleared"          # the bed's last patient's card still stands
-TRANSFER_UNAVAILABLE = "transfer_unavailable"    # the transfer routes are closed (A-37)
 # The same person (name and birth date) already has an open admission in the tenant (A-37).
 DUPLICATE_OPEN_ADMISSION = "duplicate_open_admission"
 FIELD_INVALID = "field_invalid"                  # + ":<field>"
@@ -42,7 +41,7 @@ BED_HAS_MONITOR = "bed_has_monitor"              # Yapı: a bed with a monitor b
 CODES = frozenset({
     BED_NOT_AVAILABLE, BED_CLOSED, OUT_OF_SCOPE, CRITICAL_ALARM_OPEN, PATIENT_NUMBER_EXHAUSTED,
     INVALID_TRANSITION, MISSING_ATTENDING, OPEN_ADMISSION, BED_IN_USE, HAS_OPEN_BEDS, NAME_TAKEN,
-    BED_LABEL_TAKEN, REQUEST_CONFLICT, BOARD_NOT_CLEARED, TRANSFER_UNAVAILABLE,
+    BED_LABEL_TAKEN, REQUEST_CONFLICT, BOARD_NOT_CLEARED,
     DUPLICATE_OPEN_ADMISSION,
     MONITOR_LANE_OFF, DEVICE_UNKNOWN, BED_OCCUPIED, MAPPING_CHANGED, BED_HAS_MONITOR,
 })

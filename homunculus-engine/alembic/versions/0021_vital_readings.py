@@ -1,8 +1,8 @@
 # homunculus-engine/alembic/versions/0021_vital_readings.py
 """G3-05 Cihaz ölçüm kaydı (spec §3, D6, D14, D19): `vital_readings`, and the audit index (tenant, patient_id, id)
 
-Revision 0021. On its own branch it follows G3-04's 0019; if G4-03 Kalite's 0020 is on main first, the merge sets
-`down_revision = "0020"` (spec §8) — `alembic heads` prints one head either way.
+Revision 0021. It follows G4-03 Kalite's 0020: on its own branch it followed G3-04's 0019, and the merge of main,
+where 0020 landed first, set `down_revision = "0020"` (spec §8) — `alembic heads` prints one head.
 
 * `vital_readings`: one row per measured value — a device reading `/ingest` took (`origin` device) or a bedside
   value typed at `POST /clinical/{id}` (`origin` manual). Keyed by the tenant SLUG (`tenant`), as `tasks` and the
@@ -31,7 +31,7 @@ its rows and the audit index; no audit content is touched (D20).
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013).
 
 Revision ID: 0021
-Revises: 0019
+Revises: 0020
 Create Date: 2026-11-11
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, UUID
 
 revision: str = "0021"
-down_revision: Union[str, None] = "0019"
+down_revision: Union[str, None] = "0020"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

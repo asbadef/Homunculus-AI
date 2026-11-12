@@ -25,8 +25,8 @@ PERMISSIONS: dict[str, str] = {
     "admissions.view": "Read admissions and patient records",
     "admissions.admit": "Create an admission",
     "admissions.sign_off": "Physician sign-off of an admission",
-    "admissions.move.initiate": "Initiate a transfer or discharge",
-    "admissions.transfer.confirm": "Confirm a transfer arrival",
+    "admissions.move.initiate": "Transfer a patient to another bed, or start a discharge",
+    "admissions.transfer.confirm": "Transfer a patient to another bed",
     "admissions.discharge.confirm": "Confirm a discharge; release the bed",
     "care_team.claim": "Claim a care-team role on a patient",
     "care_team.assign": "Assign others to a patient's care team",
@@ -80,6 +80,11 @@ PERMISSIONS: dict[str, str] = {
     # and the physician groups; migration 0019 gives it to the tenants seeded before it.
     "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the "
                      "antibiotic clock, creatinine and the day's fluid balance; read-only",
+
+    # G4-03 — Kalite göstergeleri (spec D2, D3): per-unit care-process indicators. The default auditor group holds
+    # it (migration 0020 for the tenants seeded before it); the system group holds it by rule.
+    "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators "
+                    "(GET /quality), as counts and times only",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -194,7 +199,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
                      "break_glass.use", "clinical.chart", "tasks.view", "tasks.manage")},
     {"slug": "auditor", "kind": "role", "name": "Denetçi",
      "description": "Salt okunur: pano ve denetim kaydı.",
-     "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view")},
+     # G4-03 (spec D2, D7): + `quality.view`, the Kalite göstergeleri page; migration 0020 for the tenants seeded before.
+     "mfa_required": False, "is_system": False, "permissions": ("board.view", "audit.view", "quality.view")},
     {"slug": "platform_support", "kind": "role", "name": "Üretici Destek",
      "description": "Üretici tarafı destek: denetim kaydı ve cihaz uç noktaları.",
      "mfa_required": True, "is_system": False, "permissions": ("audit.view", "devices.manage")},

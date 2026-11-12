@@ -90,8 +90,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   "admissions.view": "Read admissions and patient records",
   "admissions.admit": "Create an admission",
   "admissions.sign_off": "Physician sign-off of an admission",
-  "admissions.move.initiate": "Initiate a transfer or discharge",
-  "admissions.transfer.confirm": "Confirm a transfer arrival",
+  "admissions.move.initiate": "Transfer a patient to another bed, or start a discharge",
+  "admissions.transfer.confirm": "Transfer a patient to another bed",
   "admissions.discharge.confirm": "Confirm a discharge; release the bed",
   "care_team.claim": "Claim a care-team role on a patient",
   "care_team.assign": "Assign others to a patient's care team",
@@ -121,6 +121,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   "summary.view": "Open the Yönetici özeti page and read each unit's handovers waiting for a countersignature (GET /handovers/pending), as counts and times only",
   // G3-04
   "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the antibiotic clock, creatinine and the day's fluid balance; read-only",
+  // G4-03
+  "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators (GET /quality), as counts and times only",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 

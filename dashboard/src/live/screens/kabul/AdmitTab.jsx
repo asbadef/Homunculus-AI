@@ -22,7 +22,7 @@
 //   * the bed is taken, or its state could not be read — the admissions are read, a DRAFT or one a
 //     physician has signed since (ACTIVE, M-1): one on that bed under the name she sent is the
 //     send that landed, and its number box is shown; none, and "Kabul et" is held, with the bed
-//     and the list to look in ("Evə yazılma › Yatan xəstələr"), until she says she has looked.
+//     and the list to look in ("Köçürmə / Evə yazılma › Yatan xəstələr"), until she says she has looked.
 //     The hold says only that the outcome is not known.
 // Every send that got no answer is remembered until its admission is found (A-19):
 //   * before EVERY later send its admission is looked for — also after «go on», which only marks the
@@ -63,7 +63,7 @@ import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
-import { admissible, indexStructure, normId } from "../../data/structure.js";
+import { admissible, bedLabel, indexStructure, normId } from "../../data/structure.js";
 import { Announce, Box, Button, Field, Icon, Input, Note, Select, Tag, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { doneFor, mayHaveLanded, reasonOf, refusedFor } from "../admin/refusal.js";
@@ -82,7 +82,7 @@ const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** Where an admission that may have landed is looked for: "Evə yazılma › Yatan xəstələr". */
+/** Where an admission that may have landed is looked for: "Köçürmə / Evə yazılma › Yatan xəstələr". */
 const whereOf = (t) => `${t("kabul.tabDischarge")} › ${t("kabul.lyingTitle")}`;
 
 /** Two sends for the same bed under the same name — a retry of one send, under its own request id (A-24 I-1). */
@@ -90,6 +90,18 @@ const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.nam
 
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
+
+/** The bed an admit answer is named after: the form's — or, when the answer names another bed, the
+ *  bed she lies in now, by the structure's name ("" when it does not hold it), never the bed she
+ *  left. G2-B1b, final review I-1: the same form sent again after a physician signed it and the
+ *  patient was moved is answered with her stay where it is now (the server's `_stay_now`). An
+ *  answer still TRANSFERRED (re-read R-1: the stay was moved out of the nurse's units, and the
+ *  server answers the form's own row, on the bed she left) names no bed at all. */
+function answeredBed(answer, sent, index) {
+  if (answer?.state === "TRANSFERRED") return "";
+  if (!answer?.bed_id || normId(answer.bed_id) === normId(sent.bedId)) return sent.bed;
+  return bedLabel(index, answer.bed_id) ?? "";
+}
 
 /** Is the focus where a press or a return leaves it — <body> (where it falls when the control that
  *  held it goes), «Qəbul et» (`submit`), or a tab of the tab list? News — a hold, the number box —
@@ -131,13 +143,18 @@ function Choice({ id, name, legend, options, value, onChange, error }) {
  *  `done.earlier` (a name): the admission is an EARLIER send's, of another patient than the form's
  *  — the box says so, and its button goes back to the form, which is kept. Whose number it is
  *  comes BEFORE the number (M-c): the heading says another patient's, and the note under it names
- *  her and her bed, so the number cannot be read as the form's — it is entered on a device. */
+ *  her and her bed, so the number cannot be read as the form's — it is entered on a device.
+ *  `done.movedOut`: the answer is the form's own row, still TRANSFERRED (re-read R-1) — the stay
+ *  was moved out of her units, and the device beside her is at an empty bed now. The number stays
+ *  (the stay's protocol, right for the record), but the box says so instead of telling her to
+ *  enter it on a device, and links no card outside her units (re-read minor 2). */
 function NumberBox({ done, onNext, headingRef }) {
   const { t } = useI18n();
   const failed = PARTS.filter((part) => done.engine?.[part] === "failed");
   const whose = done.earlier ? t("kabul.earlierSend", { name: done.earlier, bed: done.bed }) : null;
   const protocol = Boolean(done.protocolNo);
   const notes = [
+    ...(done.movedOut ? [t("kabul.movedOut")] : []),
     ...(done.recovered ? [t("kabul.recordedNoAnswer")] : []),
     ...failed.map((part) => t(ENGINE_FAILED[part])),
   ];
@@ -149,18 +166,20 @@ function NumberBox({ done, onNext, headingRef }) {
         {whose ? t("kabul.earlierTitle") : t("kabul.doneTitle")}
       </h2>
       {whose ? <Note tone="warn" icon="alert" className="mb-2">{whose}</Note> : null}
-      <p className="m-0 text-13 text-mute">{t("kabul.doneBed", { bed: done.bed })}</p>
+      {/* A bed the screen cannot name is not named (I-1): never the form's, which she may have left. */}
+      {done.bed ? <p className="m-0 text-13 text-mute">{t("kabul.doneBed", { bed: done.bed })}</p> : null}
       {/* G2-B1d: the number is the card's — the protocol of an admission made since 0015 (D7), the
           one the nurse enters or scans; an answer without one keeps B1a's H-number and words. */}
       {protocol ? <p className="m-0 mt-2 text-12 font-semibold uppercase tracking-[.08em] text-mute">{t("protokol.protocolNo")}</p> : null}
       <p className="m-0 my-2 font-data text-34 font-bold tracking-[.06em] text-ink">{done.number}</p>
-      <p className="m-0 text-14 font-semibold">{t(protocol ? "protokol.enterOrScan" : "kabul.enterOnDevice")}</p>
+      {/* Not for a stay moved out of her units: the device at this bed is not the patient's (re-read minor 2). */}
+      {done.movedOut ? null : <p className="m-0 text-14 font-semibold">{t(protocol ? "protokol.enterOrScan" : "kabul.enterOnDevice")}</p>}
       {notes.map((text) => (
         <Note key={text} tone="warn" icon="alert" className="mt-2">{text}</Note>
       ))}
       <div className="mt-3 flex flex-wrap gap-2">
-        {/* A card that did not reach the board is not there to be seen. */}
-        {done.engine?.board === "failed" ? null : (
+        {/* A card that did not reach the board is not there to be seen; one outside her units is not hers to open. */}
+        {done.engine?.board === "failed" || done.movedOut ? null : (
           <a href={`#/patients/${encodeURIComponent(done.number)}`}
             className={`inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri ${FOCUS_RING}`}>
             {t("kabul.seeOnBoard")}
@@ -372,8 +391,11 @@ export function AdmitTab() {
       // the same patient typed again after «Yeni qəbul» would go out to another bed as a second one.
       const carriers = draft.get().unanswered.filter((x) => x.requestId === sent.requestId);
       // The admission is one of those sends': named after its bed when they share one — never the
-      // form's own bed by default, which may not be it.
-      const earlier = new Set(carriers.map((x) => normId(x.bedId))).size === 1 ? carriers[0].bed : null;
+      // form's own bed by default, which may not be it. When the server names the bed it lies on
+      // now (`bedId`, in her units; G2-B1b re-read R-2) that bed is named — after a move it is not
+      // the bed the send went to — or no bed, when the structure does not hold it.
+      const earlier = typeof err.bedId === "string" ? bedLabel(index, err.bedId)
+        : new Set(carriers.map((x) => normId(x.bedId))).size === 1 ? carriers[0].bed : null;
       draft.update((s) => ({
         unanswered: s.unanswered.map((x) => (x.requestId === sent.requestId ? { ...x, checked: false } : x)),
         held: { bed: earlier, conflict: apiErrorKey(err) },
@@ -470,8 +492,14 @@ export function AdmitTab() {
       }
       const answer = await store.track(() => store.api.admit(body));
       if (!draft.live) return;
-      admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null, admissionId: answer.id ?? null,
-        bed: sent.bed, engine: answer.engine }, sent.name);
+      // `admissionId` is what the label prints from (re-read R-7): a TRANSFERRED answer has none to
+      // print — its protocol moved with the stay (O8), which lies outside her units (R-1). The box
+      // says the stay moved out (`movedOut`, re-read minor 2) rather than tell her to enter its number
+      // on the device at that bed.
+      const movedOut = answer.state === "TRANSFERRED";
+      admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null,
+        admissionId: movedOut ? null : answer.id ?? null, movedOut,
+        bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
       if (draft.live) await failed(err, sent);

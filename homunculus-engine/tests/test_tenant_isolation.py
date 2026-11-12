@@ -259,14 +259,10 @@ BY_ID: dict[str, ById] = {
         "POST", lambda s: f"/admissions/{s.admission}/care-team/{s.team_row}/end", control=409),
     # G2-B1c (D8): the picker's candidates; the caller's own admission is read (200).
     "care-team candidates": ById("GET", lambda s: f"/admissions/{s.admission}/care-team/candidates"),
-    # A-37: the transfer routes are closed — the caller's own admission gets past the tenant
-    # check to the 409 `transfer_unavailable`.
-    "transfer initiate": ById(
-        "POST", lambda s: f"/admissions/{s.admission}/transfer/initiate",
-        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
-    "transfer confirm": ById(
-        "POST", lambda s: f"/admissions/{s.admission}/transfer/confirm",
-        lambda a: {"target_bed_id": a.free_bed, "target_unit_id": a.unit}, 409),
+    # G2-B1b: one step — the caller's own admission and free bed move the patient (201).
+    "transfer": ById(
+        "POST", lambda s: f"/admissions/{s.admission}/transfer",
+        lambda a: {"target_bed_id": a.free_bed, "reason": "CLINICAL_NEED"}, 201),
     "discharge initiate": ById(
         "POST", lambda s: f"/admissions/{s.admission}/discharge/initiate",
         lambda a: {"disposition": "HOME", "note": "Sentetik taburcu notu"}),
@@ -358,16 +354,10 @@ IN_BODY: dict[str, InBody] = {
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(x.unit, a.free_bed), 201),
     "admit into another tenant's bed": InBody(
         "POST", lambda a: "/admissions", lambda a, x: _admission_body(a.unit, x.free_bed), 201),
-    # A-37: closed — the caller's own ids get past the tenant check to `transfer_unavailable`.
+    # G2-B1b: the body names a bed only (spec T2); another tenant's is the 404 a missing one is.
     "transfer to another tenant's bed": InBody(
-        "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
-    "transfer to another tenant's unit": InBody(
-        "POST", lambda a: f"/admissions/{a.admission}/transfer/initiate",
-        lambda a, x: {"target_bed_id": a.free_bed, "target_unit_id": x.unit}, 409),
-    "transfer confirmed into another tenant's bed": InBody(
-        "POST", lambda a: f"/admissions/{a.admission}/transfer/confirm",
-        lambda a, x: {"target_bed_id": x.free_bed, "target_unit_id": a.unit}, 409),
+        "POST", lambda a: f"/admissions/{a.admission}/transfer",
+        lambda a, x: {"target_bed_id": x.free_bed, "reason": "CLINICAL_NEED"}, 201),
     "alert for another tenant's patient": InBody(
         "POST", lambda a: "/alerts",
         lambda a, x: {"patient_id": x.patient, "kind": "manual", "tier": "HIGH"}, 201),
@@ -502,21 +492,26 @@ async def test_another_tenants_care_team_row_under_the_callers_admission_is_a_40
 
 
 # ---------------------------------------------------------------- the risky success paths
+async def _side_rows(db: AsyncSession, side: Side) -> tuple:
+    """One hospital's admissions and its two beds, as committed."""
+    admissions = sorted(repr(tuple(row)) for row in (await db.execute(
+        select(Admission.__table__).where(Admission.tenant_id == side.tenant))).all())
+    beds = sorted(repr(tuple(row)) for row in (await db.execute(
+        select(Bed.__table__).where(Bed.id.in_([side.bed, side.free_bed])))).all())
+    return admissions, beds
+
+
 @requires_db
-async def test_a_pending_transfer_is_not_confirmed_even_into_the_callers_own_bed(world):
-    """A-37: the transfer routes are closed. A transfer pending from before (written here by the
-    service) is refused `transfer_unavailable` after the tenant checks, and nothing is written."""
-    admission = await world.db.get(Admission, world.a.admission)
-    await adm_service.initiate_transfer(world.db, admission, target_bed_id=world.a.free_bed,
-                                        target_unit_id=world.a.unit)
-    await world.db.commit()
-    before = await _snapshot(world.db)
-
-    r = await _call(world, "POST", f"/admissions/{world.a.admission}/transfer/confirm",
-                    {"target_bed_id": world.a.free_bed, "target_unit_id": world.a.unit})
-
-    assert (r.status_code, r.json()["detail"]["code"]) == (409, "transfer_unavailable"), r.text
-    assert await _snapshot(world.db) == before
+async def test_a_transfer_moves_the_callers_own_patient_and_touches_no_other_tenant(world):
+    """G2-B1b (spec §5.2 step 1, D6): the caller's own admission moves to her own free bed — the
+    arriving admission is her tenant's — and B's admission and beds are as they were."""
+    b_before = await _side_rows(world.db, world.b)
+    r = await _call(world, "POST", f"/admissions/{world.a.admission}/transfer",
+                    {"target_bed_id": world.a.free_bed, "reason": "CLINICAL_NEED"})
+    assert r.status_code == 201, r.text
+    assert (r.json()["tenant_id"], r.json()["bed_id"], r.json()["source_admission_id"]) == (
+        str(world.a.tenant), str(world.a.free_bed), str(world.a.admission))
+    assert await _side_rows(world.db, world.b) == b_before
 
 
 @requires_db

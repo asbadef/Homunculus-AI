@@ -47,6 +47,10 @@ export const PERMISSION_KEYS = freeze([
 
   // G3-04 — Eczane (spec D2): the pharmacist's ward page and GET /pharmacy; the pharmacist and the physician groups
   "pharmacy.view",
+
+  // G4-03 — Kalite göstergeleri (spec D2, D3): the page and GET /quality; the default auditor group holds it (migration
+  // 0020), the system one by rule
+  "quality.view",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

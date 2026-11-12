@@ -25,8 +25,8 @@ export default {
       view: "Kabul ve hasta kayıtlarını okur",
       admit: "Kabul kaydı açar",
       sign_off: "Kabulü hekim olarak onaylar",
-      move: { initiate: "Transfer ya da taburcu başlatır" },
-      transfer: { confirm: "Transferle gelişi onaylar" },
+      move: { initiate: "Nakil yapar ya da taburcu başlatır" },
+      transfer: { confirm: "Hastayı başka yatağa nakleder" },
       discharge: { confirm: "Taburcuyu onaylar; yatağı boşaltır" },
     },
     care_team: {
@@ -57,6 +57,8 @@ export default {
     summary: { view: "Yönetici özetini görür" },
     // G3-04 — Eczane
     pharmacy: { view: "“Eczane” sayfasını açar: kendi birimlerindeki hastaların vazopresörlerini, antibiyotik süresini, kreatininini ve günün sıvı dengesini salt okunur görür" },
+    // G4-03 — Kalite göstergeleri
+    quality: { view: "Kalite göstergelerini görür" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -68,8 +70,8 @@ export default {
       view: "Qəbul və xəstə qeydlərini oxuyur",
       admit: "Qəbul qeydi açır",
       sign_off: "Qəbulu həkim kimi təsdiqləyir",
-      move: { initiate: "Köçürmə və ya evə yazılma başladır" },
-      transfer: { confirm: "Köçürmə ilə gəlişi təsdiqləyir" },
+      move: { initiate: "Xəstəni köçürür və ya evə yazılmanı başladır" },
+      transfer: { confirm: "Xəstəni başqa çarpayıya köçürür" },
       discharge: { confirm: "Evə yazılmanı təsdiqləyir; çarpayını boşaldır" },
     },
     care_team: {
@@ -100,6 +102,8 @@ export default {
     summary: { view: "Rəhbər xülasəsini görür" },
     // G3-04 — Eczane
     pharmacy: { view: "“Aptek” səhifəsini açır: öz şöbələrindəki xəstələrin vazopressorlarını, antibiotik müddətini, kreatininini və günün maye balansını yalnız oxumaq üçün görür" },
+    // G4-03 — Kalite göstergeleri
+    quality: { view: "Keyfiyyət göstəricilərini görür" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -111,8 +115,8 @@ export default {
       view: "Читает госпитализации и записи пациентов",
       admit: "Создаёт госпитализацию",
       sign_off: "Подписывает госпитализацию как врач",
-      move: { initiate: "Начинает перевод или выписку" },
-      transfer: { confirm: "Подтверждает прибытие по переводу" },
+      move: { initiate: "Переводит пациента или начинает выписку" },
+      transfer: { confirm: "Переводит пациента на другую койку" },
       discharge: { confirm: "Подтверждает выписку; освобождает койку" },
     },
     care_team: {
@@ -143,6 +147,8 @@ export default {
     summary: { view: "Видит сводку для руководства" },
     // G3-04 — Eczane
     pharmacy: { view: "Открывает страницу «Аптека»: видит вазопрессоры, срок для антибиотика, креатинин и суточный баланс жидкости пациентов своих отделений — только чтение" },
+    // G4-03 — Kalite göstergeleri
+    quality: { view: "Видит показатели качества" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -154,8 +160,8 @@ export default {
       view: "Read admissions and patient records",
       admit: "Create an admission",
       sign_off: "Sign off an admission as a physician",
-      move: { initiate: "Initiate a transfer or a discharge" },
-      transfer: { confirm: "Confirm a transfer arrival" },
+      move: { initiate: "Transfer a patient to another bed, or start a discharge" },
+      transfer: { confirm: "Transfer a patient to another bed" },
       discharge: { confirm: "Confirm a discharge and release the bed" },
     },
     care_team: {
@@ -186,5 +192,7 @@ export default {
     summary: { view: "See the management summary" },
     // G3-04 — Eczane
     pharmacy: { view: "Open the “Pharmacy” page: see the vasopressors, the antibiotic window, creatinine and the day's fluid balance of the patients in one's own units, read-only" },
+    // G4-03 — Kalite göstergeleri
+    quality: { view: "See the quality indicators" },
   },
 };

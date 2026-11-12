@@ -19,13 +19,9 @@ import {
   structureSource, summarise,
 } from "./ozet.js";
 import { useQuality, useSummaryReads } from "./useSummaryReads.js";
+// G4-03: the period's names, the «—» with its reason and a duration's words, shared with «Kalite göstergeleri».
+import { Missing, PERIOD_KEYS as PERIOD, durationText } from "./words.jsx";
 
-/** Each period's switch label and the phrase the card and the box name it by. */
-const PERIOD = Object.freeze({
-  1: { label: "ozet.period.d1", text: "ozet.period.text1" },
-  7: { label: "ozet.period.d7", text: "ozet.period.text7" },
-  30: { label: "ozet.period.d30", text: "ozet.period.text30" },
-});
 const OCCUPANCY_EXTRAS = Object.freeze([
   ["reserved", "doluluk.counts.reserved"], ["outOfService", "doluluk.counts.outOfService"],
   ["maintenance", "doluluk.counts.maintenance"],
@@ -33,17 +29,6 @@ const OCCUPANCY_EXTRAS = Object.freeze([
 
 const ageText = (t, age) => (age ? t(`ozet.age.${age.unit}`, { n: age.n }) : null);
 const forText = (t, minutes) => (minutes === 0 ? t("ozet.for.underMinute") : t("ozet.for.minutes", { n: minutes }));
-const durationText = (t, d) => (d.m === null ? t("ozet.q.sec", { n: d.s }) : t("ozet.q.minSec", { m: d.m, s: d.s }));
-
-/** «—» and why: what every number that is not real is, on a card, in a cell or in the box. */
-function Missing({ t, why, big = false }) {
-  return (
-    <span data-missing={why}>
-      <span className={big ? "font-data text-23 font-bold" : "font-data font-bold"}>—</span>{" "}
-      <span className="text-12 font-normal text-mute">{t(`ozet.why.${why}`)}</span>
-    </span>
-  );
-}
 
 /** `caveat`: a short line saying the number is not the whole of what the card names — a truncated read, or a scoped
  *  caller's counts (only what her reach was sent, not the hospital's). Shown only under a number. */

@@ -58,3 +58,14 @@ def test_only_an_open_row_changes():
     assert store.get("h1", saved.id) == closed
     with pytest.raises(KeyError):
         store.update(_row())                                           # a row the store never had
+
+
+def test_the_stores_walk_back_and_the_transfers_walk_forward_share_one_bound():
+    """G2-B1b (X18; re-read R-5): `PostgresTaskStore.admitted_at` and `transfer.stay_began` follow
+    `source_admission_id` back, and `transfer.where_now` forward, at most `MOST_MOVES` steps — one
+    number, kept by the api's store (which imports nothing of the admission routes) and imported by
+    admission/transfer.py. No second copy that could drift."""
+    from homunculus.admission import transfer
+    from homunculus.api import tasks_postgres
+    assert transfer.MOST_MOVES == tasks_postgres.MOST_MOVES == 64
+    assert "_MOST_MOVES" not in vars(transfer) and "_MOST_MOVES" not in vars(tasks_postgres)

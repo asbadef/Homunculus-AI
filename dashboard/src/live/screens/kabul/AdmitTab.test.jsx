@@ -49,10 +49,11 @@ const WEIGHT_FAILED = "Çəki mühərrikə çatmadı — qəbul yazılıb; siste
 const PROFILE_FAILED = "Müşayiət edən xəstəliklər mühərrikə çatmadı — qəbul yazılıb; sistem administratoruna bildirin.";
 const BOARD_FAILED = "Kart paneldə görünmürsə, sistem administratoruna bildirin — qəbul yazılıb.";
 const RECORDED = "Serverin cavabı gəlmədi, amma qəbul yazılıb. Kartın panelə, çəki və müşayiət edən xəstəliklərin mühərrikə çatıb-çatmadığı bilinmir; kart paneldə görünmürsə, sistem administratoruna bildirin.";
-const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
+const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-yazılmadığı bilinmir. Yenidən göndərməzdən əvvəl «Köçürmə / Evə yazılma › Yatan xəstələr» siyahısına baxın.`;
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
 const EARLIER = `Bu nömrə formadakı xəstəyə aid deyil: Sentetik Hasta (${BED1}) üçün əvvəl göndərilən, cavabı gəlməyən qəbul yazılıb. Formadakı qəbul hələ göndərilməyib.`;
 const EARLIER_TITLE = "Başqa xəstənin qəbulu yazılıb";
+const MOVED_OUT = "Xəstə sizin bölmələrinizdən kənara köçürülüb. Bu nömrəni bu çarpayının cihazına daxil etməyin.";
 const EARLIER_TOAST = `${BED1} · əvvəl göndərilən qəbul yazılıb, xəstə nömrəsi H2600042 — formadakı xəstənin deyil`;
 const BACK = "Formaya qayıt";
 const TAKEN = `${BED1}: Bu çarpayı artıq boş deyil; başqa çarpayı seçin.`;
@@ -640,7 +641,7 @@ describe("AdmitTab", () => {
   describe("the request id (A-19)", () => {
     const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
     const CONFLICT = "Bu forma ilə artıq qəbul yazılıb (xəstə nömrəsi H2600042); forma yenidən göndərilmədi. "
-      + "«Evə yazılma › Yatan xəstələr» siyahısına baxın.";
+      + "«Köçürmə / Evə yazılma › Yatan xəstələr» siyahısına baxın.";
     const conflict = () => refusal(409, "This request id came before with another admission form.",
       { apiCode: "request_conflict", patientNumber: "H2600042" });
 
@@ -745,6 +746,30 @@ describe("AdmitTab", () => {
       expect(toasts().queryByText(`${BED1}: ${CONFLICT}`)).toBeNull();
       expect(admitDraftOf(store).get().held).toMatchObject({ conflict: { key: "kabul.err.requestConflictNumber" } });
     });
+
+    // G2-B1b re-read R-2: the server names the bed the earlier admission lies on now (`bed_id`, in
+    // her units). After a move it is not the bed the send went to: the toast names where she lies,
+    // or no bed when the structure does not hold it — never the bed she left.
+    it.each([
+      ["the bed she lies in now", BED(5), "5 · Otaq 2 · Reanimasiya"],
+      ["no bed when the structure does not hold it", BED(42), null],
+    ])("names %s on a request_conflict after a move (R-2)", async (_case, bedId, named) => {
+      const moved = () => refusal(409, "This request id came before with another admission form.",
+        { apiCode: "request_conflict", patientNumber: "H2600042", bedId });
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockRejectedValueOnce(moved()),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      fireEvent.change(screen.getByLabelText(/^Qəbul diaqnozu/), { target: { value: "Sentetik tanı, düzəldilmiş" } });
+      await press();                                                         // landed, signed and moved since
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(toasts().queryByText(`${BED1}: ${CONFLICT}`)).toBeNull();
+      expect(toasts().getAllByText(named ? `${named}: ${CONFLICT}` : CONFLICT).length).toBeGreaterThan(0);
+      expect(panel().getByText(CONFLICT)).toBeTruthy();
+      expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    });
   });
 
   // A-37: the server refuses a second OPEN admission of the same person — her name and birth date,
@@ -835,14 +860,14 @@ describe("AdmitTab", () => {
       });
       fillRequired();
       await act(async () => { fireEvent.click(admitButton()); });           // on its way
-      await openTab("Evə yazılma");                                          // where the hold's text sends her
+      await openTab("Köçürmə / Evə yazılma");                                          // where the hold's text sends her
       await openTab("Qəbul");                                                // back while it is still on its way
       expect(nameField().value).toBe("Sentetik Hasta");
       expect(admitButton().getAttribute("aria-busy")).toBe("true");
       await press();
       expect(api.admit).toHaveBeenCalledTimes(1);                            // a press meanwhile sends nothing
 
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await act(async () => { answer(admitted()); });                        // the answer lands with the tab closed
       await settle();
       await openTab("Qəbul");
@@ -857,7 +882,7 @@ describe("AdmitTab", () => {
       fillRequired();
       await press();                                                         // no answer; bed 1 still free: no hold
       expect(panel().queryByText(HELD)).toBeNull();
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await openTab("Qəbul");
       expect(nameField().value).toBe("Sentetik Hasta");                      // the form is where she left it
       expect(screen.getByText(`Seçilən: ${BED1}`)).toBeTruthy();
@@ -881,7 +906,7 @@ describe("AdmitTab", () => {
       api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });           // looking for the first send
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       const tab = screen.getByRole("tab", { name: "Qəbul" });
       tab.focus();                                                           // by the keyboard, onto the tab
       await act(async () => { fireEvent.click(tab); });                      // another instance of the tab
@@ -940,7 +965,7 @@ describe("AdmitTab", () => {
       api.admissions.mockImplementation((states) => (!states.includes("PENDING_DISCHARGE")
         ? new Promise((resolve) => { looked = resolve; }) : Promise.resolve([])));
       await act(async () => { fireEvent.click(admitButton()); });
-      await openTab("Evə yazılma");
+      await openTab("Köçürmə / Evə yazılma");
       await act(async () => { looked([]); });                                // held while no Qəbul tab is mounted
       await settle();
       expect(toasts().getAllByText(HELD).length).toBeGreaterThan(0);
@@ -1026,8 +1051,8 @@ describe("AdmitTab", () => {
       fillRequired();
       await press();
       expect(document.activeElement).toBe(doneHeading());                   // news: the box takes the focus
-      await openTab("Evə yazılma");
-      const away = screen.getByRole("tab", { name: "Evə yazılma" });
+      await openTab("Köçürmə / Evə yazılma");
+      const away = screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" });
       away.focus();
       await act(async () => { fireEvent.keyDown(away, { key: "ArrowLeft" }); });
       await settle();
@@ -1120,6 +1145,100 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     } finally {
       open.mockRestore();
     }
+  });
+
+  // G2-B1b, final review I-1: a form sent again after a physician signed and the patient was moved
+  // is answered with her stay where it is now — the arriving row, on another bed than the form's.
+  const BED5 = "5 · Otaq 2 · Reanimasiya";
+  const movedSince = (bedId) => withProtocol({ id: "a-8", state: "ACTIVE", bed_id: bedId, source_admission_id: "a-1" });
+
+  it("names the bed she lies in now when the answer's bed is not the form's — never the bed she left (I-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(movedSince(BED(5))) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.getByText(`Çarpayı: ${BED5}`)).toBeTruthy();
+    expect(screen.queryByText(`Çarpayı: ${BED1}`)).toBeNull();
+    expect(toasts().getAllByText(`${BED5} · qəbul edildi, protokol nömrəsi 202600000001`).length).toBeGreaterThan(0);
+    expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
+  });
+
+  it("names no bed at all when the answer's bed is not the form's and the beds do not hold it (I-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(movedSince(BED(42))) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText(/^Çarpayı:/)).toBeNull();
+    expect(toasts().getAllByText("qəbul edildi, protokol nömrəsi 202600000001").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain(BED1);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
+  // Re-read R-1: a stay moved out of the nurse's units is answered with the form's own row, still
+  // TRANSFERRED on the form's bed, and the stay's protocol. That bed is the one she left: not named.
+  const transferredHere = () => withProtocol({ id: "a-1", state: "TRANSFERRED", bed_id: BED(1) });
+
+  it("names no bed for an answer still TRANSFERRED — the stay moved out of the nurse's units (R-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText(/^Çarpayı:/)).toBeNull();
+    expect(toasts().getAllByText("qəbul edildi, protokol nömrəsi 202600000001").length).toBeGreaterThan(0);
+    expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
+  });
+
+  // Re-read R-7: the label is the open admission's; a TRANSFERRED row has none to print — the move
+  // cleared its protocol (O8), so the label route answers 409 no_protocol for it (the row is on her
+  // bed, reach passes) — no «Etiketi çap et» for that answer.
+  it("offers no label for an answer still TRANSFERRED (R-7)", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Etiketi çap et" })).toBeNull();
+    expect(api.admissionLabel).not.toHaveBeenCalled();
+  });
+
+  // Re-read minor 2: the stay is out of her units and the device beside her is at an empty bed in
+  // cleaning — entering the number there would tie that device's readings to the patient. The box
+  // says so: no device instruction, no link to a card outside her units; the number stays (the
+  // stay's protocol, still right for the record) and so does the heading.
+  const ENTER_OR_SCAN = "Bu nömrəni cihaza daxil edin və ya barkodu oxudun";
+  const ENTER_ON_DEVICE = "Çarpayı yanındakı cihaza bu nömrəni daxil edin.";
+
+  it("says the stay moved out of her units — no device instruction, no board link — for an answer still TRANSFERRED (re-read minor 2)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByRole("heading", { level: 2, name: "Qəbul edildi" })).toBeTruthy();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.getByText(MOVED_OUT).closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(screen.queryByText(ENTER_OR_SCAN)).toBeNull();
+    expect(screen.queryByText(ENTER_ON_DEVICE)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Paneldə bax" })).toBeNull();
+    expect(await said()).toContain(MOVED_OUT);
+  });
+
+  it("says it too for a TRANSFERRED answer without a protocol: the H-number stays, B1a's device line does not (re-read minor 2)", async () => {
+    const answer = { ...transferredHere(), protocol_no: null, board_key: null };
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(answer) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("H2600042")).toBeTruthy();
+    expect(screen.getByText(MOVED_OUT)).toBeTruthy();
+    expect(screen.queryByText(ENTER_OR_SCAN)).toBeNull();
+    expect(screen.queryByText(ENTER_ON_DEVICE)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Paneldə bax" })).toBeNull();
+  });
+
+  it("an answer in her reach (ACTIVE) keeps the device instruction and the board link, and says nothing of a move (re-read minor 2)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(withProtocol({ state: "ACTIVE" })) });
+    fillRequired();
+    await press();
+    expect(screen.getByText(ENTER_OR_SCAN)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
+    expect(screen.queryByText(MOVED_OUT)).toBeNull();
   });
 
   it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {
@@ -1350,7 +1469,7 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     fillRequired();
     api.structure.mockResolvedValue(RESERVED_1());                           // reserved meanwhile
     await act(async () => { fireEvent.click(admitButton()); });              // on its way
-    await openTab("Evə yazılma");
+    await openTab("Köçürmə / Evə yazılma");
     await act(async () => { answer(reservedRefusal()); });
     await settle();
     const told = toasts().getAllByText(`${BED1}: Bu çarpayı rezerv edilib: qəbul üçün rezervi təsdiqləyin.`);

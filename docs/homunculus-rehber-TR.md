@@ -353,8 +353,8 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 28 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
-  `pharmacy.view`, «Eczane», §3.23).
+- *Homunculus'ta:* 29 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
+  `quality.view`, «Kalite göstergeleri», §3.25).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -1166,8 +1166,9 @@ ekranı, bkz. 3.14):
   alanlar" paneli eksik her zorunlu alanı adıyla söyler; panel boşalmadan kabul gönderilmez.
   Form yarıda bırakılıp başka bir sekmeye ya da ekrana geçilse de kaybolmaz; onu "Yeni kabul" ya
   da oturumun kapanması temizler.
-- **Taburcu:** iki liste — "Taburcusu başlatılan" (sorumlu hemşirenin onayını bekleyenler) ve
-  "Yatan hastalar".
+- **Nakil / Taburcu** (B1b'den önce yalnız «Taburcu»): iki liste — "Taburcusu başlatılan"
+  (sorumlu hemşirenin onayını bekleyenler) ve "Yatan hastalar". İmzalı her yatan hastanın satırında
+  «Nakil» ve «Taburcuyu başlat» düğmeleri durur (3.20).
 
 **Kim ne yapar** (hastanenin varsayılan grupları; gruplar Yönetim › Roller ve yetkiler'de
 değiştirilebilir):
@@ -1177,6 +1178,7 @@ değiştirilebilir):
 | Kabul et | Hemşire, Sorumlu Hemşire | `admissions.admit` |
 | Kabulü imzala (hasta ekranından; hekim adı geçmeyen taslağı yalnız bir hekim imzalar, 3.19) | Sorumlu Hekim, Ünite Hekimi | `admissions.sign_off` |
 | Taburcuyu başlat | Sorumlu Hekim, Ünite Hekimi | `admissions.move.initiate` |
+| Nakil et (3.20) | Sorumlu Hekim, Ünite Hekimi; Hemşire, Sorumlu Hemşire | `admissions.move.initiate` ya da `admissions.transfer.confirm` |
 | Hasta çıktı · onayla | Sorumlu Hemşire | `admissions.discharge.confirm` |
 | Temizlik bitti · boş | Hemşire, Sorumlu Hemşire | `beds.release` |
 | Yönetim › Yapı | Sistem Yöneticisi | `structure.manage` |
@@ -1213,12 +1215,15 @@ görünür. İmza yetkisi olan hekim şeritten "Kabulü imzala" der ve kabulün 
 İmzalanmamış kabul taburcu edilemez; Taburcu listesinde "Önce kabul imzalanmalı (hasta ekranı)"
 yazar. Sunucunun yanıtı gelmezse ekran kabulün kaydedilip kaydedilmediğini bilmediğini söyler ve
 yeniden göndermeden önce listeye bakmanızı ister; aynı form yeniden gönderilse de sunucu ikinci
-bir hasta ya da numara açmaz.
+bir hasta ya da numara açmaz. Hasta bu arada imzalanıp başka yatağa nakledildiyse (3.20), yeniden
+gönderilen form hastanın şimdi yattığı yatağı ve protokol numarasını söyler; o yatak sizin
+birimlerinizin dışındaysa yalnız protokol numarası söylenir, yatak söylenmez.
 
 **Taburcu iki adımdır** (D7):
 1. **Hekim başlatır:** "Taburcuyu başlat" der ve çıkış şeklini seçer — Eve taburcu, Başka kuruma
    sevk (kurumun adıyla) ya da Vefat (exitus; bildiren hekim, boş bırakılırsa kendisi) — çıkış
-   zamanı (gelecekte ya da kabulden önce olamaz) ve not. Hasta "Taburcusu başlatılan" listesine
+   zamanı (gelecekte ya da yatışın ilk kabulünden önce olamaz; nakledilmiş hastada sınır nakil anı
+   değil, ilk kabul saatidir, 3.20) ve not. Hasta "Taburcusu başlatılan" listesine
    geçer, yatak "Taburcu bekliyor" olur.
 2. **Sorumlu hemşire onaylar:** hasta servisten çıkınca "Hasta çıktı · onayla". Bu geri alınamaz:
    kart bütün ekranlardan kalkar, yatak temizliğe alınır.
@@ -1242,8 +1247,9 @@ sorumlu hemşire «Doluluk» ekranında "Temizlik bitti · boş" der (B3a'dan ö
 dönebilsin diye (D8). Yatak, son hastasının kartı panodan kalkmadan boşalmaz: sunucu kartı bir kez
 daha kaldırmayı dener, olmazsa "Bu yatağın son hastasının kartı hâlâ panoda; yatak boşaltılmadı"
 der. Neden: eski kart dururken yatağa yeni hasta yatırılırsa aynı yatakta iki kart olur ve monitör
-hangisine bağlanacağını bilemez. Taburcu onayında kart panodan kaldırılamadıysa Taburcu sekmesi
-"Panodan yeniden kaldır" düğmesini gösterir.
+hangisine bağlanacağını bilemez. Taburcu onayında kart panodan kaldırılamadıysa «Nakil / Taburcu»
+sekmesi "Panodan yeniden kaldır" düğmesini gösterir. Aynı kural, yataktan başka yatağa nakledilmiş
+bir hastanın kartı için de geçerlidir (3.20).
 
 **Yönetim › Yapı:** sistem yöneticisi koğuşu kurar: bina → birim (türüyle: Erişkin YBÜ, Yenidoğan
 YBÜ…) → oda (numarası ve izolasyon isteğe bağlı) → yatak (etiketiyle). Adını değiştirir, kapatır,
@@ -1271,24 +1277,24 @@ Karşılaştırmada büyük/küçük harf, aksan ve fazla boşluk fark etmez (İ
 ayrışmaz: "Məmmədov" ile "Memmedov" iki ayrı addır. Neden: bir sayfa yenilemesi, ikinci bir sekme
 ya da yeniden giriş aynı hastayı iki yatağa yatıramasın.
 
-**Transfer henüz yok:** hastayı başka bir yatağa ya da birime taşımak bu dilimde yapılamaz;
-transfer kapalıdır ("Transfer henüz kullanılamıyor."). Eski transfer yolu kartı eski yatakta
-bırakıyordu (aynı yatakta iki kart, bozulan monitör bağlantısı) ve bir birimin hekimi başka bir
-birimin hastasını kendi birimine taşıyabiliyordu; bu yüzden kullanıcı kararıyla kapatıldı.
-Transfer kendi diliminde (B1b), birim denetimleri ve ekranıyla gelecek.
+**Nakil:** B1a'da kapalıydı. Eski iki adımlı transfer yolu kartı eski yatakta bırakıyordu (aynı
+yatakta iki kart, bozulan monitör bağlantısı), ve bir birimin hekimi başka bir birimin hastasını
+kendi birimine taşıyabiliyordu. B1b onu tek adımlık nakil olarak, iki yatağın birim denetimi ve
+ekranıyla yeniden açtı (bkz. 3.20). Sekmenin adı da bu yüzden «Nakil / Taburcu»dur.
 
 **Reddedilen işlem:** sunucu her reddi değişmez bir kodla verir; ekran onu okuyanın dilinde
 söyler, sunucunun İngilizce sözcüklerini göstermez. Ret, işlemin konusu olan yatakla birlikte
 bildirimde (toast) görünür.
 
 **Bu dilimin henüz yapmadıkları**
-- Transfer (B1b), bakım ekibi (B1c), protokol ve hasta etiketi, barkod (B1d).
+- Transfer (B1b), bakım ekibi (B1c), protokol ve hasta etiketi, barkod (B1d). *Nakil B1b'de geldi
+  (3.20).*
 - HBYS'den bekleyen hastalar paneli ve formun HBYS'den önceden dolması (ADT akışı gelince).
 - Yeniden yatan bir kişiyi eski kaydıyla eşleştirme (her yatış yeni numara alır); kimliği
   bilinmeyen hastanın (doğum tarihsiz) kabulü; başucu cihazında hastanın adının görünmesi.
 - Taburcu edilmiş bir hastanın eski kabullerine ve bilgilerine bakma (kimin bakabileceği,
   denetimli — sonraki dilim).
-- Taburcu sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
+- «Nakil / Taburcu» sekmesinde birim süzgeci; panonun liste görünümünde "Hekim imzası bekliyor" rozeti
   (rozet yalnız kartta).
 - İmza, imzalayan hekimi bakım ekibine eklemez (B1c). *B1c'de kapandı: imzalayan hekim sorumlu
   hekim olur ve ekip satırı yazılır (3.19).*
@@ -1508,9 +1514,8 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
   için hata ya da uyarı yazdığında (API kapalı ya da yeniden başlıyor, zaman aşımı, 413, giriş sınırı)
   isteğin tamamını, sorgu dizgesiyle yazar. Bu yüzden `docker compose logs web`, hasta numarası
   taşıyabilen bir kayıt olarak okunur.
-- **Servisler arası nakil** bugün kapalı (409 `transfer_unavailable`). Açıldığında protokol aynı
-  kalır: nakil aynı gelişin içindedir, numara nakledilen kayıttan yeni kabul kaydına taşınır; etiket,
-  cihaza girilen numara ve kart değişmez (O8, kapandı).
+- **Nakil** (B1b, bkz. 3.20) protokolü değiştirmez: nakil aynı gelişin içindedir, numara nakledilen
+  kayıttan yeni kabul kaydına taşınır; etiket, cihaza girilen numara ve kart değişmez (O8).
 - **Geri dönüş** yalnız ilk protokollü kabulden önce temizdir: sonrasında açık kabullerin kartları
   protokolle anahtarlıdır ve eski API onları eşleştiremez — geri dönüş ileri bir düzeltme demektir.
 
@@ -1960,7 +1965,7 @@ Hasta ekranında İlaç kutusunun altındaki **«Sıvı»** kutusu, kağıttaki 
 ### 3.19 Bakım ekibi: sorumlu hekim, yardımcı ve nöbetçi hekimler (Grup 2 · B1c)
 
 Bir hastadan hangi hekimlerin sorumlu olduğu artık kayıtlı, görünür ve doğru tutuluyor. **Durum:**
-main'de (11 Kasım 2026; göç 0018); hastane sunucusuna sahibin sözüyle, ayrı bir çıkışla gelir. Örneklerdeki
+11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç 0018). Örneklerdeki
 adlar uydurmadır.
 
 - **Yalnız hekimler.** Ekipte üç rol var: **sorumlu hekim** (her an tek kişi), **yardımcı hekim** ve
@@ -2007,8 +2012,7 @@ adlar uydurmadır.
   ekibin tamamını kapatır, kapanmış satırlar geçmişte kalır. İki hekim aynı anda «Sorumlu hekim ol» derse
   ikisi de geçer, sırayla; sonuncu sorumlu hekim kalır. Bir hekimin kendi ikinci basışı ve ekipte zaten
   olan birinin eklenmesi 409 `care_team_conflict` verir. Süresi dolmuş bir nöbetçi yeniden eklenebilir:
-  eski satırı kapanır, yenisi yazılır. Nakil yolları henüz kapalıdır (B1b); ekibin nakilde ne olacağı onun
-  işidir.
+  eski satırı kapanır, yenisi yazılır. Nakilde ekip yeni kabul kaydına taşınır (B1b, bkz. 3.20).
 - **Kendi hastası.** Ekipteki hekim hastasını panoda kendi birimlerinin dışında da görür; nöbetçi
   yalnız penceresi içinde. Ekipten çıkan artık görmez. Açık bir pano bağlantısı yeni üyeyi yeniden
   bağlanınca alır; diğer okumalar hemen. Ekip okuması, üyenin kendi satırı etkin olduğu sürece ona açıktır.
@@ -2031,8 +2035,8 @@ adlar uydurmadır.
   - sorumlu hemşire grubundan `care_team.claim`'i alır ve grubun açıklaması varsayılan metinse
     «bakım ekibi»ni çıkarır; hastanenin kendi yazdığı açıklamaya dokunmaz.
 
-  B1b'nin (nakil) iki sütunu da bu göçle gelir: `admissions.transfer_reason` ve `transfer_note`; henüz
-  hiçbir yol onları yazmaz. **Geri alma** (`alembic downgrade 0017`) bu iki sütunu düşürür: B1b çıktıktan
+  B1b'nin (nakil) iki sütunu da bu göçle gelir: `admissions.transfer_reason` ve `transfer_note`; onları
+  nakil yazar (bkz. 3.20). **Geri alma** (`alembic downgrade 0017`) bu iki sütunu düşürür: B1b çıktıktan
   sonra her nakil nedeni ve şifreli notu kaybolur. Bir üyenin aynı kabulde iki kapalı satırı varsa eski
   kısıt geri kurulamaz ve geri alma bütünüyle durur. Göçün kapattığı ya da yazdığı satırlar geri
   alınmaz. Önce api, sonra web çıkar; eski bir imaj `0018`'e karşı yalnız iki yolda 500 verir (eski
@@ -2046,9 +2050,132 @@ adlar uydurmadır.
   sahip karar verir. Sorgular planın «Deploy notes» bölümündedir.
 - **Bu dilimde olmayanlar:** süresi dolan nöbetçi satırlarının kendiliğinden kapanması (yeniden eklemek
   ya da «Ekipten çıkar» gerekir), birimi dışındaki üye için hasta ekranında kutu, açık pano akışına yeni
-  üyeyi hemen bildirmek, ekibin nakilde taşınması (B1b).
+  üyeyi hemen bildirmek. (Ekibin nakilde taşınması B1b'de geldi, bkz. 3.20.)
 - **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b1c-bakim-ekibi-design.md` ve
   `docs/superpowers/plans/2026-11-09-g2b-b1c-bakim-ekibi.md`.
+
+### 3.20 Nakil: hastayı başka yatağa tek adımda taşımak (Grup 2 · B1b)
+
+Yatan bir hasta tek bir işlemle başka bir yatağa taşınır — aynı birimde ya da başka birimde. Hasta
+Kabul'ün «Taburcu» sekmesi bu yüzden artık **«Nakil / Taburcu»**dur (ekranın alt başlığı «Kabul,
+nakil ve taburcu»). **Durum:** kodda (`feat/g2b-b1b-nakil`); main'e ve hastane sunucusuna sahibin
+sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
+
+- **Kim yapar.** Hekim (`admissions.move.initiate`, taburcuyu da başlatan yetki: Sorumlu Hekim, Ünite
+  Hekimi) ya da hemşire veya sorumlu hemşire (`admissions.transfer.confirm`) — gece hastayı kim
+  taşıyorsa. İki yatak da kişinin birimlerinde olmalıdır: hastanın yattığı yatak ve gidilecek yatak.
+  Sunucu ikisinin birimini de veritabanından kendisi okur; istek bir birim adı taşımaz (taşırsa 422).
+  Bir birimin hekimi başka birimin hastasını kendi birimine taşıyamaz (eski yolun C-2 açığı): kapsam
+  dışı yatak 403 `out_of_scope` alır. Yönetici her yerde (3.8). «Nakil» düğmesi «Yatan hastalar»
+  listesinde iki izinden biriyle görünür; taslak (imzasız) hastada düğme yerine «Önce kabul
+  imzalanmalı» yazar. Listeyi okumak `admissions.view` ister: nakil anahtarını taşıyan varsayılan
+  gruplar onu da taşır, ama yalnız bir nakil anahtarı taşıyan, hastanenin yazdığı bir grup sekmeyi
+  açar ve «Kabul kayıtlarını okuma yetkiniz yok» görür, «Nakil» düğmesini görmez.
+- **Tek adım.** «Nakil et» denince tek bir işlemde eski kabul kapanır (`TRANSFERRED`), eski yatak
+  temizliğe geçer («Temizlikte»), yeni yatakta yeni bir kabul kaydı açılır (`ACTIVE`) ve yeni yatak
+  dolar. Arada bekleyen bir durum yazılmaz. Yeni kayıt eskisinin kimlik ve kabul bilgilerini aynen
+  taşır; kabul saati nakil anıdır, taburcu alanları eski kayıtta kalır. Koğuş hastayı önce taşır,
+  sonra kaydeder: bu yüzden taburcu (exitus da) zamanı nakil anından önceye, yatışın ilk kabul
+  saatine dek yazılabilir; ilk kabulden önceye yazılamaz. Yalnız imzalı (`ACTIVE`) hasta
+  taşınır: taslak önce bir hekimce imzalanır (3.19), taburcusu başlatılmış hasta taşınmaz (409
+  `invalid_transition`). Hastanın kendi yatağı hedef olamaz (422 `field_invalid:target_bed_id`);
+  kapalı yatak 409 `bed_closed`, boş olmayan yatak 409 `bed_not_available` verir.
+- **Ne değişmez.** Protokol numarası (O8): eski kayıt numarayı yeni kayda verir, kendisi H-numarasıyla
+  kalır; etiket, cihaza girilen numara ve kart aynı kalır. Kart ve monitör bağlantısı hastayla yeni
+  yatağa geçer; eski yatağın monitörü artık kimseyi göstermez. Hastanın alarmları, onayları,
+  ertelemeleri (3.21), kilosu ve eşlik eden hastalıkları aynı anahtarda kalır; elle yazılan görevleri,
+  sıvı defteri ve RRT çağrıları da.
+- **Bakım ekibi hastayla gider** (B1c, 3.19). Nakil anında etkin olan her satır — sorumlu hekimin
+  satırı da — aynı rol, pencere ve atayanla yeni kabulde yazılır, eski kabuldeki satırlar kapanır.
+  Nakilden önce ekipten çıkmış olanlar eski kabulde kalır: kutunun «Önceki üyeler» listesi nakille
+  yeniden başlar (kayıtlar kaybolmaz; bir yatışın geçmişini gösteren ekran sonraki dilimdir).
+- **Elde olan vardiya devri ve ölçüm saati de hastayla gider** (sahibin kararı, 10 Kasım 2026).
+  - **Hangi devir.** Elde olan devir, açılmış ve 30 dakikası dolmamış ya da devreden imzalamış,
+    karşı imzayı bekleyen devirdir (3.18). Nakilden sonra devir yeni kabul kaydını gösterir: yeni
+    yatak, aynı kart. Tamamlanmış ya da süresi dolmuş devirler yazıldıkları gibi kalır.
+  - **Devrin birimi.** Devir, hastanın yatağının birimindedir (3.18); hasta başka birime geçince
+    devir de yeni birime geçer ve «Yönetici özeti» (3.24) onu orada sayar. Birden çok hastayı kapsayan
+    bir devirde birim, devirdeki bütün hastalar yeni birimde yatınca geçer: ötekiler eski birimde
+    kaldıysa devir eski birimde kalır ve son hasta da taşınınca yeni birime geçer.
+  - **Kritik alarm kapısı** hastanın alarmlarını okumaya devam eder: onaylanmamış kritik alarm varken
+    devreden imzası yine reddedilir. Hasta için sizin açtığınız, henüz imzalanmamış bir devir varsa
+    «Vardiya devri» ekranı ikincisini açmaz, onu imzalatır; nakilden sonra da böyledir (bu denetim
+    ekrandadır, sunucuda değil).
+  - **Ölçüm saati.** Görevlerim'deki (3.16) vital ölçüm görevi, son 48 saatte elle ölçüm yoksa
+    yatışın ilk kabul saatinden sayılır: nakil zinciri geriye, ilk kabule dek izlenir. Nakil bu saati
+    sıfırlamaz; geciken bir görev nakilden sonra da gecikmiş görünür.
+- **Neden ve not.** Altı nedenden biri seçilir: Klinik ihtiyaç, Yoğun bakıma, Yoğun bakımdan servise,
+  İzolasyon, Hasta veya yakın isteği, Diğer. Not isteğe bağlıdır (en çok 200 karakter), «Diğer» için
+  zorunludur; sunucu da bunu denetler (422 `field_invalid:note`). Neden ve not yeni kabul kaydında
+  durur, not **şifreli**dir. Denetim kaydına neden ve yalnız «not yazıldı mı» düşer; notun metni ne
+  denetim kaydına ne günlüğe düşer: not bir kişinin adını taşıyabilir.
+- **Rezerve yatak.** Seçilebilir. Pencere önce rezervasyonun notunu gösterip sorar («Yine de bu yatağa
+  naklet»). Onaysız rezerve yatağı sunucu da reddeder (409 `bed_reserved`): Doluluk'taki (3.14)
+  kabulün kuralıdır. Yatak, seçici onu okuduktan sonra rezerve edilirse pencere yatakları yeniden
+  okur ve yatak hâlâ sunuluyorsa o zaman sorar; bu arada alınmışsa ret söylenir ve odak yatağa gider.
+  Nakille yatak dolar, rezervasyonun notu silinir.
+- **Kritik alarm uyarır, tutmaz.** Hastada kimsenin onaylamadığı kritik bir alarm varsa pencere bunu
+  söyler (pano yüklenmiş ve kişi panoyu okuyabiliyorsa), ama nakli durdurmaz: hasta çoğu zaman
+  kötüleştiği için taşınır, ve alarmları onunla gider. Sunucu da aynı durumu cevapta ve denetim
+  kaydında taşır.
+- **Pencere.**
+  - Yeni yatak seçici hastanın kendi biriminde açılır; hastanın kendi yatağı dolu olduğu için
+    sunulmaz. Seçici bir yatağı sunmaz hale gelirse (yatak dolmuş, kapanmış) seçim düşer: gönderilen
+    yatak hep ekranda görünendir.
+  - Eksik alan varsa gönderilmez ve odak ilk eksik alana (neden, not, yatak) gider. «Nakil et»
+    düğmesi yaptığı işi (eski yatak temizliğe geçer) ve varsa kritik alarm uyarısını ekran okuyucuya
+    birlikte okutur. Yazma sürerken ve liste yeniden okunana dek düğmeler ve seçici kilitlidir.
+  - Reddedilen nakil bildirimde yatağın adıyla görünür; not geçersizse pencere bunu kendi sözleriyle
+    söyler. Nota ilişkin olmayan bir retten sonra yataklar yeniden okunur, düğmeler bundan sonra açılır.
+  - Yanıt hiç gelmezse (zaman aşımı, sunucu hatası, kopan bağlantı) form kilitlenir ve nakil
+    gerçekleşmiş olabileceğini söyler; düğme aynı nakli bir kez daha gönderir, bu arada yeniden okunan
+    liste başka bir yatak gösterse de. Gerçekleşmişse sunucu ikinci bir nakil yapmaz, kartı yeniden
+    taşır; gerçekleşmemişse nakli yapar. Sunucudan gelen bir ret kilidi bitirir.
+  - Tekrar, aynı istektir: aynı yatak, aynı neden, aynı not. Başka bir hekim ya da hemşire aynı
+    hastayı aynı yatağa kendi nedeni ya da notuyla taşımak isterse bu ayrı bir karardır ve reddedilir
+    (409 `invalid_transition`); nedeni ve notu sessizce yok sayılmaz.
+  - Nakil bitince liste yeniden okunur, eski hastanın satırı gider ve odak hastanın yeni satırına
+    gider (listede yoksa taburcusu başlatılanlar listesine).
+- **Kart taşınamazsa.** Kayıt yine de yapılmıştır. Kart, işlem kaydedildikten sonra taşınır: önce eski
+  yere (eski yatak ve birim, adsız) «hasta buradan gitti» karesi gider, sonra kart yeni yatağa konur;
+  ekranlar kartın nereden gittiğini nereye gittiğinden önce duyar. Kart yeni yatağa konamadıysa
+  «Nakil / Taburcu» sekmesi kalıcı bir not gösterir — «Kart yeni yatağa taşınamadı. Kart yeniden
+  taşınana dek yeni birimin ekranları hastayı ve alarmlarını göstermez.» — ve «Kartı
+  yeniden taşı» aynı nakli yeniden gönderir; sunucu veritabanına bir şey yazmadan kartı yeniden
+  taşır (ikinci bir nakil olmaz, yanıt 200). Hasta bu arada yeniden nakledilmişse ya da taburcu
+  edilmişse aynı istek reddedilir (409): eski yatağa hayalet bir kart konmaz. Böyle bir nakil artık
+  hiçbir zaman yerine ulaşamayacağı için not da kalkar; hastanın daha yeni bir nakli de eski bir
+  notu siler. Not yalnız sekmenin belleğindedir: dakikalık yeniden okumalardan etkilenmez, ama Kabul
+  sekmesi değiştirilir ya da sayfa yenilenirse kaybolur. Tarayıcıda hiçbir yere kaydedilmez (içinde
+  serbest metin olan nakil notu da bulunabilir). Not kaybolursa güvence, eski yatağın boşaltılmasıdır
+  (aşağıda); o ana dek kart eski yatakta durabilir ve alarmları eski birimin ekranlarında görünür.
+- **Kart yatakta kalırsa yatak boşalmaz.** Eski yatak temizlikten boşa alınırken (ve yöneticinin ham
+  geçişinde, kullanıma açılırken) hastanın kartı hâlâ o yatakta duruyorsa yeniden taşınmaya çalışılır;
+  taşınamazsa yatak boşalmaz (`board_not_cleared`) ve yeni bir hasta yatırılamaz, böylece bir yatakta
+  iki kart olmaz. Hasta hâlâ yattığı için kart asla panodan kaldırılmaz. Tek istisna: hasta bu arada
+  taburcu olmuş ve kartı hâlâ eski yatakta duruyorsa o artık taburcu bir hastanın kartıdır, boşaltma
+  onu panodan kaldırır (3.8).
+- **Denetim.** Her nakil bir `admission.transfer` satırı yazar: eski ve yeni kabulün ve yatağın ve
+  birimin kimliği, taşınan protokol, neden, not yazıldı mı, açık kritik alarm var mıydı, yatak
+  rezerve miydi (yalnız öyleyse), kaç bakım ekibi satırı ve kaç vardiya devri taşındı, taşınan
+  devirlerin kimlikleri ve kimin yaptığı. Hasta adı ve notun metni yoktur. Kartı yeniden taşıma
+  (düğme ya da yatağın boşaltılması) `admission.transfer_board_retry` satırı yazar. «Denetim
+  bütünlüğü» sayfası (3.13) ikisini «Hasta başka yatağa nakledildi» ve «Kart yeni yatağa yeniden
+  taşınmaya çalışıldı» adıyla gösterir ve «Tür» süzgecinde sunar. Denetim kaydı yazılamazsa günlük
+  satırı yalnız kapanan ve açılan kabulün kimliğini taşır, devir kimliklerini taşımaz.
+- **Hasta ekranı açıkken.** Açık bir hasta ekranı açık kabulleri dakikada bir okur (3.19); nakilden
+  sonra bir sonraki okumasına dek (en çok bir dakika) eski kabulü tutar. O aralıkta bakım ekibine
+  yazılan bir işlem ve etiket yeniden basımı reddedilir (eski kabul `TRANSFERRED` ve protokol yeni
+  kabulde); ret bildirimde görünür, sonraki okumada ekran yeni kabulü gösterir. Böyle bir retten sonra
+  hasta ekranının yeniden okuması sonraki dilime kaldı.
+- **Göç.** Kendi göçü yoktur: neden ve not sütunları B1c'nin `0018` göçüyle gelir (iki dilim tek göç
+  paylaşır); main'de göç zincirinin başı `0019`dur (Eczane).
+- **Henüz yok.** Doluluk ekranındaki dolu yataktan nakil; yanlış yatağa açılmış taslağı düzeltmek;
+  nakli alan hekimin bir saat içindeki onayı (S-27); yeni yatakta hemşire ataması; HBYS'ye bildirim;
+  başka hastaneye nakil (o bir taburcudur: başka kuruma sevk); bir yatışın nakil geçmişini gösteren
+  ekran.
+- **Kaynak:** `docs/superpowers/specs/2026-11-09-g2b-b1b-nakil-design.md` ve
+  `docs/superpowers/plans/2026-11-09-g2b-b1b-nakil.md`.
 
 ### 3.21 Alarm erteleme: «Ertele» (Grup 2 · B5b)
 
@@ -2195,7 +2322,7 @@ adlar uydurmadır.
   tanı koymaz. Başlığın altında bunu söyler: «Bu ekran izleme içindir; doz önermez, order vermez.» Sistem yeni bir
   veri toplamaz; sayfa, zaten tuttuklarını (panodaki ilaç bloğu ve sıvı defteri) bir araya getirir. Örneklerdeki
   değerler uydurmadır.
-- **Durum:** main'de (11 Kasım 2026; göç 0019); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç 0019).
 - **Kim görür:** yeni yetki `pharmacy.view` olan. Varsayılan olarak Eczacı, Sorumlu Hekim, Ünite Hekimi ve Hekim
   gruplarında; Sistem Yöneticisi her yetkiyi kural gereği taşır. Hemşire, Sorumlu Hemşire, Hızlı Yanıt Ekibi,
   Denetçi, Biyomedikal Teknisyen ve Üretici Destek görmez. Başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz
@@ -2310,7 +2437,7 @@ adlar uydurmadır.
 - **Ne:** Sol raydaki **«Yönetici özeti»** sayfası (`/ozet`; Azerbaycanca «Rəhbər xülasəsi», Rusça «Сводка для
   руководства», İngilizce «Management summary»; telefonun dar rayında «Özet»). Hastanenin şu anki durumu ve alarm
   kalitesi tek sayfada, yalnız gerçek verilerden. Sayfa yalnız okur ve hiçbir yerde hasta adı ya da kimliği göstermez.
-- **Durum:** main'de (11 Kasım 2026; göç yok); hastane sunucusuna sahibin sözüyle, sonraki çıkışla gelir.
+- **Durum:** 11 Kasım 2026'dan beri hastane sunucusunda çalışıyor (göç yok).
 - **Kim görür:** yeni yetki `summary.view` («Yönetici özetini görür») olan. Varsayılan gruplardan hiçbirinde yok;
   Sistem Yöneticisi her yetkiyi kural gereği taşıdığından yalnız o görür, göç (migration) gerekmedi. Başka bir gruba
   (ör. başhekim) Yönetim › Roller ve yetkiler'den kodsuz verilebilir; o grup bir kaynağın kendi yetkisini taşımıyorsa
@@ -2342,7 +2469,8 @@ adlar uydurmadır.
   3. **«Alarm kalitesi»:** dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün); bu kutuyu ve ilk kartı
      değiştirir. «Bugün» takvim günü değil, son 24 saattir; kutu ve kart bunu «son 24 saat» diye yazar. Hastane
      geneli, denetim kaydından; birim birim değil (denetim kaydındaki alarmın yatağı yok; birim birim alarm kalitesi
-     sonraki bir dilimdir). Sayılar: alarm olayı; yanıtlanan ve oranı (hiçbir olay yerleşmediyse «henüz yerleşen
+     sonraki bir dilimdir). Sayılar: alarm olayı; yanıtlanan ve oranı (tam yüzde: «%100» yalnız yerleşen her olay
+     yanıtlandıysa, «%0» yalnız hiçbiri yanıtlanmadıysa yazılır, §3.25; hiçbir olay yerleşmediyse «henüz yerleşen
      yok»); yanıt süresinin ortancası ve p90'ı; eskale edilen; yanıtsız kalan; bekleyen (10 dakikası dolmamış).
      «Günlük alarm sayısı»: her gün için bir çubuk ve sayısı; günler UTC takvimine göredir; «geçen haftaya göre»
      eğilimi yok. Altında türe göre küçük bir tablo. Sunucunun okuma sınırı aşılırsa kutu bunu ve sayılan dönemin
@@ -2396,6 +2524,138 @@ adlar uydurmadır.
   göstergeleri» ekranı.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-yonetici-ozeti-design.md`; plan
   `docs/superpowers/plans/2026-11-11-g4-yonetici-ozeti.md`.
+
+### 3.25 «Kalite göstergeleri»: birim birim bakım süreci (Grup 4 · G4-03)
+
+- **Ne:** Sol raydaki **«Kalite göstergeleri»** sayfası (`/kalite`; Azerbaycanca «Keyfiyyət göstəriciləri», Rusça
+  «Показатели качества», İngilizce «Quality indicators»; telefonun dar rayında «Kalite»). Birim birim bakım süreci,
+  son 24 saat, 7 ya da 30 gün için, yalnız sistemin gerçekten kaydettiğinden: alarm yanıtı, erteleme, RRT çağrısı ve
+  devrin karşı imzası. «Süreç ölçülür, kişi değil»: sayfa yalnız okur; hiçbir yerde hasta adı, kimliği ya da bir
+  kişinin adı yoktur. Örneklerdeki sayılar uydurmadır.
+- **Durum:** kodda (`feat/g4-kalite`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Sunucuda göç `0020`
+  çalışmalıdır.
+- **Kim görür:** yeni yetki `quality.view` («Kalite göstergelerini görür») olan. Varsayılan **«Denetçi»** grubu taşır
+  (göç `0020` var olan hastanelere verir; sonra kurulan bir hastanenin Denetçi grubu kendiliğinden taşır); Sistem
+  Yöneticisi her yetkiyi kural gereği taşır. Başka bir gruba (ör. hastanenin kendi «Kalite birimi») Yönetim › Roller ve
+  yetkiler'den kodsuz verilebilir. Bir çalışma ekranıdır: yalnız bu yetkiyi taşıyan bir hesap bununla oturum açar ve
+  girişte bu sayfaya düşer. Rayda «Yönetici özeti»nden sonra gelir; kimsenin giriş sayfası değişmedi (Denetçi ve
+  Sistem Yöneticisi yine «Yataklar»a düşer). Denetçi grubunun açıklaması («Salt okunur: pano ve denetim kaydı.»)
+  değişmedi.
+- **Kapsam:** birim atanmış bir kullanıcı (Yönetim › Kullanıcılar) yalnız **birim** atamalarının birimlerini görür;
+  bir yatak ataması o yatağın birimini kapsamaz. Ona «Birimi belli olmayan» satırı yazılmaz; kartlar ve «Toplam»
+  yalnız onun birimlerini toplar ve kartların başlığı «Kapsamınızdaki birimler · {dönem}» olur. Kapsamındaki her açık
+  birim, dönemde hiçbir şey olmasa da sıfırlarıyla yazılır. Kapsamında hiç birim yoksa (ör. yalnız bir yatak
+  ataması) tablonun yerinde bir kez «Kapsamınızda birim yok.» yazar; kapsam satırı, «Erteleme nedenleri» ve «Türe göre
+  alarmlar» o zaman çizilmez, kartlar yanıtın kendi sıfırlarını gösterir. Ataması olmayan bir hesap (ör. birim
+  atanmamış bir Denetçi) bugün kısıtsızdır ve bütün birimleri görür (§3.5, «Birimler»); sunucu ataması olmayanları
+  kısıtlayacak biçimde ayarlanırsa (`SCOPE_ENFORCE_UNASSIGNED`) yönetici olmayan böyle bir hesap «Kapsamınızda birim
+  yok.» okur.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **Başlık:** «Kalite göstergeleri», «Süreç ölçülür, kişi değil», yanıtın sunucuda üretildiği an («10:42
+     itibarıyla»; henüz yanıt yoksa «Henüz okunmadı»), dönem seçici «Bugün» · «7 gün» · «30 gün» (açılışta 7 gün;
+     «Bugün» takvim günü değil, son 24 saattir ve kartlar bunu «son 24 saat» diye yazar) ve «Yenile». Altında
+     sayfanın ne olduğunu söyleyen kısa bir paragraf.
+  2. **Kapsam satırı:** «Bu dönemde 9 alarm olayından 7 tanesi bir birime bağlanabildi. Birime bağlanamayanlar: bu
+     sistemde kabul kaydı olmayan (HBYS'den gelen ya da kimliği olmayan monitör) hastalar.» Kapsamı kısıtlı bir
+     kullanıcıda: «Yalnız kapsamınızdaki birimler: bu dönemde bu birimlere 7 alarm olayı bağlandı.» Dönemde hiç alarm
+     olayı yoksa satır bunu düz söyler: «Bu dönemde alarm olayı yok.» (kısıtlı kapsamda «Yalnız kapsamınızdaki
+     birimler: bu dönemde bu birimlerde alarm olayı yok.»); «0 alarm olayından 0 tanesi» yazılmaz. Sunucunun okuma
+     sınırı aşıldıysa altında bir not alarm, erteleme ve RRT sayılarının hangi andan (gün, ay, saat) başladığını
+     söyler; devirler yine dönemin tamamından sayılır.
+  3. **Kartlar («Hastane geneli · son 7 gün»; kısıtlı kapsamda «Kapsamınızdaki birimler · son 7 gün»):** «Alarm yanıt
+     süresi (ortanca)»; «Yanıtlanan alarm» («%82» ve altında «yerleşen 11 alarm olayından 9 tanesi»); «Eskale edilen
+     alarm»; «Yanıtsız kalan alarm» (altında «1 tanesi kendiliğinden düzeldi»); «Ertelenen alarm» (altında «1 yüksek
+     · 1 orta»); «RRT çağrısı»; «Devir karşı imza süresi (ortanca)». Alt satırlar yalnız kendi sayıları sıfırdan
+     büyükken yazılır. Oran tam yüzdedir ve kenarlarında abartmaz: «%100» yalnız yerleşen her olay yanıtlandıysa,
+     «%0» yalnız hiçbiri yanıtlanmadıysa yazılır; yerleşen 300 olaydan 299 tanesi yanıtlandıysa «%99», 1 tanesi
+     yanıtlandıysa «%1» (düz yuvarlama «%100» ve «%0» derdi). Aynı kural tablodaki «Yanıtlanan» sütununda ve «Yönetici
+     özeti»nin «Alarm kalitesi» kutusunda da geçerlidir. Henüz bir yanıt yokken (okunurken, okunamadığında) başlık
+     kimin toplamı olduğunu söylemez: «Göstergeler · son 7 gün».
+  4. **«Birimlere göre»:** kapsamdaki her açık birim için bir satır, ada göre; dönemde hiçbir şeyi olmayan birim de
+     yazılır, gerçek sıfırlarıyla (sayıları 0, oranı «— henüz yerleşen yok», süreleri «—»). Sonradan kapatılmış bir
+     birim yalnız dönemde sayacak bir şeyi varsa, adıyla yazılır. Sonra **«Birimi belli olmayan»** (yalnız kısıtsız
+     kapsamda; sayacak bir şey olmasa da sıfırlarıyla), sonra **«Toplam»**. Sütunlar: «Birim» · «Alarm» · «Yanıt
+     ortancası» · «Yanıt p90» · «Yanıtlanan» · «Eskale» · «Yanıtsız (kendiliğinden düzelen)» · «Ertele» · «RRT
+     çağrısı» · «Devir (açılan / karşı imzalı / bekleyen)» · «Karşı imza ortancası». «Birimi belli olmayan»ın iki
+     devir hücresinde «—» yazar: her devrin birimi bellidir. Bir satırın adına dokunmak onu seçer (sayfa değişmez);
+     «Birimi belli olmayan» ve «Toplam» da seçilir. Açılışta «Toplam» seçilidir; yeni bir okumada seçilen satır yoksa
+     seçim «Toplam»a döner.
+  5. **«Erteleme nedenleri»:** beş neden, alarm ekranının «Ertele» penceresindeki sözcüklerle (§3.21: «Klinik karar
+     verildi», «Artefakt ya da sinyal gürültüsü», «İşlem sürüyor», «Hastanın kendi normali», «Diğer») × sayı; sonra
+     «Toplam» ve «Ortanca süre» («12,5 dk»). İlk sütun «Hastane geneli»dir (kısıtlı kapsamda «Kapsamınızdaki
+     birimler»); «Toplam»dan başka bir satır seçiliyse yanında onun sütunu durur. Dönemde hiç erteleme yoksa yalnız
+     «Bu dönemde erteleme yok.» yazar.
+  6. **«Türe göre alarmlar · {seçim}»:** seçilen satırın (açılışta «Hastane geneli») alarm türleri, motorun kendi tür
+     adlarıyla (ör. `news2`): «Olay», «Yanıtlanan», «Eskale», «Yanıtsız», «Ortanca yanıt». Seçimde hiç olay yoksa
+     «Bu seçimde alarm olayı yok.»
+- **Bir alarm bir birime nasıl bağlanır:** denetim kaydındaki alarm satırında yatak ya da birim yoktur, yalnız
+  hastanın kartının anahtarı vardır. Sunucu yolu şöyle kurar: kartın anahtarı → bu sistemde açılmış kabul → kabulün
+  yatağı → o yatağın birimi. Kartın anahtarı 0015'ten beri kabulün protokol numarasıdır (§3.10); protokol numarası
+  olmayan daha eski bir kabulde hastanın H-numarasıdır. Kabul taburcu edilmiş olsa da sayılır (geçmiş bir alarmın
+  hastası çoğu zaman taburcu edilmiştir). Kabulün yatağı, dolayısıyla birimi, sonradan değişmez (nakiller kapalı); bu
+  yüzden bağlama dönemin her anı için aynıdır. **Bağlanamayanlar:** HBYS'den gelen hastalar ve kimliği olmayan
+  monitörler (bu sistemde kabulleri yoktur, geçmiş konumları da tutulmaz) ile iki ayrı birimde kabulü olan eski
+  (H-numaralı) bir anahtar. Bunlar «Birimi belli olmayan» satırında toplanır; kapsam satırı kaçının bağlanabildiğini
+  söyler. Ertelemeler ve RRT çağrıları aynı yolla bağlanır; her devrin birimi zaten bellidir (hastanın yatağının
+  birimi, §3.18).
+- **Sayılar nasıl sayılır:**
+  - **Alarmlar** «Alarm kalitesi» kutusunun kurallarıyla (§3.24): alarm olayı; yanıtlanan; yanıtsız kalan (hiç
+    yanıtlanmamış ve en az 10 dakikalık); 10 dakikası dolmamış bekleyen. «Alarm» sütunu bekleyenleri de sayar, ama
+    sayfa onları ayrıca yazmaz ve orana katmaz: oran yerleşen (yanıtlanan ya da yanıtsız kalan) olaylar üzerindendir.
+    Yanıt süresinin ortancası ve p90'ı (en yakın sıra).
+  - **«Kendiliğinden düzelen»** (kartta «{n} tanesi kendiliğinden düzeldi», tabloda «Yanıtsız» sütununda ayraç
+    içinde): yanıtsız kalanlardan, kuralı kendiliğinden durmuş olanlar, yani motorun kuralı artık tetiklenmediği için
+    kapattığı alarmlar. Kimsenin onaylamadığı ve «geçti · onaylanmadı» durumunda kalan kritik alarm da sayılır: kuralı
+    durmuştur. Yalnız taburcu ile ya da ölçümün «hatalı giriş» olarak işaretlenmesiyle (§3.12) kapanan alarm
+    sayılmaz: orada hasta ayrılmış ya da değer geri çekilmiştir, alarm kendiliğinden düzelmemiştir. Bu sınır sahibin
+    kararıdır (2026-11-11, «Yalnız kural durduysa»).
+  - **Hastane geneli** (kartlar ve «Toplam»): ortanca ve p90 bütün olaylar üzerinden hesaplanır (kısıtsız kapsamda
+    «Birimi belli olmayan»ınkiler dahil); birim ortancalarının ortalaması değildir.
+  - **Ertelemeler:** sayı; nedene ve önem derecesine göre (yalnız yüksek ve orta ertelenebilir, §3.21); ortanca
+    erteleme süresi (verilen dakika). Ertelemenin açıklama metni okunmaz.
+  - **RRT çağrıları:** yalnız sayı; çağrının serbest metin nedeni sunucudan çıkmaz.
+  - **Devirler:** dönem içinde açılanlar («açılan»); karşı imzalananlar («karşı imzalı»); devredenin imzaladığı,
+    devralanın henüz karşı imzalamadığı devirler («bekleyen»). Karşı imza süresi, devredenin imzasından karşı imzaya
+    kadardır; sayfa karşı imzalananların ortancasını yazar. **«30 dakika içinde karşı imza» payı yoktur:** karşı
+    imzanın sistemde bir süresi yoktur (30 dakika, açık bir devrin devredenin imzasını beklediği süredir, §3.18); bu
+    yüzden sayfa bir pay değil, süreyi gösterir.
+- **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Sayfa okunurken, okunamadığında ya da sunucu okumayı
+  reddettiğinde (ör. yetki oturum açıkken geri alındı) her kart «—» ve kısa nedeniyle yazılır («okunuyor…»,
+  «okunamadı», «yetki yok»); asla 0 yazılmaz. Tablonun yerinde okunurken «Kalite göstergeleri okunuyor…», sonra
+  «Tablo yazılamıyor · okunamadı» (ya da «· yetki yok») yazar; kapsam satırı, «Erteleme nedenleri» ve «Türe göre
+  alarmlar» o zaman çizilmez. Okuma başarısızsa (ret dışında) başlığın altında bir uyarı «Kalite göstergeleri
+  okunamadı: {neden}» der; yeniden denemek «Yenile»dir (ikinci bir düğme yok). Başarısız bir okuma önceki yanıttan
+  hiçbir şey bırakmaz: kartlar «— okunamadı» der, birim satırı yazılmaz. Biçimi beklenmeyen bir yanıt (tek bir bozuk
+  sayı bile; ya da istenen dönemin değil başka bir dönemin yanıtı) okunamamış sayılır: «Kalite göstergeleri
+  okunamadı.» Yerleşen hiçbir olayın olmadığı bir oran «— henüz yerleşen yok»; üzerinde hiçbir şey olmayan bir
+  ortanca hücrede «—», kartta «— yanıtlanan yok» ya da «— karşı imzalanan yok» olarak yazılır.
+- **Ne zaman okunur:** sayfa açılınca, dönem değişince ve «Yenile»de; zamanlayıcı yoktur (sunucu dönemin her olayını
+  denetim kaydından yeniden kurar). En yeni okuma kazanır: dönem art arda değiştirilirse yalnız son seçilen dönemin
+  yanıtı yazılır. «Yenile» aynı dönemi yeniden okur; okuma sürerken kartlar «— okunuyor…» der. Dönem değişince de
+  öyle: yeni dönemin yanıtı gelene kadar eski dönemin sayıları gösterilmez.
+- **Sunucuda:**
+  - yeni `GET /quality?days=1|7|30` (`quality.view`; başka bir değer 422): birim başına sayılar ve süreler, birimin
+    kimliği ve adıyla; kapsamdaki her açık birim, sessiz olsa da sıfırlarıyla (kısıtlı bir kullanıcıda boş bir birim
+    listesi kapsamın boş olduğu demektir); yalnız çağıranın kurumu ve birim atamaları (bir yatak ataması bir birimi
+    kapsamaz); hasta anahtarı, kişi ya da serbest metin yok. Kullanıcının kapsamı o an okunamazsa yanıt boş bir kapsam
+    değil, 503'tür («kapsam şu anda okunamıyor»): sayfa «Kalite göstergeleri okunamadı: …» yazar. Denetim kaydının
+    dönemdeki en yeni 20 000 satırını okur (alarm olayları, ertelemeler ve RRT çağrıları bu sınırı paylaşır);
+    devirleri kendi tablosundan, dönemin tamamından okur. Yanıt, sayfanın bu sürümde yazmadığı iki sayıyı da taşır:
+    süresi dolan devirler (30 dakikalık süresi devredenin imzası olmadan dolan) ve karşı imza süresinin p90'ı;
+  - `GET /alarm-quality` yanıtına yeni bir alan, `unanswered_resolved` (kendiliğinden düzelen yanıtsız alarmlar);
+    `repeats` alanı kalktı, üst düzeyde ve türe göre dökümde (`per_kind`); `/quality` onu hiç göndermedi (iki yol
+    da artık denetim kaydının `alert` satırlarını okumuyor; hiçbir sayfa onu yazmıyordu); başka bir alan değişmedi;
+  - göç `0020`: her hastanenin Denetçi grubuna `quality.view` (0019'dan sonra gelir; yalnız yetki satırı yazar, tablo
+    ya da sütun eklemez);
+  - nginx ve geliştirme sunucusu `/quality`'yi API'ye iletir.
+- **Bu dilimde olmayanlar:** el görevlerinin zamanında yapılması, vital ölçüm sıklığı ve geçmiş vital ölçüm
+  gecikmeleri; prototipin kaynaksız sayıları («3 dk içinde yanıtlanan», «Hatalı / artefakt olarak kapatılan»,
+  «Güvenlik olayları», «İncelenecek olaylar», cihaz kesintisi); «Rapor al» ya da dışa aktarma; HBYS'den gelen
+  hastaların birime bağlanması (konum geçmişi ister); nakiller (açılırsa anahtar → birim eşlemesi zamana bağlı
+  olmalı: her kabulün her birimdeki başlangıcı ve sonu).
+- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-kalite-gostergeleri-design.md`; plan
+  `docs/superpowers/plans/2026-11-11-g4-kalite-gostergeleri.md`.
 
 ---
 

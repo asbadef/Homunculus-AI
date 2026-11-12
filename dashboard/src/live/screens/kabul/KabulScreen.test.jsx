@@ -15,7 +15,8 @@ describe("KabulScreen", () => {
   it("is a route for the admission rights, and no other", () => {
     const route = ROUTES.find((r) => r.id === "kabul");
     expect(route.path).toBe("/kabul");
-    for (const perms of [["admissions.view"], ["admissions.admit"], ["admissions.discharge.confirm"]]) {
+    for (const perms of [["admissions.view"], ["admissions.admit"], ["admissions.discharge.confirm"],
+      ["admissions.move.initiate"], ["admissions.transfer.confirm"]]) {                 // G2-B1b (X5)
       expect(canReach(route, perms), perms[0]).toBe(true);
     }
     expect(canReach(route, ["board.view", "alerts.ack"])).toBe(false);
@@ -28,40 +29,44 @@ describe("KabulScreen", () => {
     expect(kabulTabs(["beds.release"]).map((tab) => tab.id)).toEqual([]);
     expect(kabulTabs(["admissions.admit"]).map((tab) => tab.id)).toEqual(["admit"]);
     expect(kabulTabs(["admissions.discharge.confirm"]).map((tab) => tab.id)).toEqual(["discharge"]);
+    // G2-B1b (spec §4): «Nakil / Taburcu» opens for whoever moves a patient, by either key.
+    expect(kabulTabs(["admissions.move.initiate"]).map((tab) => tab.id)).toEqual(["discharge"]);
+    expect(kabulTabs(["admissions.transfer.confirm"]).map((tab) => tab.id)).toEqual(["discharge"]);
     expect(kabulTabs([]).map((tab) => tab.id)).toEqual([]);
   });
 
   it("opens on Kabul for a nurse, with one h1, and moves between the tabs", async () => {
     await mountKabul(<KabulScreen />, { perms: NURSE });
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual(["Xəstə qəbulu"]);
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
     expect(screen.getByRole("tab", { name: "Qəbul" }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" }));
-    expect(screen.getByRole("tab", { name: "Evə yazılma" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }));
+    expect(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby"))
-      .toBe(screen.getByRole("tab", { name: "Evə yazılma" }).id);
+      .toBe(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" }).id);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
   // G2-B3a (X7, the browser walk): the beds moved to Doluluk, so the subtitle names admission and
-  // discharge only — in every language.
-  it("says under its title that it is for admission and discharge, not the beds' state", async () => {
+  // discharge only — in every language. G2-B1b (Tasks 7–8 review): and the transfer, now that the
+  // second tab is «Nakil / Taburcu».
+  it("says under its title that it is for admission, transfer and discharge, not the beds' state", async () => {
     await mountKabul(<KabulScreen />, { perms: NURSE });
-    expect(screen.getByText("Qəbul və evə yazılma — öz şöbələriniz.")).toBeTruthy();
+    expect(screen.getByText("Qəbul, köçürmə və evə yazılma — öz şöbələriniz.")).toBeTruthy();
     expect(Object.fromEntries(LANG_CODES.map((lang) => [lang, DICTIONARIES[lang]["kabul.sub"]]))).toEqual({
-      tr: "Kabul ve taburcu — kendi birimleriniz.",
-      az: "Qəbul və evə yazılma — öz şöbələriniz.",
-      ru: "Приём и выписка — ваши отделения.",
-      en: "Admission and discharge — your own units.",
+      tr: "Kabul, nakil ve taburcu — kendi birimleriniz.",
+      az: "Qəbul, köçürmə və evə yazılma — öz şöbələriniz.",
+      ru: "Приём, перевод и выписка — ваши отделения.",
+      en: "Admission, transfer and discharge — your own units.",
     });
   });
 
   it("shows a physician and a charge nurse both tabs", async () => {
     await mountKabul(<KabulScreen />, { perms: DOCTOR });
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
     cleanup();
     await mountKabul(<KabulScreen />, { perms: CHARGE });
-    expect(tabNames()).toEqual(["Qəbul", "Evə yazılma"]);
+    expect(tabNames()).toEqual(["Qəbul", "Köçürmə / Evə yazılma"]);
   });
 
   it("says so to a session that may open none of them", async () => {
