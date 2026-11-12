@@ -204,3 +204,151 @@ promise holds only while the feed is closed, and what leaves when it is open. Gu
 - O10 Address, marital status, citizenship as a code, the person registry — with H1a.
 - O11 Cut-over where another system already reports (Bona Dea): which resource types open, and when the other sender closes — owner's word, per type.
 - O12 Radiology, pathology, ImagingStudy — with H6.
+
+## 13. Amendments (plan F0)
+
+Made by `docs/superpowers/plans/2026-11-11-tres-f0-altyapi.md` (phase F0: infrastructure) and by the review of F0
+that followed it (commits `7d508d2c`…`9a306d44`). Where a line above and a line here disagree, this section is right.
+
+### 13.1 From the plan
+
+- **§10 — one plan per phase.** F0…F6 are seven plan documents, each with its own gate; «one plan» is withdrawn.
+- **D23 — the 29th key.** `pharmacy.view` (G3-04) reached main first; `tres.manage` is appended after it.
+- **D26 — migration 0020.** `0019_pharmacy_view.py` is on main; this slice's file is `0020_tres.py`
+  (`down_revision = "0019"`). G4-03 reached main first with `0020_quality_view.py` (`b2fb07d0`), so at merge this
+  file takes the next free number on main, and every «0020» in this section and in the module follows it (plan F0,
+  N13). F0 creates `tres_settings` and `tres_deliveries`; F1–F5 add the other seven tables to the same file while the
+  branch is unmerged (O19).
+- **D26, §9 — no permission row.** `tres.manage` is in no default group and the system group holds every key by
+  rule at token issuance, so the migration writes no `group_permissions` row (as `summary.view`); its test asserts so.
+- **D2, §7 — where the switch is read.** `TRES_EGRESS` is read once in `create_app` (`tres/egress.py` →
+  `app.state.tres_egress`), as the wave feed reads its settings; `api/prodserver.py` is not touched.
+- **§6 — refusal codes.** They live in `tres/errors.py`. Besides `egress_off`: `tres_mode`, `tres_environment`,
+  `tres_settle_hours`, `tres_types`, `tres_base_url`, `tres_host_not_allowed`, `tres_field_length` (all 422) and
+  `tres_account_incomplete` (409: the selected environment's account lacks the base URL, the username, the password
+  or the provider id). The connection test answers `egress_off` and `tres_host_not_allowed` with 409.
+  `tres_off` and `summary_signed` come with the phases that need them.
+- **§6 — the connection test** is allowed in the mode `off` and writes no audit row.
+- **D24 — `tres.settings`** carries `{"actor", "changed": [<field names>]}` — names such as `mode`,
+  `test.password`, never a value — and, when a base URL changed, `"hosts": {<environment>: <its new host, or
+  null>}`: the bare host name, the one value written, so the trail shows where an account was pointed. A save that
+  changes nothing writes no row. The event's label on «Denetim bütünlüğü» was added with the route (the dashboard
+  holds its label list to the engine's event types).
+- **D21, §7 — the worker's seam.** A `PackageSource` yields packages — async callables handed a `Sender`
+  (`send`, `skip`) — not resources: a package reads each ledger row's `remote_id` before it builds what refers to
+  it (D8). The 300 ms spacing is a hook on the client the worker sets, so it holds between any two requests.
+  After a 429 the whole loop waits `Retry-After` (never less than a round), not the one tenant.
+- **D6, D7, D21 — the ledger.** A failed payload's digest is stored; an unchanged failed payload waits 30 minutes,
+  an unchanged `stuck` one waits for `force`; a changed payload is tried at once and its count starts again. In
+  `validate` mode an unchanged payload already `validated` or `sent` is not validated again. `last_error` is cut to
+  500 characters and 1000 UTF-8 bytes (its ciphertext must fit 1536). What counts as an attempt: §13.2, first line.
+- **§4 — the client.** A failure with no answer is an error with no status, named by its class; `$validate`
+  answering 2xx with an `error` or `fatal` issue is a refusal. Both are this module's reading, to be re-checked in F6.
+- **§8 — `/admin` for `tres.manage`.** The key is added to the route's `perms`; `/admin` being a work screen, a
+  session that holds `tres.manage` alone can sign in and lands there.
+- **§9 — the stand-in** enforces §4 only; each profile's required elements (§5) join it with that profile's mapper.
+- **§11 — the guide's section is §3.25.**
+- **§8 — the build.** With F0's strings the shared i18n chunk passes Vite's 500 kB note (measured: see the plan's
+  Gates block). Splitting the catalogue is not this slice's; the controller accepted the note for F0.
+
+### 13.2 From the review of F0
+
+Two review rounds; the fixes are `7d508d2c`…`9a306d44`.
+
+- **D21 — what is an outage and what is the resource's (closes O13 with «no»).**
+  - **An outage leaves the ledger row as it was.** These are outages:
+    - a refused session (`TresSessionError`): the token route answering anything but 2xx, a 2xx without a usable
+      session id, or a second 401 on a FHIR call;
+    - no answer;
+    - a 3xx (redirects are off);
+    - 408, 429, 502, 503 and 504.
+  - **Every other failure is about the resource and counts towards its `stuck`:**
+    - a 4xx;
+    - 500, 501 or any other 5xx;
+    - a `$validate` error;
+    - a search answer `find` cannot trust (below).
+  - **Why a 500 counts.** A server that chokes on one input answers 500 every time. If a 500 did not count, five such
+    resources would end every round before the packages behind them; counted, they reach `stuck` and stop blocking.
+  - **How a round ends.** The worker ends a tenant's round at once on a refused session or a 429. Five failures in a
+    row also end it. Counted 5xx answers and outages both count towards those five; a 4xx refusal resets the streak.
+    In a platform-wide 500, each round costs at most five rows one attempt each, and those rows then wait 30 minutes.
+- **D21 — a refused login parks the tenant.** The token route may refuse the account itself: a 4xx other than 408 and
+  429 (`TresLoginRefused`). Then `tres_settings.session_refused_at` is set and every later round passes the tenant
+  over. The result is one failed login, not one every five minutes; a ministry account can lock. Two things clear it:
+  any saved change to the tenant's settings, and a successful connection test. While it is set, the tab says so.
+- **D6 — one writer per resource.** The ledger row is taken under a row lock (`INSERT … ON CONFLICT DO NOTHING`, then
+  `SELECT … FOR UPDATE`): two deliverers of one resource (a round and «send now», later) take turns, and the platform
+  holds one record. The delivery's transaction spans its HTTP calls on purpose. Each call is bounded by the client's
+  overall deadline (below), but a delivery makes several calls (PUT, then on a 404 a search and a POST), so it can
+  hold its row for a few minutes at worst.
+- **§4 — the search is not the answer.** The `local-system-unique-id` search is a FHIR string search,
+  case-insensitive and by prefix: its first entry may be another resource's.
+  - `find` takes only the entry whose local id is exactly the one asked, anywhere in the answer.
+  - With no such entry, it answers «not there» only when the answer is complete: a searchset Bundle with no `next`
+    link, a `total` not above its entries, and every entry carrying the local-id extension.
+  - Any other answer raises `TresSearchUnclear`, which is counted, and nothing is POSTed: a POST beside a record on a
+    later page would duplicate it in the national record.
+  - The stand-in searches and pages as the platform does (20 entries a page by default).
+- **D2, §7 — the install decides where data may go.** Beside `TRES_EGRESS`, a third install-level setting:
+  `TRES_HOSTS` (comma-separated host names; unset = the platform's two, `ehr-sandbox.e-health.gov.az` and
+  `ehr.e-health.gov.az`). A base URL on any other host is refused at save (422 `tres_host_not_allowed`) and at connect
+  (409).
+  - **Hosts are compared in their wire form.** A host IDNA cannot read is refused with 422 `tres_base_url`.
+  - **Unchanged addresses are not judged again.** A stored address sent back unchanged is not judged against
+    `TRES_HOSTS` again, so narrowing the list never locks the tab's form; the factory refuses that address at connect.
+    The refusal names the environment.
+  - **What a base URL may carry.** No user name or password, no query, no fragment and no port but 443.
+  - **A changed address drops the password.** Changing an environment's base URL without a new password in the same
+    save deletes that environment's stored password, so a credential never follows a changed address.
+  - **One way to a client.** The only way to a client is the guarded factory (`egress.open_client`,
+    `app.state.tres_client_factory`), which checks both install settings when called. No route or round builds a
+    client itself.
+- **D3, D21 — the tenant's switches hold at the choke point.**
+  - The `Sender` skips a record type that is switched off (`type_off`) and asks nothing. Such a skip never touches a
+    row the platform holds (one with a `remote_id`).
+  - A round re-reads the tenant's settings before every package. When their `updated_at` has moved since the round
+    began, that tenant's round ends. Any saved change counts: mode, environment, types or account. The next round
+    starts on the new settings.
+- **§4, D21 — smaller.**
+  - **Deadline.** Every HTTP call, the token's included, has an overall deadline (60 s, `client.CALL_DEADLINE_S`);
+    reaching it is «no answer».
+  - **Connection test.** It ends its database transaction before it asks the platform.
+  - **Failures stay with their tenant.** One tenant's failure never ends the round for the others. Its log line names
+    the exception's class and its last five frames as `file:line:function`, never its message.
+  - **The package source** is closed whenever a round ends, early or not.
+  - **The stand-in** refuses a reference that is not `Type/id` and a PUT that would change a resource's local id.
+  - **Migration 0020** also indexes `tres_deliveries.admission_id` (`ix_tres_deliveries_admission_id`) and adds
+    `tres_settings.session_refused_at`.
+
+### 13.3 Open items added by F0
+
+- O13 Should a 429 or a dead line count towards `stuck`? **Closed by the F0 review: no** (§13.2, first line).
+- O14 `mode = validate` over a whole stay: nothing is stored, so a resource that refers to another (an Encounter to
+  its Patient) has no platform id to refer to. What the platform's `$validate` does with such a reference is not
+  known; the stand-in refuses it. F1 decides what a validate round sends, F6 checks it on the sandbox.
+- O15 The first round's reach. When `send` opens, every stay already discharged is due at once. Where another system
+  has reported those stays (Bona Dea, O11), that duplicates them in the national record. Proposed: a per-tenant
+  cut-off — only stays discharged after a date, by default the moment `send` was first chosen; an older stay by hand.
+  The owner's decision, before F1's source is written.
+- O16 The platform's certificate chain. The client verifies TLS against the system's default store. If the ministry's
+  hosts chain to a national root that store lacks, an install setting for a CA bundle is needed. Checked on the
+  sandbox (F6).
+- O17 FastAPI's own 422 answer to a body that fails validation returns the offending `input` to its sender. On
+  `PUT /admin/tres/settings` that can be the account block, password included — sent back to the administrator who
+  typed it, not to anyone else. A validation handler for `/admin/tres/*` that names fields without values would end
+  it; decide before live.
+- O18 The ledger's statuses for deletes (D19, F6). «The platform holds this resource» is to be read from `remote_id`,
+  not from `status`: a refused PUT leaves the earlier version on the platform and the row `failed`. F6 settles it.
+- O19 Migration 0020 grows in place while the branch is unmerged; the review added an index and a column after its
+  first cut. A development database upgraded to an earlier cut is taken down to 0019 and up again before the next
+  phase's tests. Nothing outside development ever ran 0020.
+- O20 Local ids that are nobody's prefix. The search matches by prefix, so `hmn-l-1` also finds `hmn-l-10` through
+  `hmn-l-1999`. `find` is safe either way (§13.2), but D5's ids should end every numeric part with a delimiter, so
+  that a search answers one entry. F1 decides this before its first mapper, because a sent local id never changes.
+- O21 A row in `stuck` leaves that state only by `force`: the nightly retry or «Yeniden dene», neither of which is
+  built yet. Since a 500 counts (§13.2), a platform-wide 500 of two hours or more parks the due backlog there. Both
+  ship in F1, before any tenant can send to a live host.
+- O22 How the platform answers a search, checked on the sandbox (F6):
+  - whether it adds `search.mode: outcome` entries, which `find` would refuse today;
+  - whether it pages, and how;
+  - whether it echoes the local-id extension on every entry.

@@ -2397,6 +2397,74 @@ adlar uydurmadır.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-yonetici-ozeti-design.md`; plan
   `docs/superpowers/plans/2026-11-11-g4-yonetici-ozeti.md`.
 
+### 3.25 «TRƏS»: ulusal e-sağlık gönderimi (HBYS · TRƏS-01, aşama F0)
+
+- **Ne:** Azerbaycan'da bir hastane bilgi sistemi klinik kayıtlarını bakanlığın e-sağlık platformuna (sahibin
+  deyişiyle TRƏS; bir FHIR sunucusu) bildirir. Bu dilim Homunculus'a o gönderimi ekliyor. **Aşama F0 yalnız
+  altyapıdır:** ayarlar, gönderim defteri, platformun istemcisi, turların iskeleti, yeni yetki ve Yönetim › TRƏS
+  sekmesi. Hasta, yatış, tanı gibi kayıtları FHIR'e çeviren kısım (F1–F6) henüz yok; bu yüzden F0'dan sonra da
+  **hiçbir yere hiçbir şey gönderilmez.**
+- **Durum:** dalda (`feat/tres-esaglik`); main'e ve hastane sunucusuna sahibin sözüyle gelir. Göç 0020 iki tablo
+  ekler (`tres_settings`, `tres_deliveries`).
+- **İki kilit (varsayılan: ikisi de kapalı):**
+  1. **Kurulumun kilidi** — ortam değişkeni `TRES_EGRESS`. `on` değilse sunucu platforma hiç bağlanmaz: tur
+     görevi başlatılmaz, bağlantı sınaması reddedilir (`egress_off`), sekme en üstte «Bu kurulumda dışarıya gönderim
+     kapalı» der. Değiştirmek yeniden başlatma ister. «Hasta verisi binadan çıkmaz» sözü bu kilit kapalıyken
+     geçerlidir.
+  2. **Hastanenin kilidi** — sekmedeki **kip**: «Kapalı» (varsayılan), «Yalnız doğrula» (platform denetler, kayıt
+     yazmaz), «Gönder». Ayarlar bir tur sürerken kaydedilirse o hastanenin turu bir sonraki pakete geçmeden
+     biter; sonraki tur yeni ayarlarla başlar.
+- **Verinin gidebileceği adresler** — ortam değişkeni `TRES_HOSTS` (virgülle ayrılmış sunucu adları). Boşsa
+  bakanlığın iki sunucusu: `ehr-sandbox.e-health.gov.az` ve `ehr.e-health.gov.az`. Başka bir adres sekmede
+  kaydedilmez ve ona bağlanılmaz (`tres_host_not_allowed`). Yani `tres.manage` yetkisi olan biri bile hesabı kendi
+  sunucusuna çeviremez; bunu yalnız kurulumu yapan değiştirir. Liste sonradan daraltılırsa artık izinli olmayan
+  kayıtlı adres sekmedeki kaydetmeyi engellemez, ama o adrese bağlanılmaz.
+- **Kim görür:** yeni yetki `tres.manage` olan. Varsayılan gruplardan hiçbirinde yok; Sistem Yöneticisi her yetkiyi
+  kural gereği taşır (göç satır yazmaz). Yönetim ekranı artık bu yetkiyle de açılır; yalnız bu yetkiyi taşıyan bir
+  hesap oturum açabilir ve tek sekme olarak «TRƏS»i görür.
+- **Sekmede ne var:** kip; ortam (sınama / canlı); taburcudan sonra bekleme süresi (0–168 saat, varsayılan 24);
+  gönderilecek sekiz kayıt türü; her ortam için bir hesap (sunucu adresi, kullanıcı adı, parola, sağlık kuruluşu
+  kimliği, kurum kimliği ve adı); «Kaydet» ve «Bağlantıyı sına». Sunucu adresi `https://` ile başlar; içinde
+  kullanıcı adı ya da parola, sorgu (`?`), parça (`#`) ya da 443 dışında bir port olamaz. Kapatılan bir kayıt türü
+  gönderilmez; platforma onun için hiçbir şey sorulmaz.
+- **Parola:** veritabanında şifreli durur (hasta verisinin anahtarıyla) ve hiçbir yanıtta geri gelmez; sekme yalnız
+  «kayıtlı» der. Alan boş bırakılırsa kayıtlı parola aynı kalır; «Kayıtlı parolayı sil» onu siler. **Sunucu adresi
+  değişirse kayıtlı parola silinir**: yeni parola aynı kayıtta yazılmalıdır. Böylece parola, değiştirilmiş bir
+  adrese kendiliğinden gitmez.
+- **«Bağlantıyı sına»:** kayıtlı hesapla platformda tek bir oturum açmayı dener; «Bağlantı kuruldu» ya da platformun
+  kendi sözleriyle neden kurulamadığını söyler. Kurulumun kilidi kapalıyken düğme etkin değildir.
+- **Denetim:** ayar değişikliği «TRƏS ayarları değişti» olayıdır; hangi alanların değiştiğini yazar, değerleri
+  (özellikle parolayı) yazmaz. Tek istisna: sunucu adresi değiştiyse yeni adresin yalnız sunucu adı yazılır; kayıt,
+  hesabın nereye çevrildiğini gösterir.
+- **Gönderim defteri:** her kaynak için bir satır — durum, platformdaki kimlik, yükün anahtarlı özeti, deneme
+  sayısı, platformun son mesajı (şifreli). İstek ya da yanıt gövdesi saklanmaz. Aynı yük ikinci kez gönderilmez. Bir
+  kaynağı aynı anda iki gönderim yazamaz (satır kilitlenerek alınır), bu yüzden platformda aynı kayıt iki kez
+  oluşmaz.
+- **Kesinti deneme sayılmaz:**
+  - **Kesinti sayılanlar:** platform yanıt vermiyor; «çok fazla istek» (429) diyor; «geçici olarak hizmet dışı»
+    diyor (502, 503, 504, 408); ya da başka bir adrese yönlendiriyor. Bunlarda kaynağın satırı olduğu gibi kalır.
+  - **Deneme sayılanlar:** kaynağın kendisine yönelik bir ret (4xx) ya da o kayıtta tekrar tekrar alınan sunucu
+    hatası (500). Kayıt 30 dakika bekler; beşinci denemede «takıldı» olur ve arkasındaki kayıtların yolunu tıkamaz.
+  - **Turun durması:** «çok fazla istek» yanıtında o hastanenin turu hemen biter. Üst üste beş hatada da biter.
+  - **Süre ve yalıtım:** her istek için 60 saniyelik bir üst süre vardır. Bir hastanenin hatası diğer hastanelerin
+    turunu durdurmaz.
+- **Yanlış parola:** platform girişi reddederse o hastanenin otomatik gönderimi durur. Hesap bilgileri düzeltilip
+  kaydedilene ya da «Bağlantıyı sına» başarılı olana kadar giriş bir daha denenmez; sekme bunu bir uyarıyla söyler.
+  Böylece yanlış parola bakanlıkta tek bir başarısız giriş bırakır, 5 dakikada bir yenisini değil; hesap kilitlenmez.
+  Bu durdurma kendiliğinden kalkmaz; bakanlık hesabı kendi açsa bile durur. Şimdilik yalnız sekmede ve tek bir log
+  satırında görünür, başka bir uyarı gönderilmez. Yönetim › TRƏS'e ara ara bakın.
+- **Kimlikle arama:** platform kayıtları yerel kimliğin başıyla eşleştirir; `hmn-l-12` araması `hmn-l-120`'yi de
+  bulur. Sistem yalnız birebir aynı kimliği kabul eder. Yanıt eksik ya da sayfalıysa «kayıt yok» sonucuna varmaz ve
+  yeni kayıt açmaz; böylece ulusal kayıtta aynı kayıt iki kez oluşmaz.
+- **Bilinen sınırlar:**
+  - Bu aşamadaki dört dil metni yerel bir okurun gözünden geçmedi.
+  - Platformla ilgili her bilgi ikinci eldir; F6'da sınama ortamında doğrulanacak.
+  - Gönderim ilk açıldığında geçmişte taburcu olmuş bütün yatışlar gönderilmeye hazır olur. Başka bir sistemin
+    onları zaten bildirdiği bir hastanede (Bona Dea) bu, ulusal kayıtta çift kayıt demektir. Bir tarih sınırı
+    önerildi (spec O15); karar sahibin.
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-tres-esaglik-gonderim-design.md` (§13 bu aşamanın
+  değişiklikleri); plan `docs/superpowers/plans/2026-11-11-tres-f0-altyapi.md`.
+
 ---
 
 ## 4. "Neden bunu kullanmıyoruz" köşesi

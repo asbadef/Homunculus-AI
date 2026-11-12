@@ -27,6 +27,34 @@
 16. **The build.** F0's strings take the shared i18n chunk past Vite's 500 kB note (489 174 → 501 634 characters, measured on a scratch copy). It is not fixed here: splitting the catalogue is a slice of its own and the controller's decision (Task 14, Step 4).
 17. Two new open items: **O13** (should a 429 or a dead line count towards `stuck`?) and **O14** (what a `validate` round can send after the Patient, when nothing is stored to refer to).
 
+**After the final review (recorded in spec §13.2–13.3):** the review of F0 found no Critical issue and five Important ones (outages counted as attempts and re-logged per package; no single writer per ledger key; `find` trusted the search's first entry; `base_url` could redirect the stored credentials; the switches were held by the callers). They are fixed in `7d508d2c`…`de770d78`, with `TRES_HOSTS`, the guarded factory `egress.open_client`, and the index `ix_tres_deliveries_admission_id` added to 0020. A second round (`4ab325d0`…`9a306d44`) made four changes:
+- `find` refuses a search answer it cannot trust;
+- a 500 counts against its resource;
+- a refused login parks the tenant (`session_refused_at`, added to 0020);
+- it fixed nine minor findings.
+
+O13 is closed («no»); O15–O20 are new.
+
+**Gates (measured when the plan was carried out):**
+- **Baseline** (main `331df704`): engine 4009 passed / 1318 skipped; dashboard 165 files / 4448 tests.
+- **After F0** (`ad0b115c`): engine 4105 passed / 1376 skipped (no-DB); dashboard 166 files / 4475 tests.
+- **After the review's fixes** (`de770d78`):
+  - engine 4153 passed / 1404 skipped / 0 failed (no-DB, in chunks, `test_infinity_vm_pilot.py` excluded);
+  - Postgres: `test_tres_ledger` 30, `test_tres_settings` 59, `test_tres_worker` 22, migrations 0020 + 0010 parity 8, client/fake/egress/models/compose/route permissions 130 — all passed;
+  - dashboard 166 files / 4477 tests;
+  - build `precache  68 entries (1536.07 KiB)`, shared i18n chunk `Toast-*.js` 502.56 kB (500 kB note: yes; accepted for F0 by the controller).
+- **After the second review round** (`9a306d44`, approved):
+  - engine 4199 passed / 1428 skipped / 0 failed (no-DB);
+  - Postgres:
+    - `test_tres_worker` 34 passed;
+    - `test_tres_settings` 66 passed;
+    - `test_tres_ledger` 38 passed;
+    - the migrations 0020 + 0010 parity 8 passed;
+    - client, fake, egress, models, compose and route permissions 173 passed;
+  - dashboard 166 files / 4481 tests;
+  - build `precache  68 entries (1538.41 KiB)`, shared i18n chunk `Toast-*.js` 504.06 kB (500 kB note: yes).
+- **Walk on the local stack** (Task 16, Step 2): not done. This session had no browser, and the owner's local check is listed in the hand-over.
+
 ---
 
 ## Ground rules (read before Task 0)
@@ -5768,3 +5796,16 @@ Expected: the push succeeds (the owner allows pushing `feat/…` branches). **No
 - **N8 — one wait for all tenants.** After a 429 the loop waits for every tenant, not only the throttled one. Fine for one hospital per install; per-tenant waits are a small change in `tres_loop` if an install ever hosts two.
 - **N9 — the build's 500 kB note** (Task 14). Every panel F1 adds brings strings; the catalogue's split should be decided before F1's dashboard half.
 - **N10 — texts.** The `az`, `ru` and `en` strings of `strings/tres.js` and `perms.js` are the planner's; they await a native reading before a hospital opens the feed.
+- **N11 — local ids that are nobody's prefix** (from the F0 review). The platform's `local-system-unique-id` search matches by prefix, so `hmn-l-1` finds `hmn-l-10`…`hmn-l-1999`. `find` no longer trusts such an answer: an incomplete one is refused and counted, never answered by a POST. F1 should still shape D5's ids so that no id is a proper prefix of another, for example by ending every numeric part with a delimiter (`hmn-l-12-`). That keeps search answers to a single entry. Decide it before the first mapper, because a local id never changes once sent.
+- **N12 — «Şimdi gönder» and the row lock** (from the F0 review). A delivery holds its ledger row under `FOR UPDATE` across several HTTP calls: a few minutes at worst, since the 60 s bound is per call. The F1 route that sends one stay on demand must not queue behind a round. Take the row with `NOWAIT` (or `SET LOCAL lock_timeout`) and answer «busy, try again» rather than hang the request.
+- **N14 — the nightly retry ships before live** (from the second review). Since a 500 counts against its resource, a platform-wide 500 lasting two hours or more walks the whole due backlog to `stuck`. The reviewer's measurement, 40 stays due: 30 rows at their first attempt within 25 minutes, 30 `stuck` at +145 min. Only `force` (the nightly 04:00 retry, «Yeniden dene») takes a row out of `stuck`, and `force=True` has no caller yet. F1 builds both before any tenant's mode can be `send` on a live host.
+- **N15 — parking: a stale login and the operator's signal** (from the second review).
+  - The race: `_park`'s UPDATE has no condition, so a login that left with the old password and comes back 401 after the administrator saved the new one parks the tenant again. Make it `WHERE updated_at = <the round's version>`.
+  - The signal: a parked tenant shows only on the tab and in one log line. F1's «Gönderimler» panel should show it at the top.
+- **N16 — search answers to check on the sandbox (F6).**
+  - An entry with `search.mode: outcome` (an OperationOutcome among the matches) carries no local id, so `find` refuses the answer. A server that always adds one would leave every new resource of that type unsendable. If the platform does this, `find` should skip `outcome` entries.
+  - A `link` that is a dict rather than a list is ignored today.
+- **N17 — small nits.**
+  - `client.py`: an exact hit with no server `id` reports «a search entry carries no local id».
+  - A `keep_held` skip still updates the row's `admission_id`.
+- **N13 — migration number.** Main took `0020_quality_view.py` (G4-03, `b2fb07d0`) while F0 was built. At merge, `0020_tres.py` takes the next free number, and every «0020» in the module's docstrings and in spec §13 follows it. G3-05 (`feat/g3-cihaz-olcum-kaydi`) claims 0021, so check main's head at that moment.
