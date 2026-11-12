@@ -847,7 +847,8 @@ describe("the national feed's refusals (TRƏS-01)", () => {
   const CODES = ["tres_mode", "tres_environment", "tres_settle_hours", "tres_types", "tres_base_url",
     "tres_field_length", "egress_off", "tres_account_incomplete", "tres_host_not_allowed",
     "tres_live_closed", "tres_unit_unknown", "tres_department_code", "tres_department_display", "tres_user_unknown",
-    "tres_fin_format", "tres_name"];
+    "tres_fin_format", "tres_name", "tres_filter", "tres_cursor", "tres_stay_unknown", "tres_off", "tres_busy",
+    "tres_login_refused", "tres_platform_unavailable"];
 
   it("maps each by its code, whatever the server's words", () => {
     expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());

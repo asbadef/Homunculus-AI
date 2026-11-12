@@ -285,6 +285,13 @@ export const TRES_CODE_KEYS = new Map([
   ["tres_user_unknown", "tres.err.userUnknown"],        // F1: the practitioners' identities (D16)
   ["tres_fin_format", "tres.err.finFormat"],
   ["tres_name", "tres.err.name"],
+  ["tres_filter", "tres.err.filter"],                   // F1: the ledger's list, a stay, the hand (tres/deliveries.py)
+  ["tres_cursor", "tres.err.cursor"],
+  ["tres_stay_unknown", "tres.err.stayUnknown"],
+  ["tres_off", "tres.err.off"],
+  ["tres_busy", "tres.err.busy"],
+  ["tres_login_refused", "tres.err.loginRefused"],
+  ["tres_platform_unavailable", "tres.err.platformUnavailable"],
 ]);
 /** TRƏS-01 (review M10): `tres_host_not_allowed` says which account's address, when the refusal names it
  *  (`err.apiEnvironment`, backendApi.js) — the install narrowed TRES_HOSTS, and the form holds two addresses. */

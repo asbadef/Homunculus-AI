@@ -70,6 +70,7 @@ export default {
       tresSettings: "TRƏS ayarları değişti",
       tresPackage: "TRƏS: yatış paketi gönderildi",
       tresMap: "TRƏS bölüm eşlemesi değişti", tresIdentity: "TRƏS hekim kimliği değişti",
+      tresSend: "TRƏS: yatış elle gönderildi", tresRetry: "TRƏS: gönderim yeniden denendi", tresPreview: "TRƏS: gönderim önizlemesi açıldı",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -146,6 +147,7 @@ export default {
       tresSettings: "TRƏS ayarları dəyişdirildi",
       tresPackage: "TRƏS: yatış paketi göndərildi",
       tresMap: "TRƏS şöbə uyğunlaşdırması dəyişdirildi", tresIdentity: "TRƏS həkim identifikasiyası dəyişdirildi",
+      tresSend: "TRƏS: yatış əl ilə göndərildi", tresRetry: "TRƏS: göndəriş yenidən cəhd edildi", tresPreview: "TRƏS: göndərişin ilkin baxışı açıldı",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -222,6 +224,7 @@ export default {
       tresSettings: "Изменены настройки TRƏS",
       tresPackage: "TRƏS: пакет госпитализации отправлен",
       tresMap: "Изменено сопоставление отделений TRƏS", tresIdentity: "Изменены данные врача для TRƏS",
+      tresSend: "TRƏS: госпитализация отправлена вручную", tresRetry: "TRƏS: отправка повторена", tresPreview: "TRƏS: открыт предпросмотр отправки",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -298,6 +301,7 @@ export default {
       tresSettings: "TRƏS settings changed",
       tresPackage: "TRƏS: a stay's package was sent",
       tresMap: "TRƏS department map changed", tresIdentity: "TRƏS practitioner identity changed",
+      tresSend: "TRƏS: a stay sent by hand", tresRetry: "TRƏS: a delivery retried", tresPreview: "TRƏS: a send preview opened",
     },
     heat: {
       title: "Alarm density — last {days} days",

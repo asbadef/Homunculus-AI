@@ -41,6 +41,7 @@ GUARDED_MODULES = {
     "homunculus.protocol.router",       # G2-B1d
     "homunculus.tres.router",           # TRƏS-01
     "homunculus.tres.maps",             # TRƏS-01 F1: the two maps
+    "homunculus.tres.deliveries",       # TRƏS-01 F1: the ledger, the preview, the hand
 }
 
 _S = "structure.manage"
@@ -163,6 +164,12 @@ EXPECTED: dict[tuple[str, str], Guards] = {
     ("PUT", "/admin/tres/departments"): ANY("tres.manage"),
     ("GET", "/admin/tres/practitioners"): ANY("tres.manage"),
     ("PUT", "/admin/tres/practitioners/{user_id}"): ANY("tres.manage"),
+    # tres/deliveries.py — TRƏS-01 F1 (spec §6, D9, D21, D25): the ledger, a stay, its preview, the hand
+    ("GET", "/admin/tres/deliveries"): ANY("tres.manage"),
+    ("GET", "/admin/tres/admissions"): ANY("tres.manage"),
+    ("GET", "/admin/tres/admissions/{admission_id}/preview"): ANY("tres.manage"),
+    ("POST", "/admin/tres/admissions/{admission_id}/send"): ANY("tres.manage"),
+    ("POST", "/admin/tres/deliveries/{delivery_id}/retry"): ANY("tres.manage"),
 }
 
 
@@ -248,7 +255,7 @@ def test_the_map_tells_one_either_guard_from_two_guards():
 
 
 def test_the_table_covers_every_guarded_route():
-    assert len(EXPECTED) == 82      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end; G4-02: +1, GET /handovers/pending; TRƏS-01 F0: +3, the settings read and write, the connection test; F1: +4, the two maps
+    assert len(EXPECTED) == 87      # G2-B3a: +5 (the bed moves, the occupancy read); G2-B3b: +2 (my handovers, colleagues); G2-B1c: +2, the picker, the end; G4-02: +1, GET /handovers/pending; TRƏS-01 F0: +3, the settings read and write, the connection test; F1: +4, the two maps, +5, the ledger, a stay, the preview, send, retry
 
 
 def test_no_guarded_route_is_missing_from_the_table():
