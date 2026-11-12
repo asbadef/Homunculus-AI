@@ -1471,13 +1471,15 @@ def create_app(
             # G3-05 (D13): the same event — every reader of withdrawals honours it — saying what it withdrew.
             withdrawal |= {"origin": "device", "device": target.payload.get("device")}
         audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, withdrawal))
-        # G3-05 (D7): the record's row is marked after the trail's row. Never raises: the withdrawal is written,
-        # and `reconcile` marks a row this could not.
-        try:
-            for entry_id in taken:
+        # G3-05 (D7): the record's row is marked after the trail's row, once per copy (the one table row may be
+        # filed under either). Never raises, and one failing mark does not skip the others: the withdrawal is
+        # written, and `reconcile` marks a row this could not. Logged by class only — a message may carry a value.
+        for entry_id in taken:
+            try:
                 readings.void(hospital, entry_id, by=caller.actor, at=now, reason=reason)
-        except Exception:
-            log.exception("vital_readings: hatalı giriş işareti yazılamadı (hastane %s); reconcile tamamlar", hospital)
+            except Exception as exc:
+                log.error("vital_readings: hatalı giriş işareti yazılamadı (hastane %s, %s); reconcile tamamlar",
+                          hospital, type(exc).__name__)
         await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now, copies=copies)
         return {"retracted": target.id, "code": target.subject,
                 "alerts": [a.kind for a in engine.active_alerts(patient_id)]}

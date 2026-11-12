@@ -19,7 +19,7 @@ from homunculus.api.clinical import (
     RETRACT, RETRACT_ALREADY, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_UNKNOWN,
 )
 from homunculus.api.identity import Caller
-from homunculus.api.readings import InMemoryReadingStore
+from homunculus.api.readings import ORIGIN_DEVICE, InMemoryReadingStore, Reading
 from homunculus.api.rehydrate import (
     device_key_of, observation_of, rebuild_patient, rehydrate, retracted_device_readings, retracted_entries,
 )
@@ -516,6 +516,63 @@ class TestTwoAuditRowsForOneReading:
             assert _held(client, code=SignalCode.RESP_RATE) == [16.0]    # the hand entry's
         with TestClient(self._restarted(audit)) as client:
             assert _held(client, code=SignalCode.RESP_RATE) == [16.0]
+
+    def _filed(self, store, *entries):
+        """One `vital_readings` row per audit row given, filed under KEY with `entry_id` = that row's id. The table
+        holds one row per number as received (D14), so each copy is filed as it arrived: the first under KEY, the
+        next as a reading linked from another number."""
+        for n, entry in enumerate(entries):
+            store.add(Reading(tenant="h1", received_key=KEY if n == 0 else f"20260000009{n}", code=entry.subject,
+                              value=float(entry.payload["value"]), unit="/min",
+                              observed_at=datetime.fromisoformat(entry.payload["obs_ts"]),
+                              received_at=datetime.fromisoformat(entry.payload["obs_ts"]), origin=ORIGIN_DEVICE,
+                              source=entry.payload["device"], patient_key=KEY, audit_id=entry.id, entry_id=entry.id))
+
+    def _voided(self, store, *entries) -> list[bool]:
+        held = {r.entry_id: r for r in store.for_patient("h1", KEY, since=datetime.min.replace(tzinfo=timezone.utc),
+                                                         until=datetime.max.replace(tzinfo=timezone.utc))}
+        return [held[e.id].voided_at is not None for e in entries]
+
+    @pytest.mark.parametrize("chosen", ["first", "second"])
+    def test_the_record_row_of_every_copy_is_marked(self, chosen):
+        """The one table row may be filed under either copy's id, so a withdrawal marks each — whichever the nurse
+        named. The other value at that time keeps its row unmarked."""
+        audit, first, second, other = self._trail()
+        store = InMemoryReadingStore()
+        self._filed(store, first, second)
+        self._filed(store, other)
+        app, _, _ = _app(audit=audit, store=store)
+        with TestClient(app) as client:
+            assert _retract(client, {"first": first, "second": second}[chosen].id).status_code == 200
+        assert self._voided(store, first, second, other) == [True, True, False]
+        rows = {r.entry_id: r for r in store.for_patient("h1", KEY, since=datetime.min.replace(tzinfo=timezone.utc),
+                                                         until=datetime.max.replace(tzinfo=timezone.utc))}
+        assert (rows[first.id].voided_by, rows[first.id].void_reason) == ("hem.ayse", WHY)
+        assert (rows[second.id].voided_by, rows[second.id].void_reason) == ("hem.ayse", WHY)
+
+    def test_one_failing_mark_does_not_skip_the_other_copies(self, caplog):
+        audit, first, second, _ = self._trail()
+        tried: list[int] = []
+
+        class _FirstMarkFails(InMemoryReadingStore):
+            def void(self, tenant, entry_id, **kw):
+                tried.append(entry_id)
+                if entry_id == first.id:
+                    raise RuntimeError(f"readings down for {KEY}")           # a message that carries a number
+                return super().void(tenant, entry_id, **kw)
+
+        store = _FirstMarkFails()
+        self._filed(store, first, second)
+        app, _, _ = _app(audit=audit, store=store)
+        with caplog.at_level("ERROR"), TestClient(app) as client:
+            assert _retract(client, first.id).status_code == 200
+            assert _held(client) == [80.0, 150.0]                    # the withdrawal stands
+            assert len(_rows(audit, RETRACT)) == 1
+        assert tried == [first.id, second.id]                        # the second was still marked
+        assert self._voided(store, first, second) == [False, True]
+        failed = [r for r in caplog.records if "vital_readings" in r.getMessage()]
+        assert len(failed) == 1 and "RuntimeError" in failed[0].getMessage()
+        assert KEY not in failed[0].getMessage() and failed[0].exc_info is None      # the class, never the text
 
     def test_the_shadow_lane_forgets_every_copy_too(self, monkeypatch):
         """The lane keeps one reading per `/ingest` and a removal drops ONE equal reading: the route must make one
