@@ -17,6 +17,9 @@ the account to another server); an empty string clears it. A save that changes s
 AFTER the commit with the NAMES of the fields that changed (`mode`, `test.password`…) and, for a
 changed base URL, the HOST it now points at (no path, no credentials) — never another value (D24;
 A-26: never a 500 for a committed change). A save that changes nothing writes no audit row.
+Plan F1: the answer carries `send_from` (O15, proposed: the rounds' cut-off), which the first save
+that chooses `send` sets to its own moment and a body's `send_from` moves; a mode other than `off`
+is refused 422 `tres_live_closed` while the selected account would reach the live platform.
 A save that changes the `environment`, or the base URL of the account in use, resets the rounds'
 watermark `reached_to` (plan F1, amendment 25, A3: the ledger is per environment) — not a setting,
 not in the answer, not named in the audit row.
@@ -103,10 +106,11 @@ def _out(row: TresSettings | None, egress: bool) -> TresSettingsOut:
         enabled_types=list(row.enabled_types) if row is not None else list(RESOURCE_TYPES),
         test=_account_out(row, "test"), live=_account_out(row, "live"), egress=egress,
         updated_at=row.updated_at if row is not None else None,
-        session_refused_at=row.session_refused_at if row is not None else None)
+        session_refused_at=row.session_refused_at if row is not None else None,
+        send_from=row.send_from if row is not None else None)
 
 
-def _apply(row: TresSettings, payload: TresSettingsIn) -> list[str]:
+def _apply(row: TresSettings, payload: TresSettingsIn, now: datetime) -> list[str]:
     """Writes what differs onto the row; answers the NAMES of the fields that changed."""
     changed: list[str] = []
 
@@ -116,6 +120,11 @@ def _apply(row: TresSettings, payload: TresSettingsIn) -> list[str]:
             changed.append(name)
 
     put("mode", payload.mode, "mode")
+    # O15 (proposed): the cut-off is the body's when it names one, else the moment `send` is first chosen.
+    if payload.send_from is not None:
+        put("send_from", payload.send_from, "send_from")
+    elif row.send_from is None and payload.mode == "send":
+        put("send_from", now, "send_from")
     put("environment", payload.environment, "environment")
     put("settle_hours", payload.settle_hours, "settle_hours")
     # In the catalogue's order, whatever order the body listed them in.
@@ -168,14 +177,15 @@ async def write_settings(
         code, environment = refused
         extra = {"environment": environment} if code == TRES_HOST_NOT_ALLOWED else None
         raise refusal(422, code, extra).http()
-    changed = _apply(row, payload)
+    now = datetime.now(timezone.utc)
+    changed = _apply(row, payload, now)
     audit: dict = {"actor": actor, "changed": changed}
     hosts = {prefix: _host(getattr(row, f"{prefix}_base_url")) for prefix in ENVIRONMENTS
              if f"{prefix}.base_url" in changed}
     if hosts:
         audit["hosts"] = hosts
     if changed:
-        row.updated_at, row.updated_by = datetime.now(timezone.utc), user_id
+        row.updated_at, row.updated_by = now, user_id
         # A changed setting is the administrator's answer to a refused login: the rounds try again.
         row.session_refused_at = None
 

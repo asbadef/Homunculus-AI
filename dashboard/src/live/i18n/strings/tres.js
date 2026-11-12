@@ -78,6 +78,7 @@ export default {
       fieldLength: "Hesap alanlarından biri çok uzun.",
       egressOff: "Bu kurulumda dışarıya gönderim kapalı; bağlantı sınanmadı.",
       accountIncomplete: "Seçili ortamın hesabı eksik; bağlantı sınanmadı.",
+      liveClosed: "Canlı platforma hasta verisi gönderimi bu sürümde kapalı (yasal dayanak ve geçiş henüz karara bağlanmadı). Canlı hesap için yalnız «Kapalı» kip kaydedilir.",
     },
   },
   az: {
@@ -150,6 +151,7 @@ export default {
       fieldLength: "Hesab sahələrindən biri həddən artıq uzundur.",
       egressOff: "Bu quraşdırmada xaricə göndəriş bağlıdır; bağlantı yoxlanılmadı.",
       accountIncomplete: "Seçilmiş mühitin hesabı natamamdır; bağlantı yoxlanılmadı.",
+      liveClosed: "Canlı platformaya xəstə məlumatlarının göndərilməsi bu versiyada bağlıdır (hüquqi əsas və keçid hələ qərara alınmayıb). Canlı hesab üçün yalnız «Bağlı» rejimi yadda saxlanılır.",
     },
   },
   ru: {
@@ -222,6 +224,7 @@ export default {
       fieldLength: "Одно из полей учётной записи слишком длинное.",
       egressOff: "В этой установке отправка наружу закрыта; соединение не проверялось.",
       accountIncomplete: "Учётная запись выбранной среды неполная; соединение не проверялось.",
+      liveClosed: "Передача данных пациентов на рабочую платформу в этой версии закрыта (правовое основание и переход ещё не решены). Для рабочей учётной записи сохраняется только режим «Выключено».",
     },
   },
   en: {
@@ -294,6 +297,7 @@ export default {
       fieldLength: "One of the account fields is too long.",
       egressOff: "Outbound sending is closed on this installation; the connection was not tested.",
       accountIncomplete: "The selected environment's account is incomplete; the connection was not tested.",
+      liveClosed: "Sending patient data to the live platform is closed in this version (the legal basis and the cut-over are not yet decided). For a live account, only the mode «Off» is saved.",
     },
   },
 };

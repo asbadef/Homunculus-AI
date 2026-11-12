@@ -78,13 +78,16 @@ def body(**over) -> dict:
     # review M1: a host IDNA cannot read (httpx's `.host` raises) is a bad address, never a 500
     (body(test={**EMPTY, "base_url": "https://xn--a.gov.az"}), "tres_base_url"),
     (body(live={**EMPTY, "base_url": "https://xn--hr-e-health-xyz.gov.az"}), "tres_base_url"),
+    # plan F1 (O5, O11): no mode but off may point at the live platform in this version
+    (body(mode="validate", environment="live", settle_hours=0, enabled_types=[]), "tres_live_closed"),
+    (body(mode="send", environment="live"), "tres_live_closed"),
 ])
 def test_a_bad_body_has_its_code(sent, code):
     assert settings_refusal(TresSettingsIn(**sent), hosts=HOSTS) == code
 
 
 @pytest.mark.parametrize("sent", [
-    body(), body(mode="validate", environment="live", settle_hours=0, enabled_types=[]),
+    body(), body(mode="off", environment="live", settle_hours=0, enabled_types=[]),
     body(mode="send", settle_hours=168, enabled_types=["lab", "patient"], test=SANDBOX),
     body(test={**EMPTY, "base_url": "  "}),                           # blank: cleared, not judged
     body(live={**EMPTY, "base_url": "https://EHR.example.az:443/fhir-base"}),
@@ -138,7 +141,7 @@ async def test_a_tenant_starts_off_with_no_account_and_the_lock_closed(ward, db_
     account = {**EMPTY, "password_set": False}
     assert r.json() == {"mode": "off", "environment": "test", "settle_hours": 24,
                         "enabled_types": list(RESOURCE_TYPES), "test": account, "live": account,
-                        "egress": False, "updated_at": None, "session_refused_at": None}
+                        "egress": False, "updated_at": None, "session_refused_at": None, "send_from": None}
     assert await _count(db_session) == 0                    # a read writes no row
 
 
@@ -571,3 +574,54 @@ async def test_a_narrowed_install_still_saves_the_form_and_names_the_account_it_
     assert moved.status_code == 422
     assert moved.json()["detail"] == {"code": "tres_host_not_allowed", "environment": "live",
                                       "message": WORDS["tres_host_not_allowed"]}
+
+
+# ---------------------------------------------------------------- plan F1: the live platform, the cut-off (O15)
+def test_a_live_host_under_the_test_account_is_refused_too_but_not_while_off():
+    live_host = {**EMPTY, "base_url": "https://ehr.e-health.gov.az"}
+    hosts = DEFAULT_HOSTS
+    assert settings_refusal(TresSettingsIn(**body(mode="send", test=live_host)), hosts=hosts) == "tres_live_closed"
+    assert settings_refusal(TresSettingsIn(**body(mode="off", test=live_host)), hosts=hosts) is None
+    assert settings_refusal(TresSettingsIn(**body(mode="send", live=live_host)), hosts=hosts) is None   # not selected
+
+
+def test_an_address_that_cannot_be_read_is_the_urls_own_refusal_never_the_live_lock():
+    """Amendment 24 (M1): `live_closed` fails closed on an address it cannot read, so the form judges the
+    URL FIRST, in either environment."""
+    for unreadable in ("not a url", "ehr.e-health.gov.az", "https://"):
+        for environment in ("test", "live"):
+            sent = body(mode="send", environment=environment, **{environment: {**EMPTY, "base_url": unreadable}})
+            assert settings_refusal(TresSettingsIn(**sent), hosts=DEFAULT_HOSTS) == "tres_base_url", (
+                unreadable, environment)
+
+
+@requires_db
+async def test_the_first_save_in_send_sets_the_cut_off_and_the_form_can_move_it(ward, db_session):
+    """O15 (proposed, awaiting the owner's word): a stay discharged before `send_from` is sent only
+    by hand. The first save that chooses `send` sets it; a later one keeps it; a body may move it."""
+    w, client, app = ward
+    r = await client.put(URL, json=body(mode="validate", test=SANDBOX), headers=w.auth["admin"])
+    assert r.json()["send_from"] is None                                     # validate: no cut-off yet
+    before = datetime.now(timezone.utc)
+    r = await client.put(URL, json=body(mode="send", test=SANDBOX), headers=w.auth["admin"])
+    first = datetime.fromisoformat(r.json()["send_from"])
+    assert before <= first <= datetime.now(timezone.utc)
+    assert _audit(app)[-1].payload["changed"] == ["mode", "send_from"]
+    r = await client.put(URL, json=body(mode="send", test=SANDBOX, send_from=None), headers=w.auth["admin"])
+    assert datetime.fromisoformat(r.json()["send_from"]) == first            # null keeps it
+    moved = "2026-11-01T00:00:00+04:00"
+    r = await client.put(URL, json=body(mode="send", test=SANDBOX, send_from=moved), headers=w.auth["admin"])
+    assert datetime.fromisoformat(r.json()["send_from"]) == datetime.fromisoformat(moved)
+    assert _audit(app)[-1].payload["changed"] == ["send_from"]
+    assert (await client.put(URL, json=body(mode="send", test=SANDBOX, send_from="2026-11-01T00:00:00"),
+                             headers=w.auth["admin"])).status_code == 422          # no zone: FastAPI's own 422
+
+
+@requires_db
+async def test_a_mode_on_the_live_platform_is_refused_and_writes_nothing(ward, db_session):
+    w, client, app = ward
+    r = await client.put(URL, json=body(mode="send", environment="live", live=SANDBOX), headers=w.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "tres_live_closed")
+    assert await _count(db_session) == 0 and _audit(app) == []
+    r = await client.put(URL, json=body(mode="off", environment="live", live=SANDBOX), headers=w.auth["admin"])
+    assert r.status_code == 200                                                # an account set up, the feed off

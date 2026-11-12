@@ -278,6 +278,7 @@ export const TRES_CODE_KEYS = new Map([
   ["egress_off", "tres.err.egressOff"],
   ["tres_account_incomplete", "tres.err.accountIncomplete"],
   ["tres_host_not_allowed", "tres.err.hostNotAllowed"],
+  ["tres_live_closed", "tres.err.liveClosed"],          // F1: the live platform, closed in this version (O5, O11)
 ]);
 /** TRƏS-01 (review M10): `tres_host_not_allowed` says which account's address, when the refusal names it
  *  (`err.apiEnvironment`, backendApi.js) — the install narrowed TRES_HOSTS, and the form holds two addresses. */

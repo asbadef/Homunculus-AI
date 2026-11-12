@@ -37,7 +37,7 @@ from collections.abc import Mapping
 import httpx
 
 from homunculus.tres.client import TresAccount, TresClient
-from homunculus.tres.errors import EGRESS_OFF, TRES_HOST_NOT_ALLOWED
+from homunculus.tres.errors import EGRESS_OFF, TRES_HOST_NOT_ALLOWED, TRES_LIVE_CLOSED
 
 #: The platform's two hosts (spec §4.1): the sandbox and live.
 DEFAULT_HOSTS: frozenset[str] = frozenset({"ehr-sandbox.e-health.gov.az", "ehr.e-health.gov.az"})
@@ -111,12 +111,10 @@ class TresEgressRefused(Exception):
 class TresLiveClosed(TresEgressRefused):
     """`open_client` would not build a client for patient data: the account's address is on the
     live platform, closed in this version (`live_closed`). A constant message, never the address
-    or the account. Its code is the settings and hand routes' `tres_live_closed`; errors.py gains
-    that constant with its dashboard words in plan F1's Task 10 (one commit), and this literal
-    becomes an import of it there."""
+    or the account. Its code is the settings and hand routes' `tres_live_closed`."""
 
     def __init__(self) -> None:
-        super().__init__("tres_live_closed")
+        super().__init__(TRES_LIVE_CLOSED)
 
 
 def open_client(account: TresAccount, *, egress: bool, hosts: frozenset[str],

@@ -845,7 +845,8 @@ describe("the task queue's refusals (G3-02)", () => {
 // TRƏS-01 — Yönetim › TRƏS: the routes' refusals, by code (err.apiCode; homunculus-engine tres/errors.py).
 describe("the national feed's refusals (TRƏS-01)", () => {
   const CODES = ["tres_mode", "tres_environment", "tres_settle_hours", "tres_types", "tres_base_url",
-    "tres_field_length", "egress_off", "tres_account_incomplete", "tres_host_not_allowed"];
+    "tres_field_length", "egress_off", "tres_account_incomplete", "tres_host_not_allowed",
+    "tres_live_closed"];
 
   it("maps each by its code, whatever the server's words", () => {
     expect([...TRES_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());

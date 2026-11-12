@@ -7,18 +7,23 @@ value of the right type that the rules refuse is a coded 422 (`settings_refusal`
 THE PASSWORD IS WRITE-ONLY. `TresAccountIn.password`: omitted or null keeps the stored one, an
 empty string clears it, anything else replaces it. `TresAccountOut` has no password field at all —
 only `password_set`. Every other account field is cleared by null or an empty string. A changed
-base URL clears the stored password too unless the same body brings a new one (router.py)."""
+base URL clears the stored password too unless the same body brings a new one (router.py).
+
+`send_from` (plan F1, O15 — PROPOSED, AWAITING THE OWNER'S WORD): the automatic rounds' cut-off.
+Omitted or null keeps the stored one; a time with a zone moves it. The first save that chooses
+`send` sets it to that moment when none is stored. A mode other than `off` is refused while the
+selected account would reach the live platform (`tres_live_closed`, egress.live_closed)."""
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
 
 import httpx
-from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
+from pydantic import AwareDatetime, BaseModel, ConfigDict, StrictInt, StrictStr
 
-from homunculus.tres.egress import address_allowed
+from homunculus.tres.egress import address_allowed, live_closed
 from homunculus.tres.errors import (
-    TRES_BASE_URL, TRES_ENVIRONMENT, TRES_FIELD_LENGTH, TRES_HOST_NOT_ALLOWED, TRES_MODE,
+    TRES_BASE_URL, TRES_ENVIRONMENT, TRES_FIELD_LENGTH, TRES_HOST_NOT_ALLOWED, TRES_LIVE_CLOSED, TRES_MODE,
     TRES_SETTLE_HOURS, TRES_TYPES,
 )
 from homunculus.tres.models import ACCOUNT_FIELDS, ENVIRONMENTS, MODES, RESOURCE_TYPES
@@ -49,6 +54,7 @@ class TresSettingsIn(BaseModel):
     enabled_types: list[StrictStr]
     test: TresAccountIn
     live: TresAccountIn
+    send_from: AwareDatetime | None = None   # O15 (proposed): None keeps the stored cut-off
 
 
 class TresAccountOut(BaseModel):
@@ -70,6 +76,7 @@ class TresSettingsOut(BaseModel):
     egress: bool                     # the install's lock (D2 (b)): false = nothing leaves the server
     updated_at: datetime | None      # None: the tenant has never saved the tab
     session_refused_at: datetime | None   # when the platform refused the login; the rounds wait (I3)
+    send_from: datetime | None       # O15 (proposed): stays discharged before it go only by hand
 
 
 class TresTestOut(BaseModel):
@@ -125,6 +132,9 @@ def refusal_of(payload: TresSettingsIn, *, hosts: frozenset[str],
             value = getattr(account, name)
             if value is not None and len(value) > FIELD_MAX[name]:
                 return TRES_FIELD_LENGTH, prefix
+    selected = (getattr(payload, payload.environment).base_url or "").strip() or None
+    if payload.mode != "off" and live_closed(payload.environment, selected):
+        return TRES_LIVE_CLOSED, payload.environment
     return None
 
 
