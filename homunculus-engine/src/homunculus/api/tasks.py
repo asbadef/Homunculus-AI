@@ -2,8 +2,9 @@
 """Görevlerim (G3-02): the ward's task queue.
 
 Two sources, one model (spec D1). A HAND task is a row a clinician wrote (the store below). The
-VITAL task is never stored (D2): it is derived at read time from the patient's most recent hand
-entry of a NEWS2 input (the `chart` rows G3-01 writes, minus the withdrawn ones), the band of the
+VITAL task is never stored (D2): it is derived at read time from the patient's most recent
+measurement of a NEWS2 input — a hand entry (the `chart` rows G3-01 writes) or, since G3-05 (D15,
+which overrides D2's «hand entries only»), a device reading (the `ingest` rows) — minus the withdrawn ones, the band of the
 board card's NEWS2 total (D3) and the interval the hospital set for that band (D10). The only
 interval the vault supports is NEWS2 score 0 → «minimum 12-hourly observations» (news2-rcp-2017,
 an extract); every other band is NULL until the administrator enters the hospital's protocol, and
@@ -27,6 +28,7 @@ from fastapi import APIRouter, Body, Header, HTTPException, Query
 from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.api.clinical import BEDSIDE_SKEW, RETRACT
 from homunculus.api.identity import Caller
+from homunculus.api.rehydrate import device_key_of, retracted_device_readings
 from homunculus.auth.permissions import validate_permissions
 from homunculus.canonical import SignalCode
 
@@ -38,11 +40,19 @@ BAND_KEYS: tuple[str, ...] = ("b0", "b1_4", "b3_single", "b5_6", "b7")
 #: Vault source of the one default: news2-rcp-2017 — «Minimum 12-hourly observations» for a score of 0.
 VITAL_DEFAULT_SOURCE = "news2-rcp-2017"
 
-#: The seven inputs NEWS2 scores, as the signal codes a hand entry carries (`rules/news2.py`).
-NEWS2_HAND_CODES: frozenset[str] = frozenset({
+#: The seven inputs NEWS2 scores, as the signal codes a `chart` or an `ingest` row carries (`rules/news2.py`).
+#: Any one of them, measured, is a vital measurement (G3-05, D15). A device sends four of the seven — SpO₂,
+#: systolic pressure, pulse, temperature — and no respiration rate and no consciousness: after a device round
+#: the task resets and the card's NEWS2 stays partial until those two are entered by hand (Q4).
+NEWS2_INPUT_CODES: frozenset[str] = frozenset({
     SignalCode.RESP_RATE.value, SignalCode.SPO2.value, SignalCode.SBP.value, SignalCode.HEART_RATE.value,
     SignalCode.TEMPERATURE.value, SignalCode.SUPPLEMENTAL_OXYGEN.value, SignalCode.ACVPU.value,
 })
+#: The name from before G3-05, when only a hand entry counted. Kept for its importers.
+NEWS2_HAND_CODES = NEWS2_INPUT_CODES
+#: The rows a measurement is: a clinician's `chart` row or a device's `ingest` row. A reading that waits in the
+#: unmatched list is neither — it is a `reading_unmatched` row under no patient — and counts only once linked.
+MEASUREMENT_EVENTS = frozenset({"chart", "ingest"})
 
 TARGET_ROLES: tuple[str, ...] = ("nurse", "physician", "any")
 TASK_STATES: tuple[str, ...] = ("open", "done", "skipped")
@@ -50,10 +60,11 @@ TITLE_MAX = 200
 #: A hand task's due time at creation: at most this far back, at most this far ahead (spec D6).
 DUE_BACK = timedelta(hours=24)
 DUE_AHEAD = timedelta(days=7)
-#: How far back the anchor read looks for a hand entry before it falls back to the admission (D2).
+#: How far back the anchor read looks for a measurement before it falls back to the admission (D2).
 ANCHOR_WINDOW = timedelta(hours=48)
-#: The most hand-entry rows one patient's anchor read keeps (newest first), as trends keeps (G3-01 X1);
-#: the board's one tenant-wide read keeps HAND_LIMIT * 4.
+#: The most measurement rows one patient's anchor read keeps (newest first), as trends keeps (G3-01 X1);
+#: the board's one tenant-wide read keeps HAND_LIMIT * 4 — 20 000 rows, the newest: enough for spot-check
+#: devices on every floor (four rows a round), not for a continuous monitor feed in the real engine (G3-05 O3).
 HAND_LIMIT = 5000
 VITAL_SKIPPED = "vital_skipped"
 #: How far back the board reads `vital_skipped`. A skip lasts until the first due point after the moment
@@ -325,12 +336,21 @@ class InMemoryTaskStore:
 # ----------------------------------------------------------------------------- the anchor: hand entries
 
 def _stamps_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, list[datetime]]:
-    """Each patient's hand-entry instants in [since, until], oldest first: the `chart` rows of a NEWS2
-    input minus the ones a `chart_retract` of the SAME patient withdrew (G3-01 D12)."""
+    """Each patient's measurement instants in [since, until], oldest first: the `chart` and `ingest` rows of
+    a NEWS2 input minus the ones a `chart_retract` of the SAME patient withdrew (G3-01 D12; G3-05 D13, D15).
+    `until` bounds a stamp from the future: a device clock running ahead anchors nothing.
+
+    A hand entry is withdrawn by its own id alone. A device reading is withdrawn by its KEY (`rehydrate`'s
+    `device_key`: patient, code, instant, device, value): a withdrawal that names one `ingest` row withdraws every
+    row of that reading — the rare twin a `seen` that failed open left — as the engine's replay does, or the anchor
+    would count a value the nurse saw struck through."""
     withdrawn = {(rec.patient_id, rec.payload.get("entry")) for rec in rows if rec.event_type == RETRACT}
+    withdrawn_device = retracted_device_readings(rows)
     stamps: dict[str, list[datetime]] = {}
     for rec in rows:
-        if rec.event_type != "chart" or rec.subject not in NEWS2_HAND_CODES or (rec.patient_id, rec.id) in withdrawn:
+        if (rec.event_type not in MEASUREMENT_EVENTS or rec.subject not in NEWS2_INPUT_CODES
+                or (rec.patient_id, rec.id) in withdrawn
+                or (rec.event_type == "ingest" and withdrawn_device and device_key_of(rec) in withdrawn_device)):
             continue
         at = _instant(rec.payload.get("obs_ts"))
         if at is not None and since <= at <= until:
@@ -340,9 +360,10 @@ def _stamps_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, l
 
 def hand_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: datetime,
                  until: datetime) -> list[datetime]:
-    """When this patient's NEWS2 inputs were entered by hand in [since, until], oldest first — the
-    `chart` rows minus the withdrawn ones (G3-01 D12). A monitor or HL7 observation is not one."""
-    rows = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", RETRACT},
+    """When this patient's NEWS2 inputs were measured in [since, until], oldest first — the `chart` and
+    `ingest` rows minus the withdrawn ones (G3-01 D12). Since G3-05 (D15) a device reading is one; the name is
+    from before it."""
+    rows = audit.records(tenant=hospital, patient_id=patient_id, event_types=MEASUREMENT_EVENTS | {RETRACT},
                          since=since - BEDSIDE_SKEW, limit=HAND_LIMIT, newest=True)
     return _stamps_by_patient(rows, since=since, until=until).get(patient_id, [])
 
@@ -350,7 +371,7 @@ def hand_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: date
 def hand_entries_by_patient(audit: AuditLog, hospital: str, *, since: datetime,
                             until: datetime) -> dict[str, list[datetime]]:
     """`hand_entries` for every patient of the tenant in ONE read — what the board's poll needs."""
-    rows = audit.records(tenant=hospital, event_types={"chart", RETRACT}, since=since - BEDSIDE_SKEW,
+    rows = audit.records(tenant=hospital, event_types=MEASUREMENT_EVENTS | {RETRACT}, since=since - BEDSIDE_SKEW,
                          limit=HAND_LIMIT * 4, newest=True)
     return _stamps_by_patient(rows, since=since, until=until)
 
@@ -427,8 +448,8 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
 
     def _vital(hospital: str, card: dict, settings: TaskSettings, now: datetime, since: datetime, until: datetime,
                *, stamps: list[datetime], skip: VitalSkip | None) -> dict | None:
-        """One card's vital task from what was read for it: `stamps` its hand entries (oldest first),
-        `skip` its latest `vital_skipped`. The admission is read only when there is no hand entry."""
+        """One card's vital task from what was read for it: `stamps` its measurements (oldest first),
+        `skip` its latest `vital_skipped`. The admission is read only when there is no measurement."""
         # The board carries the engine's NEWS2 under `latest` (api/board.py `patient_board`); an
         # identity-only card has none, and reads as a score of 0 — the b0 band, the one default.
         news2 = (card.get("latest") or {}).get("news2") or {}

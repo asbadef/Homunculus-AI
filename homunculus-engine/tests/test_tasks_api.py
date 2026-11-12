@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.identity import Caller
 from homunculus.api.tasks import DEFAULT_SETTINGS, TASK_NOT_OPEN, VITAL_SKIPPED, InMemoryTaskStore
 from homunculus.api.patient_identity import IdentityRecord, InMemoryIdentityStore
@@ -96,20 +97,20 @@ class TestReading:
 
     def test_the_admission_is_the_anchor_when_nothing_was_charted(self, client, store):
         at = datetime.now(timezone.utc) - timedelta(minutes=3)
-        _ingest(client, "S-002", "heart_rate", 80, at)              # a monitor value is NOT a hand entry
+        _ingest(client, "S-002", "map", 80, at)                     # a value NEWS2 does not score is no vital measurement (G3-05 D15)
         vital = _card(client, "S-002")["vital"]
         assert vital["state"] == "late"                              # admitted 20 h ago, b0 = 12 h, no hand set
         assert vital["anchor_at"] == (NOW - timedelta(hours=20)).isoformat()
 
     def test_unknown_when_there_is_neither(self, client):
         at = datetime.now(timezone.utc) - timedelta(minutes=3)
-        _ingest(client, "S-003", "heart_rate", 80, at)
+        _ingest(client, "S-003", "map", 80, at)                     # on the board, with nothing NEWS2 scores measured
         vital = _card(client, "S-003")["vital"]
         assert vital["state"] == "unknown" and vital["due_at"] is None
 
     def test_a_withdrawn_entry_is_not_an_anchor(self, client):
         at = datetime.now(timezone.utc) - timedelta(minutes=5)
-        _ingest(client, "S-001", "heart_rate", 80, at)              # keeps the card on the board after the withdrawal
+        _ingest(client, "S-001", "map", 80, at)                     # keeps the card on the board after the withdrawal
         saved = _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], at)
         entry = saved["entries"][0]["entry"]
         r = client.post(f"/clinical/S-001/entries/{entry}/retract", json={"reason": "yanlış hasta"}, headers=NURSE)
@@ -171,7 +172,9 @@ def _create(client, headers=NURSE, **over):
 
 
 def _seen(client, patient="S-001"):
-    _ingest(client, patient, "heart_rate", 80, datetime.now(timezone.utc) - timedelta(minutes=3))
+    """Puts the patient on the board without measuring a NEWS2 input: a device MAP. (A device heart rate would
+    anchor the vital task since G3-05, D15.)"""
+    _ingest(client, patient, "map", 80, datetime.now(timezone.utc) - timedelta(minutes=3))
 
 
 class TestWriting:
@@ -390,3 +393,161 @@ def test_each_patient_carries_the_unit_and_bed_key_its_card_sits_on():
     assert cards["S-010"]["bed_key"] is not None
     assert board["S-011"]["identity"] is None                                 # a device-only card
     assert cards["S-011"]["unit_id"] is None and cards["S-011"]["bed_key"] is None
+
+
+class TestADeviceReadingCountsForTheVitalTask:
+    """G3-05 (spec D5, D15): overrides G3-02 D2 — the anchor is the last measurement of a NEWS2 input, whoever
+    made it: the nurse by hand or the device."""
+
+    def test_a_device_reading_is_the_anchor(self, client, store):
+        at = datetime.now(timezone.utc) - timedelta(minutes=4)
+        _ingest(client, "S-002", "spo2", 97, at)                         # admitted 20 h ago: late until now
+        vital = _card(client, "S-002")["vital"]
+        assert vital["anchor_at"] == at.isoformat() and vital["state"] == "plan"
+        assert vital["entries"] == ([at.isoformat()] if at >= datetime.fromisoformat(_tasks(client).json()["shift"]["start"]) else [])
+
+    def test_the_newest_of_a_hand_entry_and_a_device_reading_wins(self, client):
+        now = datetime.now(timezone.utc)
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], now - timedelta(minutes=50))
+        _ingest(client, "S-001", "heart_rate", 80, now - timedelta(minutes=10))
+        assert _card(client, "S-001")["vital"]["anchor_at"] == (now - timedelta(minutes=10)).isoformat()
+        _chart(client, "S-001", [{"code": "acvpu", "value": 0}], now - timedelta(minutes=2))
+        assert _card(client, "S-001")["vital"]["anchor_at"] == (now - timedelta(minutes=2)).isoformat()
+
+    def test_a_device_value_that_is_no_news2_input_is_not_an_anchor(self, client):
+        _ingest(client, "S-003", "map", 80, datetime.now(timezone.utc) - timedelta(minutes=3))
+        vital = _card(client, "S-003")["vital"]
+        assert vital["anchor_at"] is None and vital["state"] == "unknown"
+
+    def test_a_withdrawn_device_reading_is_not_an_anchor(self, client):
+        at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        _ingest(client, "S-001", "map", 80, at)                          # keeps the card on the board
+        _ingest(client, "S-001", "spo2", 97, at)
+        entry = client.app.state.audit.records(tenant="h1", patient_id="S-001", event_type="ingest", limit=1, newest=True)[-1].id
+        assert _card(client, "S-001")["vital"]["anchor_at"] == at.isoformat()
+        r = client.post(f"/clinical/S-001/entries/{entry}/retract", json={"reason": "yanlış hastadan ölçüldü"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        vital = _card(client, "S-001")["vital"]
+        assert vital["anchor_at"] is None and vital["state"] == "unknown"
+
+    def test_a_device_reading_stamped_in_the_future_is_ignored(self, client):
+        """The door's own skew is two minutes (BEDSIDE_SKEW): a device clock an hour fast anchors nothing."""
+        now = datetime.now(timezone.utc)
+        _ingest(client, "S-001", "spo2", 97, now + timedelta(hours=1))
+        assert _card(client, "S-001")["vital"]["anchor_at"] is None
+        _ingest(client, "S-001", "spo2", 96, now + timedelta(minutes=1))
+        assert _card(client, "S-001")["vital"]["anchor_at"] == (now + timedelta(minutes=1)).isoformat()
+
+    def test_after_a_device_round_the_task_resets_and_the_news2_is_partial(self, client):
+        """Q4: the device sends no respiration rate and no consciousness — the timer resets all the same, and
+        the answer says the score is partial until they are entered by hand."""
+        at = datetime.now(timezone.utc) - timedelta(minutes=3)
+        for code, value in (("spo2", 97), ("sbp", 122), ("heart_rate", 78), ("temperature", 36.8)):
+            _ingest(client, "S-001", code, value, at)
+        vital = _card(client, "S-001")["vital"]
+        assert (vital["state"], vital["anchor_at"], vital["partial"]) == ("plan", at.isoformat(), True)
+
+    def test_a_device_reading_ends_a_skip_as_a_hand_entry_does(self, client, store):
+        store.save_settings("h1", DEFAULT_SETTINGS, by="admin", now=NOW)
+        _ingest(client, "S-002", "map", 80, datetime.now(timezone.utc) - timedelta(minutes=30))   # on the board, late
+        r = client.post("/tasks/vitals/S-002/skip", json={"reason": "hasta ameliyatta"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        assert _card(client, "S-002")["vital"]["state"] == "skipped"
+        _ingest(client, "S-002", "spo2", 97, datetime.now(timezone.utc))
+        assert _card(client, "S-002")["vital"]["state"] == "plan"
+
+    def test_skipping_reads_the_device_anchor_too(self, client):
+        """The one-patient read (`hand_entries`) and the board's read agree: a patient the device has just
+        measured has no vital task due, so there is nothing to skip."""
+        _ingest(client, "S-002", "spo2", 97, datetime.now(timezone.utc) - timedelta(minutes=3))
+        r = client.post("/tasks/vitals/S-002/skip", json={"reason": "hasta ameliyatta"}, headers=NURSE)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "vital_not_due"
+
+
+class TestAWithdrawalNamesTheReadingNotOnlyOneRow:
+    """G3-05 (B7 review): a device reading the trail holds TWICE (a `seen` that failed open; data from before it
+    existed) is ONE reading, and a withdrawal that names either copy withdraws both — `rehydrate`'s rule, which the
+    anchor reads through the same key. A hand entry is withdrawn by its own id alone."""
+
+    AT_AGO = timedelta(minutes=5)
+
+    def _world(self, values, *, code="spo2"):
+        """An app over a trail of `code` readings at one instant — one `ingest` row per value, in order — and a
+        device MAP that keeps the card on the board. Returns (app, the instant, the rows' ids)."""
+        at = datetime.now(timezone.utc) - self.AT_AGO
+        audit = InMemoryAuditLog()
+
+        def row(kind, value):
+            payload = {"value": value, "unit": "", "obs_ts": at.isoformat(), "device": "CONNEX-3A"}
+            return audit.append(AuditEvent("h1", "ingest", "S-001", kind, payload)).id
+
+        row("map", 80)
+        ids = [row(code, value) for value in values]
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, audit=audit,
+                         tasks=InMemoryTaskStore(zones={"h1": "UTC"}))
+        return app, at, ids
+
+    @staticmethod
+    def _withdraw(client, entry):
+        r = client.post(f"/clinical/S-001/entries/{entry}/retract", json={"reason": "yanlış hastadan ölçüldü"},
+                        headers=NURSE)
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.parametrize("chosen", [0, 1])
+    def test_two_identical_rows_one_withdrawn_neither_anchors(self, chosen):
+        app, at, ids = self._world([97, 97])
+        with TestClient(app) as c:
+            vital = _card(c, "S-001")["vital"]
+            assert vital["anchor_at"] == at.isoformat() and len(vital["entries"]) in (0, 2)   # both copies, before
+            self._withdraw(c, ids[chosen])
+            vital = _card(c, "S-001")["vital"]
+            assert vital["anchor_at"] is None and vital["state"] == "unknown" and vital["entries"] == []
+
+    def test_a_different_value_at_the_same_time_still_anchors(self):
+        app, at, ids = self._world([97, 97, 96])
+        with TestClient(app) as c:
+            self._withdraw(c, ids[0])
+            vital = _card(c, "S-001")["vital"]
+            assert vital["anchor_at"] == at.isoformat() and vital["state"] == "plan"
+            # one stamp, the 96's — neither copy of the 97 is left to count
+            in_shift = at >= datetime.fromisoformat(_tasks(c).json()["shift"]["start"])
+            assert vital["entries"] == ([at.isoformat()] if in_shift else [])
+
+    def test_the_same_reading_of_another_patient_is_not_withdrawn(self):
+        """The key names the patient: a withdrawal under S-001 takes nothing from S-002's identical reading."""
+        app, at, ids = self._world([97])
+        with TestClient(app) as c:
+            _ingest(c, "S-002", "spo2", 97, at)
+            self._withdraw(c, ids[0])
+            assert _card(c, "S-001")["vital"]["anchor_at"] is None
+            assert _card(c, "S-002")["vital"]["anchor_at"] == at.isoformat()
+
+    def test_a_hand_entry_is_withdrawn_by_its_own_id_alone(self, client):
+        """Two hand entries alike in code, time and value are two entries (G3-01 D12): the twin rule is the
+        device's, and a withdrawal of one `chart` row leaves the other to anchor."""
+        at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        _ingest(client, "S-001", "map", 80, at)                          # keeps the card on the board
+        first = _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], at)["entries"][0]["entry"]
+        _chart(client, "S-001", [{"code": "resp_rate", "value": 16}], at)
+        r = client.post(f"/clinical/S-001/entries/{first}/retract", json={"reason": "yanlış hasta"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        assert _card(client, "S-001")["vital"]["anchor_at"] == at.isoformat()
+
+
+def test_an_unmatched_reading_resets_nothing_until_it_is_linked():
+    """D15: an unmatched reading writes no `ingest` row under a patient; linked, it counts at its own time."""
+    from homunculus.api.readings import POLICY_UNMATCHED
+    identities = InMemoryIdentityStore()
+    identities.apply("h1", IdentityRecord(patient_id="202600000001", given="Test", family="Hasta", source="kabul",
+                                          unit_id="u-1", bed_id="b-1", updated_at=NOW))
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, identities=identities,
+                     tasks=InMemoryTaskStore(zones={"h1": "UTC"}), unknown_readings=POLICY_UNMATCHED)
+    with TestClient(app) as c:
+        at = datetime.now(timezone.utc) - timedelta(minutes=6)
+        _ingest(c, "202600000010", "spo2", 97, at)                       # a typo: listed
+        assert _card(c, "202600000001")["vital"]["anchor_at"] is None
+        [waiting] = c.get("/readings/unmatched", headers=NURSE).json()["sets"]
+        ids = [v["id"] for v in waiting["readings"]]
+        r = c.post("/readings/unmatched/assign", json={"readings": ids, "patient_id": "202600000001"}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        assert _card(c, "202600000001")["vital"]["anchor_at"] == at.isoformat()

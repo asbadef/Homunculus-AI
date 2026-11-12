@@ -127,6 +127,13 @@ def test_the_hand_codes_are_news2s_seven_inputs():
         SignalCode.TEMPERATURE.value, SignalCode.SUPPLEMENTAL_OXYGEN.value, SignalCode.ACVPU.value})
 
 
+def test_the_input_codes_are_the_same_seven_under_their_new_name():
+    """G3-05 (D15): the anchor counts a device's reading too, so the set is named for what it is — the inputs
+    NEWS2 scores — and the old name stays as an alias for whoever still imports it."""
+    from homunculus.api.tasks import NEWS2_INPUT_CODES
+    assert NEWS2_INPUT_CODES is NEWS2_HAND_CODES and len(NEWS2_INPUT_CODES) == 7
+
+
 def test_settings_validation():
     ok = TaskSettings(shift_start_a=8, shift_start_b=20, grace_min=30, intervals=dict(DEFAULT_SETTINGS.intervals))
     assert ok.refusal() is None
