@@ -40,7 +40,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import uuid
 from contextlib import suppress
 from datetime import date, datetime, timedelta, timezone
@@ -73,7 +72,7 @@ from homunculus.admission.schemas import (
 from homunculus.admission.errors import (
     BED_CLOSED, BED_RESERVED, CARE_TEAM_ATTENDING_REQUIRED, CARE_TEAM_CONFLICT,
     CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
-    REQUEST_CONFLICT, Refusal, field_invalid,
+    REQUEST_CONFLICT, Refusal, broken_constraint, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.boardkey import board_key
@@ -304,18 +303,6 @@ def _numbers(patient_number: str, protocol_no: str | None) -> dict:
     """What a refusal names an admission by, beside its code (E6): its H-number and its board key
     — the number the screen sends the nurse to look for. Never a name."""
     return {"patient_number": patient_number, "board_key": board_key(protocol_no, patient_number)}
-
-
-def _broken_constraint(exc: IntegrityError) -> str | None:
-    """The name of the constraint or unique index an insert broke, as PostgreSQL reports it:
-    asyncpg's `constraint_name` (under SQLAlchemy's adapter, the adapted error's cause), else read
-    from the message. None when neither names one."""
-    for error in (exc.orig, getattr(exc.orig, "__cause__", None)):
-        name = getattr(error, "constraint_name", None)
-        if name:
-            return name
-    named = re.search(r'constraint "([^"]+)"', str(exc.orig))
-    return named.group(1) if named else None
 
 
 async def _board_again(db: AsyncSession, request: Request, hospital: str, admission_id: uuid.UUID,
@@ -584,7 +571,7 @@ async def create_admission(
     except WorkflowError as exc:
         raise _wf(exc)
     except IntegrityError as exc:
-        broken = _broken_constraint(exc)
+        broken = broken_constraint(exc)
         await db.rollback()
         # In the look-ups' order: an earlier send under this id first (A-19), then the person.
         if payload.request_id is not None and \
@@ -966,7 +953,7 @@ async def _lost_at_an_index(db: AsyncSession, exc: IntegrityError) -> NoReturn:
     """T7: a care-team write that met one of the two partial unique indexes (a writer the locks
     did not order) is the coded 409, told apart by the index's name as the admission route tells
     `uq_admissions_open_identity` apart. Anything else is raised as it is."""
-    broken = _broken_constraint(exc)
+    broken = broken_constraint(exc)
     await db.rollback()
     if broken in (CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX):
         raise _team_conflict() from None

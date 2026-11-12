@@ -37,8 +37,10 @@ One whose own scope does not reach every bed she is given (her unit, or the bed 
 No patient anywhere: beds, units and staff names."""
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from contextlib import suppress
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -48,9 +50,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admin.service import CONCURRENT_CHANGE
 from homunculus.admission import service, trail, unitscope
-from homunculus.admission.errors import ASSIGNMENT_CONFLICT, OUT_OF_SCOPE, SHIFT_CHANGED, Refusal, field_invalid
+from homunculus.admission.errors import (
+    ASSIGNMENT_CONFLICT, OUT_OF_SCOPE, SHIFT_CHANGED, Refusal, broken_constraint, field_invalid,
+)
 from homunculus.admission.models import NURSE_BED_ACTIVE_INDEX, NurseBedAssignment
-from homunculus.admission.router import _broken_constraint
 from homunculus.admission.schemas import (
     ShiftItem, ShiftNurse, ShiftSchedule, ShiftSchedulePut, ShiftScheduleSaved, ShiftUnit, ShiftWarning, ShiftWindow,
 )
@@ -67,13 +70,15 @@ from homunculus.tenant.models import Bed, Room, Site, Unit
 SHIFTS_MANAGE, WORKLOAD_VIEW = validate_permissions(("shifts.manage", "workload.view"))
 SHIFT_ASSIGN = "shift.assign"
 #: How far before a window another window's row may start and still be looked at (`_others`, §5 A14 M1): no window
-#: is longer than a day (25 hours the night a clock goes back), so two days holds every row that can overlap it.
+#: is longer than a day (24 hours at most: 23 with the two starts an hour apart, one more the night a clock goes back),
+#: so two days holds every row that can overlap it.
 OTHERS_LOOKBACK = timedelta(days=2)
 UNIT_NOT_FOUND = "Unit not found."
 BED_NOT_FOUND = "Bed not found."
 
 router = APIRouter(prefix="/shift-schedule", tags=["shift-schedule"])
 _tenant = Depends(caller_tenant_id)
+log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -81,13 +86,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _windows(request: Request, hospital: str, now: datetime) -> tuple[Shift, Shift]:
-    """(current, next), by Görevlerim's two starts and the tenant's zone, read from the app's task store as GET /tasks
-    reads them (§5 M4): the defaults (08 and 20, UTC) for a tenant that saved none, or an app without a store."""
+def _hours(request: Request, hospital: str) -> tuple[tzinfo, int, int]:
+    """(zone, start_a, start_b): Görevlerim's two starts and the tenant's zone, read from the app's task store as GET
+    /tasks reads them (§5 M4) — the defaults (08 and 20, UTC) for a tenant that saved none, or an app without a store.
+    A Postgres store reads them with statements of its own, so the PUT reads them before the unit's lock."""
     store = getattr(request.app.state, "tasks", None)
     settings = (store.settings(hospital) if store is not None else None) or DEFAULT_SETTINGS
     zone = zone_of(store.timezone(hospital) if store is not None else None)
-    return shift_windows(now, zone, settings.shift_start_a, settings.shift_start_b)
+    return zone, settings.shift_start_a, settings.shift_start_b
+
+
+def _windows(request: Request, hospital: str, now: datetime) -> tuple[Shift, Shift]:
+    """(current, next) at `now`, by the tenant's hours (`_hours`)."""
+    return shift_windows(now, *_hours(request, hospital))
 
 
 async def _own_unit(db: AsyncSession, caller_tenant: uuid.UUID, unit_id: uuid.UUID) -> None:
@@ -266,13 +277,14 @@ async def put_shift_schedule(
         raise field_invalid("items", "A bed is named once.").http()
     await scope.ensure_members(db, caller_tenant, (nurse for bed, nurse in asked if (bed, nurse) not in expected))
     hospital, actor, user_id = await trail.hospital_of(db, caller_tenant), user.username, user.id
+    hours = _hours(request, hospital)             # the store's settings and zone: read before the lock, not under it
     # The unit's row lock (tenant/router.py `_lock_unit`), read afresh: what is read below holds until the commit.
     unit = (await db.execute(select(Unit).where(Unit.id == body.unit_id).with_for_update(key_share=True)
                              .execution_options(populate_existing=True))).scalar_one()
     unit_name, unit_open = unit.name, unit.is_active
     # The clock is read under the lock (A14 M2): the window named is checked as of the write, not of the request.
     now = _now()
-    live = _windows(request, hospital, now)
+    live = shift_windows(now, *hours)
     window = next((w for w in live if w.start == body.shift_start), None)
     if window is None:
         await db.rollback()                       # nothing written; the lock goes with it
@@ -305,7 +317,7 @@ async def put_shift_schedule(
         await db.flush()
     except IntegrityError as exc:                 # the index (bed, window) WHERE active: a coded 409, never a 500
         await db.rollback()
-        if _broken_constraint(exc) == NURSE_BED_ACTIVE_INDEX:     # told apart by name, as the care team's two
+        if broken_constraint(exc) == NURSE_BED_ACTIVE_INDEX:      # told apart by name, as the care team's two
             raise Refusal(409, ASSIGNMENT_CONFLICT, "Another save of this window came first.").http() from None
         raise                                     # anything else is not a lost race: raised as it is
     await db.commit()
@@ -313,6 +325,12 @@ async def put_shift_schedule(
         "unit_id": str(body.unit_id), "shift_start": window.start.isoformat(), "shift_end": window.end.isoformat(),
         "before": _pairs(held), "after": _pairs(asked),
         "other": _pairs((row.bed_id, row.nurse_id) for row in others), "actor": actor})
-    warnings = await _unreached(db, asked, caller_tenant, body.unit_id)
+    try:
+        warnings = await _unreached(db, asked, caller_tenant, body.unit_id)
+    except Exception:  # noqa: BLE001 — the save is committed and audited already: its answer, never a 500
+        log.exception("shift schedule of unit %s: saved, but its warnings could not be read", body.unit_id)
+        with suppress(Exception):
+            await db.rollback()                   # a failed read can leave the session's transaction aborted
+        warnings = []
     saved = await _schedule(db, [(body.unit_id, unit_name)], window, live, now)
     return ShiftScheduleSaved(**saved.model_dump(), warnings=warnings)

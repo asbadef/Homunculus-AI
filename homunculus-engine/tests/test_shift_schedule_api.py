@@ -17,12 +17,13 @@ Postgres. Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select, text, update
+from sqlalchemy import event, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from homunculus.admin.service import CONCURRENT_CHANGE
@@ -429,7 +430,7 @@ async def test_an_integrity_error_at_anything_but_the_index_is_not_called_a_conf
                                       shift_start=A_START, shift_end=A_END))
     await db_session.commit()
     _blind_to_the_rows(monkeypatch)
-    monkeypatch.setattr(shifts, "_broken_constraint", lambda exc: "some_other_constraint")
+    monkeypatch.setattr(shifts, "broken_constraint", lambda exc: "some_other_constraint")
     with pytest.raises(IntegrityError):
         await client.put("/shift-schedule", json=_put(w, items=[("1", "charge")]), headers=w.auth["charge"])
     assert await _rows(db_session, w) == [("1", "nurse", True, A_START)]
@@ -551,6 +552,53 @@ async def test_the_warnings_are_read_after_the_commit_with_the_lock_released(war
     r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse_b")]), headers=w.auth["charge"])
     assert (r.status_code, free) == (200, [True]), r.text
     assert r.json()["warnings"] == [{"code": "unit_not_reached", "nurse_id": str(w.users["nurse_b"].id)}]
+
+
+async def test_the_shift_settings_are_read_before_the_units_lock(ward, db_session, monkeypatch):
+    """Re-review: the task store's settings and zone (statements of their own on a Postgres store) are read before the
+    unit's lock is taken; under it only the clock is read — all A14 M2 needs."""
+    w, client, app = ward
+    order: list[str] = []
+    store = app.state.tasks
+    for name in ("settings", "timezone"):
+        real = getattr(store, name)
+
+        def reading(*args, _real=real, _name=name, **kwargs):
+            order.append(_name)
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(store, name, reading)
+
+    def statement(conn, cursor, sql, *args):
+        if "FOR NO KEY UPDATE" in sql:
+            order.append("lock")
+
+    engine = db_session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", statement)
+    try:
+        r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")]), headers=w.auth["charge"])
+    finally:
+        event.remove(engine, "before_cursor_execute", statement)
+    assert r.status_code == 200, r.text
+    assert order == ["settings", "timezone", "lock"]
+
+
+async def test_a_failed_warning_read_after_the_commit_is_logged_and_the_save_still_answers(ward, db_session,
+                                                                                            monkeypatch, caplog):
+    """Re-review: the save is committed and audited before its warnings are read; if that read fails, the answer is
+    still the save's (200, no warning) and the failure is logged — never a 500 for a save that was made."""
+    w, client, app = ward
+
+    async def failing(*args, **kwargs):
+        raise RuntimeError("synthetic: the scope read failed")
+
+    monkeypatch.setattr(shifts, "_unreached", failing)
+    with caplog.at_level(logging.ERROR, logger=shifts.__name__):
+        r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")]), headers=w.auth["charge"])
+    assert (r.status_code, r.json()["warnings"], _shown(w, r.json())) == (200, [], {"Reanimasiya": [("1", "nurse")]})
+    assert await _rows(db_session, w) == [("1", "nurse", True, A_START)]
+    assert len(audited(app, "shift.assign")) == 1
+    assert [rec.exc_info[0] for rec in caplog.records if rec.name == shifts.__name__] == [RuntimeError]
 
 
 @pytest.mark.parametrize("field", ["items", "expected"])
