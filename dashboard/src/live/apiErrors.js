@@ -122,7 +122,7 @@ export const API_MESSAGE_KEYS = new Map([
   ["gerekçe en az 10 karakter olmalı", "retractReasonShort"],
   ["gerekçe en çok 200 karakter olabilir", "retractReasonLong"],
   ["geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz", "retractNeedsPerson"],
-  ["bu hastada böyle bir elle girilmiş değer yok", "retractUnknown"],
+  ["bu hastada böyle bir ölçüm değeri yok", "retractUnknown"],   // G3-05 (D13): a device reading can be withdrawn too
   ["bu değer zaten hatalı giriş olarak işaretlenmiş", "retractAlready"],
   ["taburcu edilmiş bir hastada değer geri alınamaz", "retractDischarged"],
   ["yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir", "retractNotBedside"],

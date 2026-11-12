@@ -158,11 +158,11 @@ describe("«hatalı giriş»", () => {
   });
 
   it("a 404 — no such hand entry — closes the dialog and marks nothing", async () => {
-    const { onDone, onClose } = await open(() => Promise.reject(refusal(404, "bu hastada böyle bir elle girilmiş değer yok")));
+    const { onDone, onClose } = await open(() => Promise.reject(refusal(404, "bu hastada böyle bir ölçüm değeri yok")));
     armed();
     reason(REASON);
     await confirm();
-    expect(toasted("REA-01 · 2: işarələnmədi — Bu xəstədə belə bir əl ilə daxil edilmiş dəyər yoxdur.").length).toBeGreaterThan(0);
+    expect(toasted("REA-01 · 2: işarələnmədi — Bu xəstədə belə bir ölçmə dəyəri yoxdur.").length).toBeGreaterThan(0);
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });

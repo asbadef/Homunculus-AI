@@ -73,6 +73,8 @@ export const EVENT_TYPES = Object.freeze([
   ["escalation", "escalation"], ["rrt_call", "rrtCall"], ["notification", "notification"],   // rrt_call: G2-B5 (spec D9)
   ["alert_snooze", "alertSnooze"],   // G2-B5b (spec D4): «Ertele»
   ["identity", "identity"], ["ingest", "ingest"], ["reading_dropped_discharged", "readingDropped"],
+  // G3-05 (spec §4): a device reading that matched nobody (kept, with its value), and a set a person linked or rejected.
+  ["reading_unmatched", "readingUnmatched"], ["reading_assigned", "readingAssigned"], ["reading_rejected", "readingRejected"],
   ["shadow_alert", "shadowAlert"], ["shadow_alert_cleared", "shadowCleared"],
   ["admission.admit", "admit"], ["admission.sign_off", "signOff"],
   ["admission.discharge_start", "dischargeStart"], ["admission.discharge_confirm", "dischargeConfirm"],
