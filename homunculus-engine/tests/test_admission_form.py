@@ -434,7 +434,9 @@ def test_every_other_refusal_has_a_stable_code():
                      "bed_reserved",
                      # G2-B1c (spec §5.6)
                      "care_team_conflict", "care_team_not_physician",
-                     "care_team_attending_required"}
+                     "care_team_attending_required",
+                     # G4-04 (spec §5 A1, A7)
+                     "shift_changed", "assignment_conflict"}
 
 
 # ---------------------------------------------------------------- the person (A-37)

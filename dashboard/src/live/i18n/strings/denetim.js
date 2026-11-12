@@ -70,6 +70,8 @@ export default {
       careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
       // G2-B1b (spec §5.6): the one-step transfer, and the retry of her card's move
       transfer: "Hasta başka yatağa nakledildi", transferBoardRetry: "Kart yeni yatağa yeniden taşınmaya çalışıldı",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Nöbet ataması",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -146,6 +148,8 @@ export default {
       careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
       // G2-B1b (spec §5.6): the one-step transfer, and the retry of her card's move
       transfer: "Xəstə başqa çarpayıya köçürüldü", transferBoardRetry: "Kartın yeni çarpayıya yenidən keçirilməsinə cəhd edildi",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Növbə təyinatı",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -222,6 +226,8 @@ export default {
       careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
       // G2-B1b (spec §5.6): the one-step transfer, and the retry of her card's move
       transfer: "Пациент переведён на другую койку", transferBoardRetry: "Повторная попытка перенести карточку на новую койку",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Назначение на смену",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -298,6 +304,8 @@ export default {
       careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
       // G2-B1b (spec §5.6): the one-step transfer, and the retry of her card's move
       transfer: "Patient moved to another bed", transferBoardRetry: "Card move to the new bed retried",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Shift assignment",
     },
     heat: {
       title: "Alarm density — last {days} days",

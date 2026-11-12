@@ -153,6 +153,58 @@ describe("the page's own reads (useSummaryReads)", () => {
     expect(result.current.pending).toMatchObject({ phase: "failed", data: null });
     expect(result.current.fullAt).toBeNull();
   });
+
+  // G4-04 «İş yükü»: the page reads G4-02's sources and GET /shift-schedule in one round, on one clock.
+  it("reads one more source in the same round when a page asks, counts it in the full round, and checks its shape", async () => {
+    const store = fakeStore();
+    const SCHEDULE = { generated_at: "2026-11-11T10:00:00Z" };
+    const read = vi.fn().mockResolvedValue(SCHEDULE);
+    const extra = { may: true, read, valid: (answer) => typeof answer?.generated_at === "string" };
+    const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
+    const { result } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 1000, extra }));
+    await flush();
+    expect(read).toHaveBeenCalledWith(store.api);
+    expect(result.current.extra).toMatchObject({ phase: "ok", data: SCHEDULE, atMs: T0 });
+    expect(result.current.fullAt).toBe(T0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(read).toHaveBeenCalledTimes(2);                       // on the round's own clock
+    const lastFull = result.current.fullAt;
+    read.mockResolvedValueOnce({ generated_at: 7 });             // the wrong shape: a failed read, never a partial one
+    vi.setSystemTime(T0 + MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.extra).toMatchObject({ phase: "failed", data: null });
+    expect(result.current.fullAt).toBe(lastFull);
+  });
+
+  // G4-04 review 4: «İş yükü»'s answer holds a second read (/tasks) that can fail on its own; the header's time must
+  // not move for a round in which it did — as a failed /tasks holds it on the summary page.
+  it("keeps the full round's time where it was when the extra answer says it is not whole", async () => {
+    const store = fakeStore();
+    const read = vi.fn().mockResolvedValue({ generated_at: "x", whole: true });
+    const extra = { may: true, read, valid: (answer) => typeof answer?.generated_at === "string",
+      full: (answer) => answer.whole === true };
+    const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
+    const { result } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 60 * MIN, extra }));
+    await flush();
+    expect(result.current.fullAt).toBe(T0);
+    read.mockResolvedValueOnce({ generated_at: "x", whole: false });
+    vi.setSystemTime(T0 + MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.extra).toMatchObject({ phase: "ok", data: { whole: false } });   // its answer is still shown
+    expect(result.current.fullAt).toBe(T0);
+    vi.setSystemTime(T0 + 2 * MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.fullAt).toBe(T0 + 2 * MIN);
+  });
+
+  it("reads nothing more without a page's ask: the extra read stays unasked", async () => {
+    const store = fakeStore();
+    const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
+    const { result } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 60_000 }));
+    await flush();
+    expect(result.current.extra.phase).toBe("loading");
+    expect(result.current.fullAt).toBe(T0);
+  });
 });
 
 describe("the alarm quality's read (useQuality)", () => {

@@ -7,6 +7,7 @@ import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { ddmmhhmm } from "../../i18n/dates.js";
 import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
+import { StructureProvider } from "../../data/StructureProvider.jsx";
 import { DenetimScreen } from "./DenetimScreen.jsx";
 
 const AUDITOR = ["board.view", "audit.view"];
@@ -117,6 +118,28 @@ describe("the audit page's events", () => {
     expect(cells(old)[5]).toBe("istifadəçi ••••61a2");
     expect(document.body).not.toHaveTextContent(ADMIN_ID);
     expect(document.body).not.toHaveTextContent(NURSE_ID);
+  });
+
+  // G4-04 review 11: «Növbə təyinatı» names its unit from the structure the shell already reads for every screen (no
+  // read of its own); a session without the tree sees the id masked.
+  it("names a shift assignment's unit from the shell's structure, and masks it without one", async () => {
+    const UNIT = "33333333-3333-4333-8333-333333333301";
+    const ASSIGN = [rec(1, { event_type: "shift.assign", patient_id: "", subject: UNIT, payload: { unit_id: UNIT, actor: "charge" } })];
+    const TREE = { tenant_id: "t-1", sites: [{ id: "s-1", name: "Ana bina", is_active: true, units: [
+      { id: UNIT, name: "Reanimasiya", unit_type: "ADULT_ICU", is_active: true, rooms: [] }] }] };
+    const CHARGE = [...AUDITOR, "admissions.view"];
+    await mount(<StructureProvider><DenetimScreen /></StructureProvider>, {
+      access: token({ perms: CHARGE }), me: profile({ perms: CHARGE }),
+      setup: (api) => { api.audit.mockResolvedValue({ records: ASSIGN }); api.structure.mockResolvedValue(TREE); },
+    });
+    await settle();
+    const cells = () => within(bodyRows()[0]).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells()[2]).toBe("Növbə təyinatı");
+    expect(cells()[5]).toBe("Reanimasiya");
+    expect(document.body).not.toHaveTextContent(UNIT);
+    cleanup();
+    await open((a) => a.audit.mockResolvedValue({ records: ASSIGN }));        // no structure right: nothing to name it by
+    expect(cells()[5]).toBe("••••3301");
   });
 
   // Follow-up D3: a type the engine writes is named, never its code, and offered in the filter; a task's id (a UUID

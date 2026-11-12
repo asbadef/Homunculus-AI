@@ -23,6 +23,7 @@ COMPOSE = Path(__file__).resolve().parents[2] / "deploy" / "local" / "docker-com
 # One representative path per API prefix the dashboard or the bridge calls.
 API_PATHS = [
     "/auth/login", "/auth/reauth", "/auth/password", "/auth/me", "/admin/users", "/tenant/tenants", "/admissions", "/shift-schedule",
+    "/shift-schedule/nurses",                                                        # G4-04: the form's people
     "/handovers", "/handovers/pending", "/alerts/x", "/break-glass", "/scope/me", "/clinical/p1",
     "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state",
     "/infinity-shadow/board", "/infinity-shadow/readings", "/infinity-shadow/device-beds",

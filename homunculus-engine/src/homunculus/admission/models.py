@@ -460,8 +460,15 @@ class CareTeamMember(Base):
 # ---------------------------------------------------------------------------
 # Nurse–bed assignment for a shift (§4.4)
 # ---------------------------------------------------------------------------
+#: G4-04 (spec D4, D8, §5 A9): one ACTIVE nurse per bed per shift window — the partial unique index of migration 0022
+#: (its test holds the two names to each other). Ended rows stay as history, any number of them.
+NURSE_BED_ACTIVE_INDEX = "uq_nurse_bed_active_shift"
+_NURSE_BED_ACTIVE = text("is_active")
+
+
 class NurseBedAssignment(Base):
-    """CHARGE_NURSE assigns a nurse to a bed for a shift window."""
+    """CHARGE_NURSE assigns a nurse to a bed for a shift window. G4-04: written by PUT /shift-schedule
+    (admission/shifts.py), one unit and one window at a time; a row is its BED's unit's (§5 A8)."""
     __tablename__ = "nurse_bed_assignments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -482,6 +489,14 @@ class NurseBedAssignment(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    #: G4-04 (§5 M1): when a save or migration 0022 ended the row; null while it is active (and for rows ended before).
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        # `sqlite_where` as well, as the care team's: scripts/dev_local.py builds these models on SQLite.
+        Index(NURSE_BED_ACTIVE_INDEX, "bed_id", "shift_start", unique=True,
+              postgresql_where=_NURSE_BED_ACTIVE, sqlite_where=_NURSE_BED_ACTIVE),
     )
 
 

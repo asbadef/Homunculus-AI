@@ -147,6 +147,10 @@ export function fakeApi(vi, { access = null } = {}) {
     pendingHandovers: vi.fn(),
     // G4-03: «Kalite göstergeleri» (screens/kalite)
     qualityIndicators: vi.fn(),
+    // G4-04: «İş yükü» (screens/isyuku) — the shift's assignment, the form's people, the save
+    shiftSchedule: vi.fn(),
+    shiftNurses: vi.fn(),
+    saveShiftSchedule: vi.fn(),
     openHandover: vi.fn(),
     signHandover: vi.fn(),
     countersignHandover: vi.fn(),

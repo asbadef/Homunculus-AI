@@ -99,6 +99,9 @@ import kayit from "./strings/kayit.js";
 // G4-03: «Kalite göstergeleri» — care-process quality per unit (screens/kalite).
 import kalite from "./strings/kalite.js";
 
+// G4-04: «İş yükü» — who looks after which bed this shift, and each unit's work (screens/isyuku).
+import isyuku from "./strings/isyuku.js";
+
 export const NAMESPACES = {
   common, risk, prefs, news2, gallery, ui, errors, dates, shell, auth, lock, account, nav,
   board,
@@ -160,6 +163,8 @@ export const NAMESPACES = {
   kayit, // G3-05
 
   kalite, // G4-03
+
+  isyuku, // G4-04
 };
 
 function flattenInto(out, prefix, entries) {

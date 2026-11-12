@@ -11,7 +11,13 @@ The codes are part of the API: renaming one is a change to every screen that rea
 """
 from __future__ import annotations
 
+import re
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException
+
+if TYPE_CHECKING:
+    from sqlalchemy.exc import IntegrityError
 
 BED_NOT_AVAILABLE = "bed_not_available"          # the bed is not AVAILABLE (occupied, cleaning…)
 BED_CLOSED = "bed_closed"                        # the bed, its room or its unit is closed
@@ -73,6 +79,11 @@ CARE_TEAM_NOT_PHYSICIAN = "care_team_not_physician"    # the member, claimer or 
 CARE_TEAM_ATTENDING_REQUIRED = "care_team_attending_required"   # the ATTENDING row never ends alone (T5)
 CODES = CODES | frozenset({CARE_TEAM_CONFLICT, CARE_TEAM_NOT_PHYSICIAN, CARE_TEAM_ATTENDING_REQUIRED})
 
+# G4-04 — İş yükü (spec §5 A1, A7, M3): the shift assignment's two. Its own block after B1c's, which it widens the same way.
+SHIFT_CHANGED = "shift_changed"                        # the window the form named is no longer current or next (A1)
+ASSIGNMENT_CONFLICT = "assignment_conflict"            # another save of the window won at the unique index (A7)
+CODES = CODES | frozenset({SHIFT_CHANGED, ASSIGNMENT_CONFLICT})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen
@@ -95,3 +106,16 @@ class Refusal(Exception):
 def field_invalid(field: str, message: str) -> Refusal:
     """A 422 naming the one field it is about (the first wrong one, in the form's order)."""
     return Refusal(422, f"{FIELD_INVALID}:{field}", message)
+
+
+def broken_constraint(exc: IntegrityError) -> str | None:
+    """The name of the constraint or unique index an insert broke, as PostgreSQL reports it:
+    asyncpg's `constraint_name` (under SQLAlchemy's adapter, the adapted error's cause), else read
+    from the message. None when neither names one. A route that tells a lost race at one of its
+    indexes apart by the index's name (admission/router.py, admission/shifts.py) reads it here."""
+    for error in (exc.orig, getattr(exc.orig, "__cause__", None)):
+        name = getattr(error, "constraint_name", None)
+        if name:
+            return name
+    named = re.search(r'constraint "([^"]+)"', str(exc.orig))
+    return named.group(1) if named else None

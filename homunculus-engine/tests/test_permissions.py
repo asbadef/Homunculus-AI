@@ -31,11 +31,12 @@ SPEC_KEYS = {
     "summary.view",       # G4-02 Yönetici özeti (spec D2, D3): the page, GET /handovers/pending
     "pharmacy.view",      # G3-04 Eczane (spec D2): the page, GET /pharmacy
     "quality.view",       # G4-03 Kalite göstergeleri (spec D2, D3): the page, GET /quality
+    "workload.view",      # G4-04 İş yükü (spec D2): the page, GET /shift-schedule
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_twenty_nine_keys():
-    assert len(SPEC_KEYS) == 29
+def test_the_catalogue_is_exactly_the_specified_thirty_keys():
+    assert len(SPEC_KEYS) == 30
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -135,7 +136,8 @@ SPEC_GROUPS = {
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
-                                    "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage"}),
+                                    "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage",
+                                    "workload.view"}),                       # + G4-04 (spec D2)
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
                              "clinical.chart", "beds.release", "tasks.view", "tasks.manage"}),
@@ -264,4 +266,17 @@ def test_the_quality_indicators_are_the_auditors_and_the_system_administrators_b
     holders = {g["slug"] for g in DEFAULT_GROUPS if "quality.view" in g["permissions"]}
     assert holders == {"hospital_admin", "auditor"}
     assert PERMISSIONS["quality.view"].startswith("Open the Kalite göstergeleri page")
-    assert list(PERMISSIONS)[-1] == "quality.view"           # appended after pharmacy.view: the mirrors' order
+    keys = list(PERMISSIONS)                                 # G4-04: workload.view is the last key now
+    assert keys[keys.index("pharmacy.view") + 1] == "quality.view"   # appended after pharmacy.view: the mirrors' order
+
+
+def test_the_workload_page_is_the_charge_nurses_and_the_system_administrators_by_default():
+    """G4-04 (spec D2): `workload.view` is in the default charge-nurse group («Sorumlu Hemşire») — migration 0022 gives
+    it to the tenants seeded before it, `DEFAULT_GROUPS` to the ones made after — and the system group holds it by
+    rule. Not the nurse's. Any other group can be given it on the Roles screen. `shifts.manage` now says what it does
+    (spec §5 M5): the assignment form of that page."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "workload.view" in g["permissions"]}
+    assert holders == {"hospital_admin", "charge_nurse"}
+    assert PERMISSIONS["workload.view"].startswith("Open the İş yükü page")
+    assert PERMISSIONS["shifts.manage"].startswith("Assign nurses to beds")
+    assert list(PERMISSIONS)[-1] == "workload.view"          # appended after quality.view: the mirrors' order

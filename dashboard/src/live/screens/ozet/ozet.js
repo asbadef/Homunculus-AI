@@ -50,13 +50,13 @@ export const okSource = (data, atMs = null) => ({ ok: true, data, atMs });
 export const noSource = (why) => ({ ok: false, why });
 
 const MINUTE_MS = 60_000;
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const listOf = (value) => (Array.isArray(value) ? value : []);
+export const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+export const listOf = (value) => (Array.isArray(value) ? value : []);
 const countOf = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
 const secondsOf = (value) => (Number.isFinite(value) && value >= 0 ? value : null);
 const minMs = (a, b) => (a === null ? b : b === null ? a : Math.min(a, b));
 
-function msOf(iso) {
+export function msOf(iso) {
   const ms = typeof iso === "string" ? Date.parse(iso) : NaN;
   return Number.isFinite(ms) ? ms : null;
 }

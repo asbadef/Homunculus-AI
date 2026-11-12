@@ -13,6 +13,8 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { ddmmhhmm } from "../../i18n/dates.js";
+import { useStructure } from "../../data/StructureProvider.jsx";
+import { normId } from "../../data/structure.js";
 import { Alert, Announce, Box, Button, Field, Note, Select, Table } from "../../ui/index.js";
 import {
   EVENTS_LIMIT, EVENT_TYPES, actorOf, maskPatient, newestFirst, subjectOf, typeKey, verdictOf,
@@ -123,6 +125,10 @@ function VerifyBox() {
 function EventsBox() {
   const { t } = useI18n();
   const { store } = useSession();
+  // G4-04: a nurse–bed assignment names its unit from the structure the shell already reads for every screen — no read
+  // of this page's own; without it (a session with no structure right) the id stays masked.
+  const { index } = useStructure();
+  const unitName = useCallback((id) => index.units.get(normId(id))?.name ?? null, [index]);
   const [type, setType] = useState("");
   const [state, setState] = useState({ phase: "loading", rows: [], error: null });
   const seq = useRef(0);
@@ -176,7 +182,7 @@ function EventsBox() {
                 <td>{label ? t(label) : <code>{rec?.event_type || "—"}</code>}</td>
                 <td>{actorOf(rec?.payload, t)}</td>
                 <td className="font-data">{maskPatient(rec?.patient_id)}</td>
-                <td>{subjectOf(rec, t)}</td>
+                <td>{subjectOf(rec, t, unitName)}</td>
               </tr>
             );
           })}

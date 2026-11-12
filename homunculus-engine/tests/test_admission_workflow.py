@@ -213,19 +213,9 @@ async def test_oncall_window_max_48h(db_session):
 
 
 # ---------------------------------------------------------------------------
-# Shift scheduling (§4.4, S-25 soft warning)
+# Shift scheduling (§4.4): G4-04 retired the POST and its service function, and with them S-25's beds-per-nurse
+# warning (spec §5 A12). The assignment is PUT /shift-schedule's (tests/test_shift_schedule_api.py).
 # ---------------------------------------------------------------------------
-async def test_shift_schedule_soft_overcapacity_warning(db_session):
-    tenant, unit, beds, attending, nurse = await _fixture_env(db_session, max_beds_per_nurse=1, n_beds=2)
-    start, end = _now(), _now() + timedelta(hours=8)
-    assignments = [
-        {"bed_id": beds[0].id, "nurse_id": nurse.id, "shift_start": start, "shift_end": end},
-        {"bed_id": beds[1].id, "nurse_id": nurse.id, "shift_start": start, "shift_end": end},
-    ]
-    created, warnings = await service.create_shift_schedule(
-        db_session, unit_id=unit.id, charge_nurse_id=nurse.id, assignments=assignments)
-    assert len(created) == 2          # NOT blocked (soft limit)
-    assert any("exceeding" in w for w in warnings)
 
 
 # ---------------------------------------------------------------------------

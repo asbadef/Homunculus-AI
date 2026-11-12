@@ -51,6 +51,10 @@ export const PERMISSION_KEYS = freeze([
   // G4-03 — Kalite göstergeleri (spec D2, D3): the page and GET /quality; the default auditor group holds it (migration
   // 0020), the system one by rule
   "quality.view",
+
+  // G4-04 — İş yükü (spec D2): the page and GET /shift-schedule; the default charge-nurse group holds it (migration
+  // 0022), the system one by rule
+  "workload.view",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

@@ -388,36 +388,81 @@ class CareTeamCandidate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Nurse–bed assignment — §4.4
+# Nurse–bed assignment per shift — §4.4; G4-04 «İş yükü» (spec D4, §5), admission/shifts.py
 # ---------------------------------------------------------------------------
-class NurseBedAssignmentCreate(BaseModel):
+class ShiftWindow(BaseModel):
+    """One of the tenant's two daily shifts (api/shiftclock.py): its UTC bounds, and which it is."""
+    start: datetime
+    end: datetime
+    which: Literal["A", "B"]
+
+
+class ShiftItem(BaseModel):
+    """One bed and the nurse who looks after it in the window: staff by name (and user name, for two of one name),
+    never a patient."""
     bed_id: uuid.UUID
     nurse_id: uuid.UUID
-    shift_start: datetime
-    shift_end: datetime
+    nurse_name: str
+    nurse_username: str
 
 
-class ShiftScheduleCreate(BaseModel):
+class ShiftUnit(BaseModel):
     unit_id: uuid.UUID
-    assignments: list[NurseBedAssignmentCreate]
+    unit_name: str
+    items: list[ShiftItem]
+    #: §5 A3: the unit's active rows of ANOTHER window that overlap this one — the shift hours changed meanwhile.
+    other_rows: int
 
 
-class NurseBedAssignmentResponse(BaseModel):
+class ShiftSchedule(BaseModel):
+    """GET /shift-schedule: the window, the units in the caller's reach with their active rows, the server's time."""
+    shift: ShiftWindow
+    units: list[ShiftUnit]
+    generated_at: datetime
+
+
+class ShiftWarning(BaseModel):
+    """A soft warning of PUT /shift-schedule (§5 A10): `unit_not_reached` — this nurse's own scope does not reach the
+    unit, so her board will not show these beds' patients. Saved all the same. Ids: the page names her."""
+    code: Literal["unit_not_reached"]
+    nurse_id: uuid.UUID
+
+
+class ShiftScheduleSaved(ShiftSchedule):
+    """PUT /shift-schedule: the unit's new state, and the soft warnings — never a refusal (no beds-per-nurse one, A12)."""
+    warnings: list[ShiftWarning] = Field(default_factory=list)
+
+
+#: G4-04 code review (§5 A14 M5): the most pairs PUT /shift-schedule takes in `items`, and in `expected`.
+SHIFT_PAIRS_MAX = 500
+
+
+class ShiftPair(BaseModel):
+    """A bed and its nurse, as the PUT names them."""
+    model_config = ConfigDict(extra="forbid")
+    bed_id: uuid.UUID
+    nurse_id: uuid.UUID
+
+
+class ShiftSchedulePut(BaseModel):
+    """PUT /shift-schedule (D4, §5 A1, A7): replace one unit's assignment for the window starting at `shift_start` (the
+    GET answer's `shift.start`). `expected`, required: the active rows the form read for that unit and window (a set;
+    an empty list means none); an empty `items` clears the window. Each list holds at most `SHIFT_PAIRS_MAX` pairs
+    (§5 A14 M5: a unit has far fewer beds, and a longer list could pass asyncpg's bind limit)."""
+    model_config = ConfigDict(extra="forbid")
+    unit_id: uuid.UUID
+    shift_start: AwareDatetime
+    items: list[ShiftPair] = Field(max_length=SHIFT_PAIRS_MAX)
+    expected: list[ShiftPair] = Field(max_length=SHIFT_PAIRS_MAX)
+
+
+class ShiftNurse(BaseModel):
+    """GET /shift-schedule/nurses: a person the form offers — her id, her name, her user name (two of one name are told
+    apart by it, A11), and whether her own scope reaches the unit asked for (A10)."""
     id: uuid.UUID
-    unit_id: uuid.UUID
-    bed_id: uuid.UUID
-    nurse_id: uuid.UUID
-    charge_nurse_id: uuid.UUID | None
-    shift_start: datetime
-    shift_end: datetime
-    is_active: bool
-
-    model_config = {"from_attributes": True}
-
-
-class ShiftScheduleResponse(BaseModel):
-    assignments: list[NurseBedAssignmentResponse]
-    warnings: list[str] = Field(default_factory=list)  # S-25 soft over-capacity warnings
+    name: str
+    username: str
+    reaches_unit: bool
 
 
 # ---------------------------------------------------------------------------

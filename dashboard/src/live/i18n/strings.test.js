@@ -233,6 +233,9 @@ const AZ_SAME_AS_TR = new Set([
   "kayit.w24", "kayit.w72", "kayit.w168", //  24 saat · 72 saat · 7 gün
   "kayit.umDevice", //       "cihaz {device}" — «cihaz» (device) is an Azerbaijani word too (as nav.devices); no colon, as tr, ru and en
 
+  // G4-04 (isyuku) · az = tr — «İş yükü»: the prototype's AZ dictionary (birim.js m_workload); iş and yük are Azerbaijani too
+  "isyuku.nav", "isyuku.navShort", "isyuku.title",
+
 ]);
 
 describe("live UI dictionaries", () => {

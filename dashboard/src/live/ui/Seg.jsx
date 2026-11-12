@@ -12,8 +12,9 @@ const OTHER = "bg-transparent text-mute hover:text-ink";
 
 /** A labelled group of toggle buttons (aria-pressed); the chosen one is filled.
  *  options: [{ value, label, icon?, lang? }] — `lang` marks a label in another language (a
- *  language picker's "Русский"), so a screen reader pronounces it in that language. */
-export function Seg({ label, options, value, onChange, className = "" }) {
+ *  language picker's "Русский"), so a screen reader pronounces it in that language.
+ *  `disabled`: no choice can be made for now (a save on its way, G4-04 «Nöbet ataması»). */
+export function Seg({ label, options, value, onChange, disabled = false, className = "" }) {
   return (
     <div role="group" aria-label={label} className={`inline-flex rounded-ctl border border-line bg-card p-[3px] ${className}`}>
       {options.map((option) => {
@@ -24,10 +25,11 @@ export function Seg({ label, options, value, onChange, className = "" }) {
             type="button"
             lang={option.lang}
             aria-pressed={on}
+            disabled={disabled}
             onClick={() => {
               if (!on) onChange(option.value);
             }}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-[11px] py-1.5 font-text text-13 font-semibold leading-[normal] ${on ? CHOSEN : OTHER} ${FOCUS_RING}`}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-[11px] py-1.5 font-text text-13 font-semibold leading-[normal] disabled:cursor-not-allowed disabled:opacity-45 ${on ? CHOSEN : OTHER} ${FOCUS_RING}`}
           >
             {option.icon ? <Icon name={option.icon} size={15} /> : null}
             {option.label}

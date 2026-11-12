@@ -537,6 +537,34 @@ describe("backendApi — what the work screens call", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/quality?days=7");
   });
 
+  // G4-04 (spec D4, §5): «İş yükü» — the shift's nurse–bed assignment, the form's people, the save.
+  it("reads the shift's assignment with an authed GET /shift-schedule?shift=, one unit when asked, and the form's people", async () => {
+    const answer = { shift: { which: "A" }, units: [] };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(answer)));
+    const api = signedIn(fetchMock);
+    expect(await api.shiftSchedule()).toEqual(answer);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/shift-schedule?shift=current");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+    await api.shiftSchedule("next", "u 1");
+    expect(fetchMock.mock.calls[1][0]).toBe("/shift-schedule?shift=next&unit_id=u+1");
+    await api.shiftNurses("u 1");
+    expect(fetchMock.mock.calls[2][0]).toBe("/shift-schedule/nurses?unit_id=u%201");
+  });
+
+  it("saves one unit's window with an authed PUT /shift-schedule, the body as given", async () => {
+    const body = { unit_id: "u-1", shift_start: "2026-11-12T08:00:00Z", items: [{ bed_id: "b-1", nurse_id: "n-1" }],
+      expected: [] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ warnings: [] }));
+    const api = signedIn(fetchMock);
+    expect(await api.saveShiftSchedule(body)).toEqual({ warnings: [] });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/shift-schedule");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
   it("opens a handover of one admission to one receiver: POST /handovers {unit_id, incoming_user_id, admission_ids}", async () => {
     const row = { id: "h-1", status: "OPEN" };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(row, { status: 201 }));
