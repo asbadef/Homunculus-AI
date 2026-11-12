@@ -25,7 +25,16 @@ committed, so that one key has one writer at a time (`_row`):
   its attempts, its wait, its last words. A row made by this call stays `pending`.
 
 `record_skip` writes why a resource was not built (`fin_missing`, `unit_unmapped`… — a catalogue
-code, never text).
+code, never text). `held` reads the platform's id of a row without locking it (a reference, a
+preview); `forget_skip` removes a skip that stood for no record at all (a Patient's placeholder,
+ids.patient_placeholder) once the resource has an id of its own.
+
+A DELIVERER THAT MUST NOT WAIT (plan F1, N12): «Şimdi gönder» and «Yeniden dene» are a person's
+request, and a round may hold the row they need for minutes (its transaction spans its HTTP
+calls). With `lock_timeout_ms` the row is waited for that long at most, then `LedgerBusy` is
+raised and nothing is written: the route answers «busy, try again». It is `SET LOCAL lock_timeout`,
+not `FOR UPDATE NOWAIT`: a round that has INSERTED a new row and not committed makes the INSERT …
+ON CONFLICT wait for its transaction, which NOWAIT would not bound.
 
 EVERY OUTCOME IS COMMITTED BEFORE THIS RETURNS: a POST the platform took must not be forgotten by
 a crash a moment later, or the next round would look it up again for nothing — and a ledger that
@@ -36,8 +45,9 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.crypto import phi_digest
@@ -55,6 +65,20 @@ NO_REFERENCE = "Non-existent reference"
 #: ciphertext (≈1430 characters for 1000 bytes) fits the column (PHI_COLUMN_LENGTH, 1536).
 ERROR_MAX_CHARS = 500
 ERROR_MAX_BYTES = 1000
+#: How long a hand-started delivery waits for a row a round holds, in milliseconds (N12).
+HAND_LOCK_TIMEOUT_MS = 2000
+#: Postgres's SQLSTATE for a lock not had within `lock_timeout`.
+LOCK_NOT_AVAILABLE = "55P03"
+
+
+class LedgerBusy(Exception):
+    """Another deliverer holds this resource's row: nothing was written; try again later."""
+
+
+def is_lock_timeout(error: BaseException) -> bool:
+    """A statement cancelled because its lock was not had within `lock_timeout`."""
+    orig = getattr(error, "orig", None)
+    return (getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)) == LOCK_NOT_AVAILABLE
 
 
 def payload_digest(resource: dict) -> str:
@@ -82,22 +106,32 @@ def due(row: TresDelivery, now: datetime) -> bool:
 
 
 async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
-               local_id: str, admission_id: uuid.UUID | None) -> TresDelivery:
+               local_id: str, admission_id: uuid.UUID | None,
+               lock_timeout_ms: int | None = None) -> TresDelivery:
     """The row of this key, made if there is none, and LOCKED until the caller's commit — ONE
     WRITER PER KEY (review #2). Two deliverers of one resource at once (a round and «Şimdi gönder»)
     would otherwise both look the local id up, both find nothing and both POST: two national
     records of one resource. `INSERT … ON CONFLICT DO NOTHING` on the key, then `SELECT … FOR
     UPDATE` (protocol/router.py's pattern): the second waits for the first's commit and then reads
     what it wrote — `populate_existing`, so a row this session already holds is read again, never
-    trusted from memory."""
+    trusted from memory. With `lock_timeout_ms`, a wait longer than that is `LedgerBusy` (the
+    transaction rolled back, nothing written)."""
     key = (TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id)
-    await db.execute(insert(TresDelivery).values(
-        id=uuid.uuid4(), tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-        local_id=local_id, admission_id=admission_id, status="pending", attempts=0,
-    ).on_conflict_do_nothing(constraint="uq_tres_deliveries_key"))
-    row = (await db.execute(select(TresDelivery).where(*key).with_for_update()
-                            .execution_options(populate_existing=True))).scalar_one()
+    try:
+        if lock_timeout_ms is not None:
+            await db.execute(text(f"SET LOCAL lock_timeout = '{int(lock_timeout_ms)}ms'"))
+        await db.execute(insert(TresDelivery).values(
+            id=uuid.uuid4(), tenant_id=tenant_id, environment=environment, resource_type=resource_type,
+            local_id=local_id, admission_id=admission_id, status="pending", attempts=0,
+        ).on_conflict_do_nothing(constraint="uq_tres_deliveries_key"))
+        row = (await db.execute(select(TresDelivery).where(*key).with_for_update()
+                                .execution_options(populate_existing=True))).scalar_one()
+    except DBAPIError as exc:
+        if not is_lock_timeout(exc):
+            raise
+        await db.rollback()
+        raise LedgerBusy(resource_type) from None
     if admission_id is not None and row.admission_id != admission_id:
         row.admission_id = admission_id        # a person's row follows their latest stay
     return row
@@ -126,7 +160,7 @@ async def _write(client: TresClient, fhir_type: str, local_id: str, resource: di
 async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID, environment: str,
                   mode: str, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                   admission_id: uuid.UUID | None = None, now: datetime | None = None,
-                  force: bool = False) -> TresDelivery:
+                  force: bool = False, lock_timeout_ms: int | None = None) -> TresDelivery:
     """One resource to the platform, its outcome on its ledger row (the module's docstring).
     `resource_type` is the ledger's key (`vital`, `lab`, `patient`…); `fhir_type` the platform's
     (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
@@ -144,7 +178,7 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     now = now or datetime.now(timezone.utc)
     digest = payload_digest(resource)
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-                     local_id=local_id, admission_id=admission_id)
+                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
     same = row.payload_digest == digest
     done = ("sent", "validated") if mode == "validate" else ("sent",)
     if same and (row.status in done or (not force and not due(row, now))):
@@ -183,12 +217,13 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
 
 async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str,
                       resource_type: str, local_id: str, reason: str,
-                      admission_id: uuid.UUID | None = None, keep_held: bool = False) -> TresDelivery:
+                      admission_id: uuid.UUID | None = None, keep_held: bool = False,
+                      lock_timeout_ms: int | None = None) -> TresDelivery:
     """The resource was not built: its row reads `skipped` with the catalogue's reason code. With
     `keep_held`, a row the platform holds a record of (it has a `remote_id`) is left exactly as it
     is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7)."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
-                     local_id=local_id, admission_id=admission_id)
+                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
     if keep_held and row.remote_id:
         await db.commit()
         return row
@@ -197,3 +232,21 @@ async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: st
         row.attempts, row.last_error, row.next_attempt_at = 0, None, None
     await db.commit()
     return row
+
+
+async def held(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
+               local_id: str) -> str | None:
+    """The platform's id of this resource as the ledger holds it, or None — read, never locked."""
+    return (await db.execute(select(TresDelivery.remote_id).where(
+        TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
+        TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id))).scalar_one_or_none()
+
+
+async def forget_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
+                      local_id: str) -> None:
+    """Removes a `skipped` row the platform holds no record of (no `remote_id`), and commits."""
+    await db.execute(delete(TresDelivery).where(
+        TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
+        TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id,
+        TresDelivery.status == "skipped", TresDelivery.remote_id.is_(None)))
+    await db.commit()

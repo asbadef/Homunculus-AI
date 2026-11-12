@@ -23,8 +23,8 @@ from homunculus.admission.models import Admission, Patient
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient, TresError, is_outage
 from homunculus.tres.ledger import (
-    ERROR_MAX_BYTES, ERROR_MAX_CHARS, MAX_ATTEMPTS, RETRY_AFTER, _row, clip_error, deliver, due,
-    payload_digest, record_skip,
+    ERROR_MAX_BYTES, ERROR_MAX_CHARS, HAND_LOCK_TIMEOUT_MS, MAX_ATTEMPTS, RETRY_AFTER, LedgerBusy, _row, clip_error,
+    deliver, due, forget_skip, held, is_lock_timeout, payload_digest, record_skip,
 )
 from homunculus.tres.models import TresDelivery
 from tests.conftest import requires_db
@@ -493,3 +493,72 @@ async def test_the_row_is_read_again_and_never_trusted_from_the_sessions_memory(
         again = await _row(db, **key)
         assert again is held and (again.status, again.remote_id) == ("sent", "7999")
         await db.commit()
+
+
+# ---------------------------------------------------------------- a hand never waits for a round (plan F1, N12)
+def test_a_lock_timeout_is_told_by_its_sqlstate():
+    class Orig:
+        def __init__(self, code):
+            self.sqlstate = code
+
+    class Wrapped(Exception):
+        def __init__(self, code):
+            self.orig = Orig(code)
+
+    assert is_lock_timeout(Wrapped("55P03")) and not is_lock_timeout(Wrapped("23505"))
+    assert not is_lock_timeout(RuntimeError("x")) and HAND_LOCK_TIMEOUT_MS == 2000
+
+
+@requires_db
+@pytest.mark.parametrize("committed", [True, False], ids=["a-row-a-round-holds", "a-row-a-round-is-inserting"])
+async def test_a_deliverer_with_a_lock_timeout_answers_busy_and_writes_nothing(db_session, committed):
+    """N12: a round holds the row (FOR UPDATE across its HTTP calls) — or has inserted it and not
+    committed, which makes the INSERT … ON CONFLICT wait for its transaction (NOWAIT would not bound
+    that wait). «Şimdi gönder» waits a moment, then is told the row is busy; nothing is asked."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.flush()
+    if committed:
+        db_session.add(TresDelivery(tenant_id=tenant.id, environment="test", resource_type="patient",
+                                    local_id=LOCAL, status="failed", attempts=1))
+    await db_session.commit()
+    tenant_id = tenant.id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    fake = FakeTres()
+    client = TresClient(fake.account, transport=fake.transport)
+    async with maker() as round_, maker() as hand:
+        await _row(round_, tenant_id=tenant_id, environment="test", resource_type="patient", local_id=LOCAL,
+                   admission_id=None)                                  # the round's lock, uncommitted
+        with pytest.raises(LedgerBusy):
+            await deliver(hand, client, tenant_id=tenant_id, environment="test", mode="send",
+                          resource_type="patient", fhir_type="Patient", local_id=LOCAL, resource=patient(),
+                          now=T0, lock_timeout_ms=200)
+        with pytest.raises(LedgerBusy):
+            await record_skip(hand, tenant_id=tenant_id, environment="test", resource_type="patient",
+                              local_id=LOCAL, reason="fin_missing", lock_timeout_ms=200)
+        assert fake.requests == []
+        await round_.commit()
+        # the round is done: the same hand now goes through (its session is usable again)
+        row = await deliver(hand, client, tenant_id=tenant_id, environment="test", mode="send",
+                            resource_type="patient", fhir_type="Patient", local_id=LOCAL, resource=patient(),
+                            now=T0, lock_timeout_ms=200, force=True)
+        assert row.status == "sent"
+    await client.aclose()
+
+
+@requires_db
+async def test_held_reads_the_platforms_id_and_forget_skip_removes_only_an_unheld_skip(world, db_session):
+    fake, send, tenant = world
+    assert await held(db_session, tenant_id=tenant.id, environment="test", resource_type="patient",
+                      local_id=LOCAL) is None
+    await send()
+    assert await held(db_session, tenant_id=tenant.id, environment="test", resource_type="patient",
+                      local_id=LOCAL) == "7001"
+    await record_skip(db_session, tenant_id=tenant.id, environment="test", resource_type="patient",
+                      local_id="hmn-p-s-1.", reason="fin_missing")
+    for local_id in ("hmn-p-s-1.", LOCAL):                       # the sent row is never removed
+        await forget_skip(db_session, tenant_id=tenant.id, environment="test", resource_type="patient",
+                          local_id=local_id)
+    db_session.expire_all()
+    rows = (await db_session.execute(select(TresDelivery.local_id, TresDelivery.status))).all()
+    assert [tuple(r) for r in rows] == [(LOCAL, "sent")]
