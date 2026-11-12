@@ -171,7 +171,9 @@ BEDSIDE_SKEW = timedelta(minutes=2)
 AT_TOO_OLD = "ölçüm saati en çok 24 saat geriye alınabilir"
 AT_FUTURE = "ölçüm saati ileri olamaz"
 #: G3-01 (D10, D12): the audit row a «hatalı giriş» writes — `{entry, code, value, obs_ts, reason, retracted_by}`,
-#: subject the code too; `entry` is the withdrawn `chart` row's id. The replay and the rebuild skip that row.
+#: subject the code too; `entry` is the withdrawn row's id. The replay and the rebuild skip that row. G3-05 (D13):
+#: the withdrawn row is a `chart` row or — a device reading — an `ingest` row, and then the payload also carries
+#: `"origin": "device"` and `"device"`. One event for both, so every reader of withdrawals honours a device's.
 RETRACT = "chart_retract"
 #: G3-01 (D10, D11, X11): the withdrawal's reason, after trim, and its refusals in the clinician's words.
 RETRACT_MIN_REASON_CHARS = 10
@@ -197,7 +199,9 @@ RETRACTABLE_CODES = frozenset(code.value for code in
 #: G3-03 (D4): names the fluid entries too, now withdrawable. The dashboard maps this exact sentence (apiErrors.js).
 RETRACT_NOT_BEDSIDE = "yalnız yatak başı ölçümü ve sıvı girişi hatalı giriş olarak işaretlenebilir"
 RETRACT_NEEDS_PERSON = "geri alma bir kişinin işidir — cihaz kimliğiyle yapılamaz"
-RETRACT_UNKNOWN = "bu hastada böyle bir elle girilmiş değer yok"
+#: G3-05 (D13): the entry may be a device reading, so the sentence no longer says «elle girilmiş». The dashboard
+#: maps this exact sentence (apiErrors.js).
+RETRACT_UNKNOWN = "bu hastada böyle bir ölçüm değeri yok"
 #: The dashboard tells «already withdrawn» from the other 409s by this exact sentence (apiErrors.js).
 RETRACT_ALREADY = "bu değer zaten hatalı giriş olarak işaretlenmiş"
 RETRACT_DISCHARGED = "taburcu edilmiş bir hastada değer geri alınamaz"

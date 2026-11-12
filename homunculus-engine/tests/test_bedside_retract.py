@@ -262,7 +262,8 @@ class TestTheRefusals:
         assert _retract(client, ids["spo2"], pid="bed-3").status_code == 404
 
     def test_a_row_that_is_not_a_chart_row_is_404(self, client):
-        """A device's reading is an `ingest` row, an alert an `alert` row: neither is a hand entry."""
+        """An alert is an `alert` row: no value to withdraw. (Since G3-05, D13, a device's `ingest` row CAN be
+        withdrawn — tests/test_device_retract.py.)"""
         _chart(client, RISKY, _ago(5))
         alert = _rows(client, "alert")[0]
         assert _retract(client, alert.id).status_code == 404

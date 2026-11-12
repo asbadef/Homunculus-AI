@@ -46,16 +46,20 @@ from homunculus.pipeline import Engine
 
 
 def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *,
-              skip: frozenset[int] = frozenset(), now: datetime | None = None) -> None:
+              skip: frozenset[int] = frozenset(), skip_device: frozenset[tuple] = frozenset(),
+              now: datetime | None = None) -> None:
     # Any iterable, read once, in id order (G2-A2, D12): the API hands it `audit.iter_records`,
     # which reads the log a page at a time, so no cap can drop the newest rows.
-    # G3-01 (D12): `skip` is the `chart` rows a «hatalı giriş» withdrew (`retracted_entries`, read first by
-    # the API): they are not replayed, so a restart scores the patient as the live rebuild did.
+    # G3-01 (D12): `skip` is the rows a «hatalı giriş» withdrew (`retracted_entries`, read first by
+    # the API): they are not replayed, so a restart scores the patient as the live rebuild did. G3-05 (D13): a
+    # withdrawn row is a `chart` row or a device's `ingest` row — both are skipped — and `skip_device`
+    # (`retracted_device_readings`) names the device readings withdrawn, so a second `ingest` row of the same
+    # reading is skipped with the one the nurse named (`_withdrawn`).
     # G2-B5b: `now` is the restart's clock — a snooze row written later than it is passed over, and what is left
     # running is judged against it at the end.
     now = now if now is not None else datetime.now(timezone.utc)
     for rec in records:
-        if rec.event_type == "chart" and rec.id in skip:
+        if rec.event_type in ("ingest", "chart") and _withdrawn(rec, skip, skip_device):
             continue
         if rec.event_type in ("ingest", "chart"):
             # `chart` is a clinician's observation and replays exactly like a device's. It has
@@ -140,7 +144,14 @@ def observation_of(rec: AuditRecord) -> Observation | None:
     # G2-A4 review (S1, X22): a `chart` row carries `charted_by`, never a `device` — the door stamps the
     # observation "clinician" (api/clinical.py `build_entries`), and the replay must too, or after a restart
     # every hand-charted value reads as coming from "replay" (the SOFA form prints the source).
-    source = p.get("device") or ("clinician" if rec.event_type == "chart" else "replay")
+    # G3-05 (O2): an `ingest` row's device is replayed AS SENT, an empty name included — the door stamped the
+    # reading with it, and a rebuilt reading must equal the live one (the shadow lane's removal and the «already»
+    # repair compare them). A row with no `device` key (written before the key existed) still reads "replay".
+    device = p.get("device")
+    if rec.event_type == "ingest" and isinstance(device, str):
+        source = device
+    else:
+        source = device or ("clinician" if rec.event_type == "chart" else "replay")
     return Observation(patient_id=rec.patient_id, code=code, value=value,
                        unit=p.get("unit", ""), timestamp=datetime.fromisoformat(p["obs_ts"]),
                        source_device=source)
@@ -252,8 +263,9 @@ REBUILD_EVENTS = frozenset({"ingest", "chart", "profile"})
 
 
 def retracted_entries(records: Iterable[AuditRecord]) -> frozenset[int]:
-    """The `chart` rows a `chart_retract` row withdrew (G3-01, D12), from any rows: the others are ignored, and
-    a payload whose `entry` is not an integer withdraws nothing."""
+    """The rows a `chart_retract` row withdrew (G3-01, D12) — `chart` rows and, since G3-05 (D13), a device's
+    `ingest` rows — from any rows: the others are ignored, and a payload whose `entry` is not an integer
+    withdraws nothing."""
     out: set[int] = set()
     for rec in records:
         if rec.event_type != RETRACT:
@@ -264,18 +276,75 @@ def retracted_entries(records: Iterable[AuditRecord]) -> frozenset[int]:
     return frozenset(out)
 
 
+def _hashable(value: object) -> object:
+    """`value` itself, or its repr when it cannot be a set member: the trail is what a restart must survive,
+    whoever wrote it, and a payload nobody could have written must not fail the replay of a tenant."""
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
+
+
+def device_key(patient_id: str, code: str, obs_ts: object, device: object, value: object) -> tuple:
+    """One device reading as the trail names it (G3-05, D13; B4 review): the patient, the code, the instant, the
+    device as sent and the number — D14's tuple. Two `ingest` rows with one key are ONE reading written twice
+    (a `seen` that failed open; data from before it existed), and a withdrawal that names either withdraws the
+    reading. The instant is compared as an instant and the number as a number, so a copy that spells either
+    differently is still the copy; what cannot be read is compared as it stands."""
+    try:
+        at = datetime.fromisoformat(obs_ts)                                   # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        at = obs_ts
+    try:
+        number = float(value)                                                 # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        number = value
+    return (patient_id, code, _hashable(at), _hashable(device), _hashable(number))
+
+
+def device_key_of(rec: AuditRecord) -> tuple:
+    """`device_key` of an `ingest` row (its subject is the code)."""
+    p = rec.payload
+    return device_key(rec.patient_id, rec.subject, p.get("obs_ts"), p.get("device"), p.get("value"))
+
+
+def retracted_device_readings(records: Iterable[AuditRecord]) -> frozenset[tuple]:
+    """The device readings (`device_key`) the `chart_retract` rows in `records` withdrew — the rows that say
+    `"origin": "device"` (G3-05, D13); a hand entry's withdrawal names none. The withdrawal row carries the key's
+    parts itself (code as its subject, `value`, `obs_ts`, `device`), so a restart reads only the withdrawals."""
+    out: set[tuple] = set()
+    for rec in records:
+        if rec.event_type != RETRACT or rec.payload.get("origin") != "device":
+            continue
+        p = rec.payload
+        out.add(device_key(rec.patient_id, rec.subject, p.get("obs_ts"), p.get("device"), p.get("value")))
+    return frozenset(out)
+
+
+def _withdrawn(rec: AuditRecord, skip: frozenset[int], skip_device: frozenset[tuple]) -> bool:
+    """Whether a «hatalı giriş» took this `ingest` or `chart` row out of the patient's scores: it is named
+    (`skip`), or — a device's `ingest` row only — it is another row of a device reading that was withdrawn
+    (`skip_device`). A hand entry is withdrawn by its own id alone."""
+    if rec.id in skip:
+        return True
+    return rec.event_type == "ingest" and bool(skip_device) and device_key_of(rec) in skip_device
+
+
 def rebuild_patient(engine: Engine, patient_id: str, records: Iterable[AuditRecord], *,
-                    skip: frozenset[int]) -> None:
-    """One patient's engine state from the trail, without the `chart` rows in `skip` (G3-01, D10, X4): first
-    everything the engine holds for the patient is dropped (`Engine.forget`), then that patient's `ingest`,
-    `chart` and `profile` rows are replayed in id order with the restart's own helpers — each reading judged
-    where the door judged it. Engine only: no store and no lifecycle hook; the caller runs the hook once, at its
-    own instant. Rows of another patient or kind are passed over, so the caller may hand it a wider read."""
+                    skip: frozenset[int], skip_device: frozenset[tuple] = frozenset()) -> None:
+    """One patient's engine state from the trail, without the rows in `skip` and the device readings in
+    `skip_device` (G3-01, D10, X4; G3-05, D13: a device reading can be withdrawn too, and every `ingest` row of
+    it): first everything the engine holds for the patient is dropped (`Engine.forget`), then that patient's
+    `ingest`, `chart` and `profile` rows are replayed in id order with the restart's own helpers — each reading
+    judged where the door judged it. Engine only: no store and no lifecycle hook; the caller runs the hook once,
+    at its own instant. Rows of another patient or kind are passed over, so the caller may hand it a wider
+    read."""
     engine.forget(patient_id)
     for rec in records:
         if rec.patient_id != patient_id or rec.event_type not in REBUILD_EVENTS:
             continue
         if rec.event_type == "profile":
             _replay_profile(engine, rec)
-        elif not (rec.event_type == "chart" and rec.id in skip):
+        elif not _withdrawn(rec, skip, skip_device):
             _replay_ingest(engine, rec, _written_at(rec))

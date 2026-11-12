@@ -62,7 +62,8 @@ from homunculus.api.infinity_shadow import (
 from homunculus.api.monitor_samples import InMemorySamples, SampleStore, is_missing_table, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
-    REBUILD_EVENTS, observation_of, rebuild_patient, rehydrate, retracted_entries,
+    REBUILD_EVENTS, device_key_of, observation_of, rebuild_patient, rehydrate, retracted_device_readings,
+    retracted_entries,
 )
 from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
@@ -509,12 +510,15 @@ def create_app(
             return
         engine = Engine()
         store = AckStore()
-        # G3-01 (D12): the withdrawn hand entries first — one read of the `chart_retract` rows — so the replay
-        # below scores each patient as the live withdrawal's rebuild did.
-        withdrawn = retracted_entries(iter_records_of(audit, tenant=hospital, event_types={RETRACT},
-                                                      page=REHYDRATE_PAGE))
+        # G3-01 (D12): the withdrawn entries first — one read of the `chart_retract` rows — so the replay below
+        # scores each patient as the live withdrawal's rebuild did. G3-05 (D13): a device's `ingest` row among
+        # them, and every other `ingest` row of a device reading that was withdrawn (the same reading, twice).
+        withdrawals = list(iter_records_of(audit, tenant=hospital, event_types={RETRACT}, page=REHYDRATE_PAGE))
+        withdrawn = retracted_entries(withdrawals)
+        withdrawn_device = retracted_device_readings(withdrawals)
         # Every row, oldest first, a page at a time (G2-A2, D12) — never the newest N, and no cap.
         rehydrate(engine, store, iter_records(audit, tenant=hospital, page=REHYDRATE_PAGE), skip=withdrawn,
+                  skip_device=withdrawn_device,
                   now=datetime.now(timezone.utc))          # G2-B5b: a snooze still running at the restart stands
         # G2-A11 (D7b): the restart agrees with the identity store. A patient whose admission here
         # was discharged is retired, whether or not the discharge's rows were written (a crash
@@ -1306,10 +1310,12 @@ def create_app(
         await broadcaster.publish(hospital, frame)
 
     async def _adopt_rebuilt(hospital: str, patient_id: str, record, engine: Engine, store: AckStore,
-                             scratch: Engine, observation, now: datetime) -> None:
+                             scratch: Engine, observation, now: datetime, *, copies: int = 1) -> None:
         """«Hatalı giriş»'s memory half (G3-01, D10, X3, X4, X5), after its trail row: the scratch patient handed
         to the real engine, the lifecycle hook once at `now`, the shadow lane, the card, the nurse. Shared by a
-        withdrawal and by the repair of one whose row committed while its append raised (review of Task 5)."""
+        withdrawal and by the repair of one whose row committed while its append raised (review of Task 5).
+        `copies` (G3-05, D13): how many `ingest` rows the withdrawal took — one reading written twice is removed
+        from the shadow engine twice, a removal dropping one equal reading."""
         engine.adopt(scratch, patient_id)
         cleared = sync_alerts(engine, store, patient_id, now)
         # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended stood on a value that was never
@@ -1320,7 +1326,8 @@ def create_app(
         _audit_cleared(hospital, cleared, now)
         _stamp_uncovered(hospital, patient_id, engine, store, now)
         if observation is not None:
-            lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
+            for _ in range(copies):
+                lane.guard("mirror", lambda: lane.retract_observation(hospital, observation))
         await _publish_current(hospital, patient_id, record, engine, store, now)
         await _tell_uncovered(hospital, patient_id, engine)
         notifier.prune(hospital, live_keys(engine, store))
@@ -1347,9 +1354,12 @@ def create_app(
     @app.post("/clinical/{patient_id}/entries/{entry}/retract")
     async def retract_entry(patient_id: str, entry: str, body: dict = Body(...),
                             authorization: str | None = Header(default=None)):
-        """G3-01 (D10, D11, X3, X4, X11): «hatalı giriş» — a hand entry withdrawn from every score.
+        """G3-01 (D10, D11, X3, X4, X11): «hatalı giriş» — a hand entry withdrawn from every score. G3-05 (D3,
+        D13): a device reading too — the wards measure with a device, so its errors must be correctable where a
+        hand entry's are (this overrides G3-01's «a device value cannot be withdrawn»).
 
-        `entry` is the value's `chart` row (the door answered it). The patient's rows are read from the trail,
+        `entry` is the value's `chart` row (the door answered it) or the device reading's `ingest` row (the
+        readings record and the trends answer carry it). The patient's rows are read from the trail,
         then replayed without every withdrawn entry into a SCRATCH engine, with the restart's own helpers
         (`rebuild_patient`). Only then is the `chart_retract` row appended, and the scratch patient handed to the
         real engine (`Engine.adopt`). The trail row comes first, then memory, and a read or an append that fails
@@ -1367,12 +1377,13 @@ def create_app(
         - 403 for a device credential (X11): a withdrawal names a person;
         - 400 for a reason shorter than 10 or longer than 200 characters after trim;
         - 409 for a discharged number, before anything is read;
-        - 404 for an id that is not this patient's `chart` row (a device's reading is an `ingest` row);
+        - 404 for an id that is neither this patient's `chart` row nor its `ingest` row;
         - 409 for a chart row of a code neither the bedside form nor the fluid ledger charts (X22, G3-03 D4:
           RETRACTABLE_CODES);
         - 409 for an entry already withdrawn — after memory is repaired, if a row that committed while its
           append raised left the engine still counting the value, and with the current card sent again either
-          way (a withdrawal whose later step raised sent none).
+          way (a withdrawal whose later step raised sent none). G3-05 (D13): a device reading written to the
+          trail twice is one reading, so the copy of a withdrawn one is «already» too.
         A refusal writes no row — except an «already» answer finishing what a failed withdrawal left: the rows
         its tail would have written. The chart row itself is never changed: the trail keeps both."""
         caller = await _caller(authorization)
@@ -1403,7 +1414,8 @@ def create_app(
         store = _store(hospital)
         rows = list(iter_records_of(audit, tenant=hospital, patient_id=patient_id,
                                     event_types=REBUILD_EVENTS | {RETRACT}, page=REHYDRATE_PAGE))
-        target = next((r for r in rows if r.id == wanted and r.event_type == "chart"), None)
+        # G3-05 (D13): a hand entry's `chart` row or a device reading's `ingest` row — never another kind of row.
+        target = next((r for r in rows if r.id == wanted and r.event_type in ("chart", "ingest")), None)
         if target is None:
             raise HTTPException(status_code=404, detail=RETRACT_UNKNOWN)
         # X22 (the local walk): only the bedside form's values — and, since G3-03 (D4), the fluid ledger's volumes,
@@ -1414,10 +1426,23 @@ def create_app(
         if target.subject not in RETRACTABLE_CODES:
             raise HTTPException(status_code=409, detail=RETRACT_NOT_BEDSIDE)
         withdrawn = retracted_entries(rows)
-        already = target.id in withdrawn
+        # G3-05 (D13): a device reading the trail holds TWICE (a `seen` that failed open; older data) is one
+        # reading. The nurse names one `ingest` row; every `ingest` row of the patient with the same code, time,
+        # device and value is withdrawn with it — kept, the copy would go on scoring a value struck through — and
+        # so is already withdrawn once a withdrawal of either was written. A hand entry is withdrawn by its id.
+        withdrawn_device = retracted_device_readings(rows)
+        own = device_key_of(target) if target.event_type == "ingest" else None
+        already = target.id in withdrawn or (own is not None and own in withdrawn_device)
+        skip_device = withdrawn_device if own is None else withdrawn_device | {own}
         scratch = Engine()
-        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id})
+        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id}, skip_device=skip_device)
         observation = observation_of(target)
+        # Every row the withdrawal takes (the named one alone, for a hand entry). The shadow engine took one reading
+        # per `/ingest` and a removal drops one, so it is removed once per copy; the record's one table row may be
+        # filed under either copy's id, so each is marked.
+        taken = [target.id] if own is None else [r.id for r in rows if r.event_type == "ingest"
+                                                 and device_key_of(r) == own]
+        copies = len(taken)
         now = datetime.now(timezone.utc)
         if already:
             # Review of Task 5: an append whose row committed and which still raised (a bounded write that timed
@@ -1427,7 +1452,8 @@ def create_app(
             # answer is still «already» (the dashboard tells it by RETRACT_ALREADY's sentence). Counted, not
             # merely found: an equal value charted twice at one time may rightly stay once.
             if _readings_equal(engine, patient_id, observation) > _readings_equal(scratch, patient_id, observation):
-                await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
+                await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now,
+                                     copies=copies)
             else:
                 # Final review (X21): memory is right, but a withdrawal whose row committed and whose later step
                 # raised (an `alert_cleared` or `first_seen` append after `adopt`) left its tail undone — the card
@@ -1439,10 +1465,20 @@ def create_app(
                 await _tell_uncovered(hospital, patient_id, engine)
                 notifier.prune(hospital, live_keys(engine, store))
             raise HTTPException(status_code=409, detail=RETRACT_ALREADY)
-        audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, {
-            "entry": target.id, "code": target.subject, "value": target.payload.get("value"),
-            "obs_ts": target.payload.get("obs_ts"), "reason": reason, "retracted_by": caller.actor}))
-        await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now)
+        withdrawal = {"entry": target.id, "code": target.subject, "value": target.payload.get("value"),
+                      "obs_ts": target.payload.get("obs_ts"), "reason": reason, "retracted_by": caller.actor}
+        if target.event_type == "ingest":
+            # G3-05 (D13): the same event — every reader of withdrawals honours it — saying what it withdrew.
+            withdrawal |= {"origin": "device", "device": target.payload.get("device")}
+        audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, withdrawal))
+        # G3-05 (D7): the record's row is marked after the trail's row. Never raises: the withdrawal is written,
+        # and `reconcile` marks a row this could not.
+        try:
+            for entry_id in taken:
+                readings.void(hospital, entry_id, by=caller.actor, at=now, reason=reason)
+        except Exception:
+            log.exception("vital_readings: hatalı giriş işareti yazılamadı (hastane %s); reconcile tamamlar", hospital)
+        await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now, copies=copies)
         return {"retracted": target.id, "code": target.subject,
                 "alerts": [a.kind for a in engine.active_alerts(patient_id)]}
 
