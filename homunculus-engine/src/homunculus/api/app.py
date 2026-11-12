@@ -2358,8 +2358,10 @@ def create_app(
         # `alert` rows either (G4-03, spec A2): one per active alert on every ingest, they filled the
         # cap within hours and fed only a repeat count the report no longer sends.
         cap = max(1, min(limit, ALARM_QUALITY_LIMIT_MAX))
-        recs = audit.records(tenant=hospital, since=since, limit=cap + 1, newest=True,
-                             event_types=EPISODE_READ_KINDS)
+        # On a worker thread, as `/quality` reads it: the store's read is synchronous (psycopg2 on
+        # Postgres), and the board stream, SSE and the hub's `/ingest` keep the event loop meanwhile.
+        recs = await asyncio.to_thread(audit.records, tenant=hospital, since=since, limit=cap + 1,
+                                       newest=True, event_types=EPISODE_READ_KINDS)
         truncated = len(recs) > cap
         report = alarm_quality(recs[1:] if truncated else recs, now)
         return {**report.as_dict(), "days": days, "truncated": truncated}
