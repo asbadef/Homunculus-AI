@@ -309,6 +309,25 @@ describe("«Nöbet ataması»", () => {
     act(() => { board.clear(); });
   });
 
+  // Re-review 2: the unit stays locked through the form's read after the save, so the box — and «yadda saxlanıldı» —
+  // are not unmounted by another unit in that moment.
+  it("keeps the unit locked until the form is read again after a save", async () => {
+    const { api, board } = await mountIsYuku({ setup: (a) => a.saveShiftSchedule.mockResolvedValue(
+      { ...unitSchedule("current", REA), warnings: [] }) });
+    await pick("Reanimasiya");
+    let land = null;
+    api.shiftSchedule.mockImplementation((shift = "current", unitId = null) => (unitId
+      ? new Promise((resolve) => { land = () => resolve(unitSchedule(shift, unitId)); }) : Promise.resolve(schedule())));
+    await save();
+    expect(land).not.toBeNull();                                          // the form is being read again
+    expect(screen.getByLabelText("Şöbə")).toBeDisabled();
+    await act(async () => { land(); });
+    await settle();
+    expect(screen.getByLabelText("Şöbə")).not.toBeDisabled();
+    expect(formBox()).toHaveTextContent("Təyinat yadda saxlanıldı.");
+    act(() => { board.clear(); });
+  });
+
   // Review 6: a change of language re-sorts the people and keeps what she picked; only a new read resets the picks.
   it("keeps the picks when the language changes", async () => {
     const { board } = await mountIsYuku();

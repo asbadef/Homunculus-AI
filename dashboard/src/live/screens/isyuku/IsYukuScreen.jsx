@@ -231,7 +231,8 @@ function AssignmentBox({ t, lang, store, row, structure, onSaved, onLock }) {
   useEffect(() => { setChoices(model ? new Map(model.beds.map((bed) => [bed.key, bed.held])) : null); },
     [read.phase, read.schedule, read.nurses]); // eslint-disable-line react-hooks/exhaustive-deps
   const locked = saving || read.busy;
-  useEffect(() => { onLock(saving); }, [onLock, saving]);
+  // The unit too, through the read after the save: another unit then would unmount the box before its outcome is seen.
+  useEffect(() => { onLock(locked); }, [onLock, locked]);
   useEffect(() => () => onLock(false), [onLock]);
 
   const save = async () => {
@@ -319,7 +320,8 @@ export function IsYukuScreen() {
     valid: isWorkAnswer, full: isWholeWork }), [rights.schedule, rights.tasks]);
   const reads = useSummaryReads({ store, rights: summaryRights, reloadStructure: tree.reload, extra });
   const [selected, setSelected] = useState(ALL);
-  // A save on its way holds the unit too: another unit would unmount the form and hide its outcome (review 5).
+  // A save on its way, and the form's read after it, hold the unit too: another unit would unmount the form and hide its
+  // outcome (review 5).
   const [formLocked, setFormLocked] = useState(false);
   const occupancy = structureSource(tree, rights.structure);
   // The server decides which shift is current: an answer's end is judged on its clock — this browser's corrected by the
