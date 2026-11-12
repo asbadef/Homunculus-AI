@@ -6,7 +6,8 @@
 **Status:** the owner's design, approved 2026-11-12 (§2 D1–D9; «6 saat», «yalnız kabulde»). The number G3-07 is free on
 the roadmap (controller lane, 2026-11-12). Two points the owner left to the spec are decided here and marked *(spec)*:
 the refusal code of the bed and person bounds (§3.2) and the place of each new check in the route (§3.1).
-Implementation plan next. Every file:line below was read at `88f6544c`.
+**The owner approved this written spec («İkisine de evet», 2026-11-12).** Implementation plan next. Every file:line
+below was read at `88f6544c`.
 
 ## 1. Why
 
