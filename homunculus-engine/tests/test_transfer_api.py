@@ -646,6 +646,41 @@ async def test_a_resend_after_the_arriving_stay_was_discharged_is_refused_and_wr
     assert await _cards_on(client, two) == [] and await _cards_on(client, one) == []
 
 
+@pytest.mark.parametrize(("reason", "note"), [("ISOLATION", NOTE), ("OTHER", "Sentetik ikinci not"),
+                                              ("CLINICAL_NEED", None)],
+                         ids=["another reason", "another note", "another reason, no note"])
+async def test_another_clinicians_move_to_the_same_bed_is_refused_not_taken_as_a_retry(
+        ward, db_session, reason, note):
+    """Final review M-5 (T9, X1): a retry is the same request sent again. A second clinician who
+    moves the same patient to the same bed with her own reason or note made another decision: it
+    is refused 409 `invalid_transition`, writing nothing (no audit row in her name, no frame),
+    rather than answered 200 with her reason and note silently dropped. The same request sent
+    again, its note trimmed as the route trims it, is still the 200 retry."""
+    w, client, app = ward
+    source = await signed(w, client)
+    await moved(w, client, source, reason="OTHER", note=NOTE)
+    top = {} if note is None else {"note": note}
+    await _refused_writing_nothing(
+        db_session, app, lambda: transfer(w, client, source, who="admin", reason=reason, **top),
+        409, "invalid_transition")
+    again = await transfer(w, client, source, reason="OTHER", note=f"  {NOTE} ")
+    assert again.status_code == 200, again.text
+
+
+async def test_a_note_where_the_move_wrote_none_is_another_decision_and_none_is_the_same(
+        ward, db_session):
+    """Final review M-5: absent and present are different notes. The move wrote none; a request
+    with one is refused, and the request sent again without one is the 200 retry."""
+    w, client, app = ward
+    source = await signed(w, client)
+    await moved(w, client, source)
+    await _refused_writing_nothing(
+        db_session, app, lambda: transfer(w, client, source, who="nurse", note=NOTE),
+        409, "invalid_transition")
+    again = await transfer(w, client, source)
+    assert again.status_code == 200, again.text
+
+
 async def test_the_old_beds_release_moves_a_card_left_on_it_or_refuses_and_never_takes_it_off(
         ward, db_session, monkeypatch):
     """T9, C-1: the old bed is not freed under a card left on it. Its release moves the card to

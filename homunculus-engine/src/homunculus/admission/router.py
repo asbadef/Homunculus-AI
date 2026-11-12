@@ -1265,8 +1265,9 @@ async def transfer_admission(
        (`_locked`): an admission into the target, a reservation of it, a second transfer of the
        patient and a discharge start take the same locks, so one runs after the other and the
        second is refused by the state the first left;
-    6. a TRANSFERRED source whose arriving row is open on this bed is this transfer sent again:
-       its card is moved again (`_transfer_again`, T9);
+    6. a TRANSFERRED source whose arriving row is open on this bed, with this request's reason and
+       note (final review M-5), is this transfer sent again: its card is moved again
+       (`_transfer_again`, T9) — any other request on it is refused by step 7;
     7. the source is ACTIVE (409 `invalid_transition`: a DRAFT is signed first, a discharge
        started is not moved), and the target is not its own bed (422
        `field_invalid:target_bed_id`);
@@ -1302,8 +1303,14 @@ async def transfer_admission(
     admission = await _locked(db, admission, payload.target_bed_id)
     if admission.state == AdmissionState.TRANSFERRED:                        # §5.2 step 6, T9
         arriving = await transfer.arriving_of(db, admission.id)
+        # Final review M-5: a retry is the same request — the bed, the reason and the note (its
+        # plaintext, trimmed; none and one are two notes). Another clinician's move of her to the
+        # same bed for her own reason is another decision: refused below, never answered as the
+        # first one's retry with her reason and note dropped.
         if arriving is not None and arriving.bed_id == payload.target_bed_id \
-                and arriving.state in OPEN_ADMISSION_STATES:
+                and arriving.state in OPEN_ADMISSION_STATES \
+                and (arriving.transfer_reason, arriving.transfer_note) == (payload.reason.value,
+                                                                           note):
             return await _transfer_again(db, request, response, caller_tenant=caller_tenant,
                                          source_id=admission.id, arriving=arriving,
                                          left=(source_bed_id, source_unit), actor=actor)
