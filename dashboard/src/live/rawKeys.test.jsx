@@ -268,6 +268,14 @@ const COLLEAGUES = [{ id: "u-leyla", name: "Leyla Sentetik" }, { id: "u-murad", 
 const PENDING_SWEEP = { generated_at: "2026-10-08T10:00:00+00:00", units: [{ unit_id: WARD.sites[0].units[0].id,
   unit_name: WARD.sites[0].units[0].name, pending: 1, oldest_outgoing_signed_at: "2026-10-08T07:00:00+00:00" }] };
 
+/** G4-04: «İş yükü» — the ward's occupied bed 2 to one nurse for the current shift, so the units table's ratio and a
+ *  nurse card are drawn; the form's people, one of whom cannot see the unit. Synthetic names, as the API sends them. */
+const SCHEDULE_SWEEP = { shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-08T16:00:00Z", which: "A" },
+  generated_at: "2026-10-08T10:00:00Z", units: [{ unit_id: WARD.sites[0].units[0].id, unit_name: WARD.sites[0].units[0].name,
+    other_rows: 1, items: [{ bed_id: BED(2), nurse_id: "n-leyla", nurse_name: "Leyla Sentetik", nurse_username: "leyla" }] }] };
+const NURSES_SWEEP = [{ id: "n-leyla", name: "Leyla Sentetik", username: "leyla", reaches_unit: true },
+  { id: "n-nigar", name: "Nigar Sentetik", username: "nigar", reaches_unit: false }];
+
 /** The shell on one address, as LiveApp nests it, with the board LIVE and its first reload landed. */
 async function openAt(path, extra) {
   window.location.hash = `#${path}`;
@@ -324,6 +332,10 @@ async function openAt(path, extra) {
 
       // G4-03: «Kalite göstergeleri» (screens/kalite) — a whole week: the units, the unplaced row, the snoozes.
       api.qualityIndicators.mockResolvedValue(QUALITY_SWEEP);
+
+      // G4-04: «İş yükü» (screens/isyuku) — the shift's assignment and the form's people.
+      api.shiftSchedule.mockResolvedValue(SCHEDULE_SWEEP);
+      api.shiftNurses.mockResolvedValue(NURSES_SWEEP);
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -534,6 +546,24 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText("1 ədədi öz-özünə düzəldi")).toBeInTheDocument();                                     // kalite.cards.selfResolved
     await act(async () => { fireEvent.click(within(table).getByRole("button", { name: "Reanimasiya" })); await settle(); });
     expect(screen.getByRole("heading", { level: 2, name: "Növə görə siqnallar · Reanimasiya" })).toBeInTheDocument(); // kalite.kinds.title
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G4-04 — «İş yükü»: its table, the changed-hours note and a nurse card, then — once a unit is chosen — «Nöbet
+  // ataması» with a person marked.
+  it("the workload page's keys resolve on its table, its nurse cards and the assignment form", async () => {
+    const mounted = await openAt("/is-yuku");
+    expect(screen.getByRole("heading", { level: 1, name: "İş yükü" })).toBeInTheDocument();                       // isyuku.title
+    expect(screen.getByRole("table", { name: "Şöbələrə görə iş yükü, bu növbə" })).toBeInTheDocument();           // isyuku.units.caption
+    expect(screen.getByText("1 xəstə / 1 tibb bacısı · orta 1,0")).toBeInTheDocument();                            // isyuku.units.ratio, .mean
+    expect(screen.getAllByText("Növbə saatları dəyişdi; bu növbənin təyinatı yenidən edilməlidir.").length).toBeGreaterThan(0); // .otherRows
+    expect(screen.getByRole("heading", { level: 3, name: "Leyla Sentetik" })).toBeInTheDocument();                  // a nurse card
+    await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: WARD.sites[0].units[0].id } }); await settle(); });
+    await act(async () => { await settle(); });
+    expect(screen.getByRole("heading", { level: 2, name: "Növbə təyinatı · Reanimasiya" })).toBeInTheDocument();    // isyuku.form.title
+    expect(screen.getAllByRole("option", { name: "Nigar Sentetik — bu şöbəni görə bilməz" }).length).toBeGreaterThan(0); // isyuku.form.unreached
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

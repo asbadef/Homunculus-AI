@@ -56,6 +56,8 @@ const OzetScreen = lazyScreen(() => import("../screens/ozet/OzetScreen.jsx"), "O
 
 const KaliteScreen = lazyScreen(() => import("../screens/kalite/KaliteScreen.jsx"), "KaliteScreen"); // G4-03
 
+const IsYukuScreen = lazyScreen(() => import("../screens/isyuku/IsYukuScreen.jsx"), "IsYukuScreen"); // G4-04
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -93,6 +95,8 @@ const SCREENS = Object.freeze({
   ozet: OzetScreen, // G4-02 — «Yönetici özeti»: the cards, alarm quality, the units as of now; no patient
 
   kalite: KaliteScreen, // G4-03 — «Kalite göstergeleri»: per unit, alarm response, snoozes, RRT, handovers; no patient
+
+  isyuku: IsYukuScreen, // G4-04 — «İş yükü»: per unit this shift, the nurse cards, the charge nurse's assignment; no patient
 
   settings: SettingsScreen,
 });
@@ -177,6 +181,13 @@ export const ROUTES = Object.freeze([
   // group, given this key alone, signs in to it. After the management summary, so nobody's home moves.
   route({ id: "kalite", path: "/kalite", icon: "star", labelKey: "kalite.nav", shortKey: "kalite.navShort",
     perms: ["quality.view"], work: true, nav: "main" }),
+
+  // G4-04 (spec D2, D6, §5 M6) — «İş yükü»: for whoever holds `workload.view` or `shifts.manage` (the form needs the
+  // second) — the charge-nurse group holds both by default (migration 0022), the system administrator by rule. A work
+  // screen; after the quality indicators, so nobody's home moves. `users`: the prototype's own icon for it (shell.js),
+  // used by no other route.
+  route({ id: "isyuku", path: "/is-yuku", icon: "users", labelKey: "isyuku.nav", shortKey: "isyuku.navShort",
+    perms: ["workload.view", "shifts.manage"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

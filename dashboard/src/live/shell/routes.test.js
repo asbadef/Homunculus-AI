@@ -365,8 +365,7 @@ describe("the pharmacy page's route", () => {
 // G4-03 (spec D3): «Kalite göstergeleri» — for `quality.view`: the auditor group by default (migration 0020), the
 // system administrator by rule, any group a hospital gives it. A work screen: a hospital's own quality group, given
 // this key alone, signs in to it and lands on it. After the management summary, so nobody's home moves.
-// THE ONE PINNED TAIL of the table is here: a slice that adds a route after «kalite» edits this line and no other.
-// The order: devir → eczane → ozet → kalite → settings.
+// G4-04 put «İş yükü» after it; the table's one pinned tail is in that route's block now.
 describe("the quality indicators' route", () => {
   afterEach(() => resetScreens());
   const kalite = () => ROUTES.find((r) => r.id === "kalite");
@@ -377,7 +376,8 @@ describe("the quality indicators' route", () => {
     expect(kalite()).toMatchObject({ path: "/kalite", perms: ["quality.view"], work: true, nav: "main",
       icon: "star", labelKey: "kalite.nav", shortKey: "kalite.navShort" });
     expect(screenOf(kalite())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-4)).toEqual(["eczane", "ozet", "kalite", "settings"]);
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids[ids.indexOf("kalite") + 1]).toBe("isyuku");
   });
 
   it("is the auditor's and the system administrator's, and moves neither's home", () => {
@@ -393,6 +393,46 @@ describe("the quality indicators' route", () => {
   it("is a work screen: a group given only quality.view signs in to it and lands on it", () => {
     expect(hasWorkRoute(["quality.view"])).toBe(true);
     expect(homePath(["quality.view"])).toBe("/kalite");
+  });
+});
+
+// G4-04 (spec D2, D6, §5 M6): «İş yükü» — for `workload.view` or `shifts.manage` (the form needs the second): the
+// charge-nurse group holds both by default (migration 0022), the system administrator by rule, any group a hospital
+// gives one. A work screen, after the quality indicators, so nobody's home moves. THE ONE PINNED TAIL of the table is
+// here: a slice that adds a route after «isyuku» edits this line and no other.
+// The order: devir → eczane → ozet → kalite → isyuku → settings.
+describe("the workload page's route", () => {
+  afterEach(() => resetScreens());
+  const isyuku = () => ROUTES.find((r) => r.id === "isyuku");
+  /** The charge nurse's group (`charge_nurse`), as the engine seeds it since G4-04 (auth/permissions.py). */
+  const CHARGE = ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "admissions.admit",
+    "admissions.transfer.confirm", "admissions.discharge.confirm", "handover.sign", "shifts.manage", "break_glass.use",
+    "clinical.chart", "beds.release", "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage",
+    "workload.view"];
+
+  it("is a work screen for workload.view or shifts.manage, on the main rail, with its own icon and names", () => {
+    expect(isyuku()).toMatchObject({ path: "/is-yuku", perms: ["workload.view", "shifts.manage"], work: true, nav: "main",
+      icon: "users", labelKey: "isyuku.nav", shortKey: "isyuku.navShort" });
+    expect(screenOf(isyuku())).not.toBeNull();
+    expect(ROUTES.map((r) => r.id).slice(-5)).toEqual(["eczane", "ozet", "kalite", "isyuku", "settings"]);
+    expect(["tr", "az", "ru", "en"].map((lang) => DICTIONARIES[lang]["isyuku.nav"])).toEqual(["İş yükü", "İş yükü", "Нагрузка", "Workload"]);
+  });
+
+  it("is the charge nurse's and the system administrator's, and moves neither's home", () => {
+    expect(navRoutes(CHARGE).main.map((r) => r.id)).toContain("isyuku");
+    expect(homePath(CHARGE)).toBe("/beds");
+    expect(navRoutes(ADMIN).main.map((r) => r.id)).toContain("isyuku");
+    expect(homePath(ADMIN)).toBe("/beds");
+    for (const perms of [NURSE, ["summary.view"], ["quality.view"], ["tasks.view"]]) {
+      expect(canReach(isyuku(), perms), perms.join(",")).toBe(false);
+    }
+  });
+
+  it("is a work screen: a group given either key alone signs in to it and lands on it", () => {
+    for (const key of ["workload.view", "shifts.manage"]) {
+      expect(hasWorkRoute([key]), key).toBe(true);
+      expect(homePath([key]), key).toBe("/is-yuku");
+    }
   });
 });
 
