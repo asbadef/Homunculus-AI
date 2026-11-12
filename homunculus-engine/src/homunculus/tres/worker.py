@@ -7,8 +7,8 @@ whole, one after the other, each on its own client:
 * WHAT is sent is not decided here. A `PackageSource` yields the stays' PACKAGES; a package is
   handed a `Sender` and takes its resources to the platform in its own order (spec D8: Patient →
   Practitioner → Encounter → …), reading each row's `remote_id` for the references of the next.
-  Phase F0 has no package builder: `no_packages` yields nothing, so a round asks the platform
-  nothing. F1 supplies the source (`app.state.tres_source`).
+  `no_packages` yields nothing (phase F0's, and a test's); the app's source is F1's
+  `source.StaySource` (`app.state.tres_source`): the stays that are due.
 * requests are sequential and at least PACE_S apart (the client's `pace` hook);
 * HTTP 429 ends the tenant's round; the report carries how long to wait (`Retry-After`, or
   THROTTLED_S);
@@ -143,7 +143,7 @@ PackageSource = Callable[[AsyncSession, TresSettings], AsyncIterator[Package]]
 
 
 async def no_packages(db: AsyncSession, settings: TresSettings) -> AsyncIterator[Package]:
-    """Phase F0's source: nothing to send. F1 replaces it on `app.state.tres_source`."""
+    """A source with nothing to send (phase F0's; the app's is source.StaySource since F1)."""
     return
     yield  # (never reached: it makes this function an async generator)
 

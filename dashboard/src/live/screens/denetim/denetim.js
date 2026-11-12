@@ -98,6 +98,8 @@ export const EVENT_TYPES = Object.freeze([
   ["care_team.attending", "careTeamAttending"], ["care_team.add", "careTeamAdd"], ["care_team.end", "careTeamEnd"],
   // TRƏS-01 (spec D24): the national feed's settings changed (tres/router.py) — who, and which fields.
   ["tres.settings", "tresSettings"],
+  // TRƏS-01 F1 (spec D24): a stay's package reached the platform whole for the first time (tres/source.py) — counts only.
+  ["tres.package", "tresPackage"],
 ].map(([code, key]) => Object.freeze({ code, key: `denetim.type.${key}` })));
 
 const TYPE_KEYS = new Map(EVENT_TYPES.map((e) => [e.code, e.key]));

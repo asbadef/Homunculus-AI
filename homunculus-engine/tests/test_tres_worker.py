@@ -89,7 +89,9 @@ def test_the_lifespan_starts_the_rounds_only_when_the_lock_is_open(monkeypatch):
         assert closed.state.tres_task is None
     monkeypatch.setenv("TRES_EGRESS", "on")
     opened = create_app({"t": "HOSP1"}, run_escalation_loop=False)
-    assert opened.state.tres_source is no_packages
+    # plan F1: the app's source is the stays that are due, bound to the app's own audit trail
+    from homunculus.tres.source import StaySource
+    assert isinstance(opened.state.tres_source, StaySource) and opened.state.tres_source.audit is opened.state.audit
     # the rounds get the app's guarded factory (egress.open_client), never a bare TresClient
     with pytest.raises(TresEgressRefused):
         opened.state.tres_client_factory(TresAccount("https://tres.test", "sentetik", "gizli-parola", "PRV-0001"))

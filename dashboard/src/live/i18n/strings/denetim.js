@@ -68,6 +68,7 @@ export default {
       careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS ayarları değişti",
+      tresPackage: "TRƏS: yatış paketi gönderildi",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -142,6 +143,7 @@ export default {
       careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS ayarları dəyişdirildi",
+      tresPackage: "TRƏS: yatış paketi göndərildi",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -216,6 +218,7 @@ export default {
       careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "Изменены настройки TRƏS",
+      tresPackage: "TRƏS: пакет госпитализации отправлен",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -290,6 +293,7 @@ export default {
       careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
       // TRƏS-01 (spec D24): the national feed's settings
       tresSettings: "TRƏS settings changed",
+      tresPackage: "TRƏS: a stay's package was sent",
     },
     heat: {
       title: "Alarm density — last {days} days",

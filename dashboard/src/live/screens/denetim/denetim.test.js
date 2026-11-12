@@ -162,8 +162,9 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(56);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + TRƏS-01's tres.settings
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(56);
+    expect(EVENT_TYPES).toHaveLength(57);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + TRƏS-01's tres.settings; + F1's tres.package
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(57);
+    expect(typeKey("tres.package")).toBe("denetim.type.tresPackage");     // TRƏS-01 F1
     expect(typeKey("tres.settings")).toBe("denetim.type.tresSettings");   // TRƏS-01 (spec D24)
     expect(typeKey("care_team.attending")).toBe("denetim.type.careTeamAttending");   // G2-B1c (spec §5.5)
     expect(typeKey("care_team.add")).toBe("denetim.type.careTeamAdd");
