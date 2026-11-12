@@ -771,7 +771,9 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
 
   const anyRetry = new RegExp("^Kartı yenidən keçir: ");
   const NOT_MOVED = /Kart yeni çarpayıya keçirilmədi/;
-  const NOT_MOVED_TO = `${TO} · Kart yeni çarpayıya keçirilmədi.`;
+  // Final review M-6: the note says what the card left behind means — until it moves, the new
+  // unit's screens do not show her or her alarms.
+  const NOT_MOVED_TO = `${TO} · Kart yeni çarpayıya keçirilmədi. Kart yenidən keçirilənə qədər yeni şöbənin ekranları xəstəni və onun siqnallarını göstərmir.`;
   const FIVE = "5 · Otaq 2 · Reanimasiya";
 
   /** Open «Nakil» on the admitted row (`from`'s bed line); choose «İntensiv terapiyaya» and the bed
@@ -815,7 +817,7 @@ describe("DischargeTab · Nakil (G2-B1b)", () => {
       .mockResolvedValueOnce(arrived({ board: "failed" }))
       .mockResolvedValueOnce(arrived()));
     await moveToBedOne();
-    expect(screen.getAllByText(`${TO} · Kart yeni çarpayıya keçirilmədi.`).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(NOT_MOVED_TO).length).toBeGreaterThan(0);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: `Kartı yenidən keçir: ${TO}` })); });
     await settle();
     expect(api.transfer).toHaveBeenCalledTimes(2);

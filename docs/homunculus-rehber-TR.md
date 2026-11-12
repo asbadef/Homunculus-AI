@@ -2131,7 +2131,8 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
 - **Kart taşınamazsa.** Kayıt yine de yapılmıştır. Kart, işlem kaydedildikten sonra taşınır: önce eski
   yere (eski yatak ve birim, adsız) «hasta buradan gitti» karesi gider, sonra kart yeni yatağa konur;
   ekranlar kartın nereden gittiğini nereye gittiğinden önce duyar. Kart yeni yatağa konamadıysa
-  «Nakil / Taburcu» sekmesi kalıcı bir not gösterir — «Kart yeni yatağa taşınamadı» — ve «Kartı
+  «Nakil / Taburcu» sekmesi kalıcı bir not gösterir — «Kart yeni yatağa taşınamadı. Kart yeniden
+  taşınana dek yeni birimin ekranları hastayı ve alarmlarını göstermez.» — ve «Kartı
   yeniden taşı» aynı nakli yeniden gönderir; sunucu veritabanına bir şey yazmadan kartı yeniden
   taşır (ikinci bir nakil olmaz, yanıt 200). Hasta bu arada yeniden nakledilmişse ya da taburcu
   edilmişse aynı istek reddedilir (409): eski yatağa hayalet bir kart konmaz. Böyle bir nakil artık
