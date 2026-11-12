@@ -11,7 +11,9 @@ also says which environment it lists and whether the platform refused the tenant
 (`session_refused_at`, N15: the tab shows it at the top of the panel). `environment` defaults to
 the selected one; `admission` is any admission of a stay — a person's Patient row is listed under
 their NEWEST stay that has run (amendment 25, A1: the row's `admission_id`); a filter the ledger
-cannot hold is 422 `tres_filter`, a cursor this route did not write 422 `tres_cursor`.
+cannot hold — an `admission` that is not an id included, read here so that FastAPI's own 422 never
+echoes it (Task-12 review M7) — is 422 `tres_filter`, a cursor that does not read as one 422
+`tres_cursor` (the cursor is not signed: it is a time and a row id, read within the caller's tenant).
 
 GET /admin/tres/admissions?key= — the stay a board key (protocol number, or an older admission's
 H-number) belongs to: its last admission's id, the key, the state, the discharge. 404
@@ -21,9 +23,12 @@ GET /admin/tres/admissions/{id}/preview — the stay's resources rebuilt as they
 (package.PreviewSender: nothing is asked of the platform, nothing written to the ledger), each
 with its ledger row's status and the platform's last words — PHI, so the read is audited
 `tres.preview` `{"actor", "admission_id"}` (D25). Allowed whatever the locks say: an administrator
-checks the mappings before turning the feed on. An older stay's Patient left to the person's newer
-stay (amendment 25, A1) is shown as THIS stay builds it, with no status (the row is the newer
-stay's); its references are the ones a send would use.
+checks the mappings before turning the feed on. It judges as a send does (Task-12 review M5,
+package.PreviewSender): a type the tenant switched off is shown not sent (`type_off`); a Patient the
+person's newer stay holds on the platform is shown as that stay's (`yielded`, no body) and the
+preview goes on to the Encounter and the vitals. Each item's status and last words come from ITS
+row, found by (tenant, environment, type, local id) (M4) — never by this stay's admission. Its audit
+row fails open like every other `trail.record` (A-26).
 
 POST /admin/tres/admissions/{id}/send — «Şimdi gönder» (D9): the stay's package now, whether or not
 it is due — an admitted patient goes as `in-progress`. POST /admin/tres/deliveries/{id}/retry —
@@ -39,11 +44,20 @@ its 30-minute wait) is tried now — a person's Patient row belongs to their new
   hand after a round, or a round after a hand, writes none;
 * 409 `egress_off` (the install's lock), `tres_off` (the tenant's mode), `tres_account_incomplete`,
   `tres_live_closed` (the live platform, closed in this version), `tres_host_not_allowed`;
-* run under a LOCK TIMEOUT (N12): a row a round holds is waited for HAND_LOCK_TIMEOUT_MS at most,
-  then 409 `tres_busy` — try again — never a request that hangs behind a round;
+  `tres_login_refused` while the tenant is PARKED (`session_refused_at`; Task-12 review M2) —
+  without asking the platform: each click would be one more failed login, and the ministry may lock
+  the account; a save or a successful connection test clears it, as for the rounds;
+* «Yeniden dene» of a row of the environment NOT selected: 409 `tres_other_environment` (M3) — a
+  row is never sent to another environment's platform;
+* are PACED by the tenant's one pacer, the rounds' (worker.Pacer, `app.state.tres_pacers`; I1:
+  300 ms between ANY two requests of a tenant — a hand during a round cannot double the rate);
+* run under a LOCK TIMEOUT (N12): a row another send holds (a round, or another hand) is waited
+  for HAND_LOCK_TIMEOUT_MS at most, then 409 `tres_busy` — try again — never a request that hangs;
 * a login the platform refuses parks the tenant as a round would (worker.park, N15: only while
-  the settings are the ones the request began on) — 409 `tres_login_refused`; an outage or a
-  server error is 503 `tres_platform_unavailable`;
+  the settings are the ones the request began on) — 409 `tres_login_refused`; a 429 is 429
+  `tres_throttled`, with the platform's `retry_after` seconds beside it when it said one (M1); an
+  outage or a server error is 503 `tres_platform_unavailable`; any other failure is rolled back,
+  audited with the result `error` (no message, no value) and raised again — a 500 (M6);
 * answer the rows the package touched (type, local id, status, reason — no value);
 * are audited AFTER the attempt (`tres.send`, `tres.retry`): the actor, the admission (and the
   delivery for a retry), the result's code and, when it ran to its end, the counts by type and
@@ -53,12 +67,13 @@ from __future__ import annotations
 import base64
 import binascii
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission import trail
@@ -71,13 +86,13 @@ from homunculus.tres.client import TresError, TresLoginRefused
 from homunculus.tres.egress import TresEgressRefused, live_closed, open_client
 from homunculus.tres.errors import (
     EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_BUSY, TRES_CURSOR, TRES_FILTER, TRES_LIVE_CLOSED, TRES_LOGIN_REFUSED,
-    TRES_OFF, TRES_PLATFORM_UNAVAILABLE, TRES_STAY_UNKNOWN, refusal,
+    TRES_OFF, TRES_OTHER_ENVIRONMENT, TRES_PLATFORM_UNAVAILABLE, TRES_STAY_UNKNOWN, TRES_THROTTLED, refusal,
 )
 from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, LedgerBusy
 from homunculus.tres.models import ENVIRONMENTS, RESOURCE_TYPES, STATUSES, TresDelivery, TresSettings, account_of
 from homunculus.tres.package import PreviewSender, run
 from homunculus.tres.source import chain_of
-from homunculus.tres.worker import Sender, park
+from homunculus.tres.worker import Pacer, Sender, pacer_of, park
 
 router = APIRouter(prefix="/admin/tres", tags=["tres"])
 
@@ -135,6 +150,7 @@ class PreviewItem(BaseModel):
     resource: dict | None
     status: str | None                 # the ledger row's, when there is one
     last_error: str | None             # the platform's last words for it (may echo a value: audited read)
+    yielded: bool = False              # the person's newer stay holds this Patient: this stay sends nothing for it
 
 
 class PreviewOut(BaseModel):
@@ -177,11 +193,22 @@ async def _key_of(db: AsyncSession, last: Admission) -> str:
     return board_key(last.protocol_no, number)
 
 
+def _admission_filter(admission: str | None) -> uuid.UUID | None:
+    """The `admission` filter, read here (Task-12 review M7): a value that is not an id is 422
+    `tres_filter` — never FastAPI's own 422, which echoes the value it could not read."""
+    if admission is None:
+        return None
+    try:
+        return uuid.UUID(admission)
+    except ValueError:
+        raise refusal(422, TRES_FILTER).http() from None
+
+
 @router.get("/deliveries", response_model=DeliveriesOut)
 async def list_deliveries(
     status: str | None = None,
     type: str | None = Query(default=None),       # noqa: A002 — the query parameter's name (spec §6)
-    admission: uuid.UUID | None = None,
+    admission: str | None = None,
     environment: str | None = None,
     cursor: str | None = None,
     db: AsyncSession = Depends(get_db),
@@ -191,6 +218,7 @@ async def list_deliveries(
     if (status is not None and status not in STATUSES) or (type is not None and type not in RESOURCE_TYPES) \
             or (environment is not None and environment not in ENVIRONMENTS):
         raise refusal(422, TRES_FILTER).http()
+    admission_id = _admission_filter(admission)
     settings = await _settings(db, caller_tenant)
     env = environment or (settings.environment if settings is not None else "test")
     query = (select(TresDelivery, Admission.protocol_no, Patient.patient_number)
@@ -201,8 +229,8 @@ async def list_deliveries(
         query = query.where(TresDelivery.status == status)
     if type is not None:
         query = query.where(TresDelivery.resource_type == type)
-    if admission is not None:
-        query = query.where(TresDelivery.admission_id == (await _stay(db, caller_tenant, admission))[-1].id)
+    if admission_id is not None:
+        query = query.where(TresDelivery.admission_id == (await _stay(db, caller_tenant, admission_id))[-1].id)
     if cursor is not None:
         at, row_id = _uncursor(cursor)
         query = query.where(or_(TresDelivery.updated_at < at,
@@ -255,12 +283,17 @@ async def preview(
     settings = await _settings(db, caller_tenant)
     environment = settings.environment if settings is not None else "test"
     stay = await request.app.state.tres_source.load(db, caller_tenant, last.id)
-    sender = PreviewSender(db, tenant_id=caller_tenant, environment=environment)
+    # As a send would judge (M5): the tenant's types, and the person's newest stay (package.PreviewSender).
+    sender = PreviewSender(db, tenant_id=caller_tenant, environment=environment,
+                           enabled_types=settings.enabled_types if settings is not None else RESOURCE_TYPES)
     organization = getattr(settings, f"{environment}_organization_id", None) if settings is not None else None
     await run(stay, sender, organization_id=organization)
+    # Each item's row by its KEY (M4) — not by this stay: the doctor's Practitioner row follows the stay
+    # that last ran it, the person's Patient row their newest stay.
+    keys = sorted({(item["resource_type"], item["local_id"]) for item in sender.items})
     ledger = {(row.resource_type, row.local_id): row for row in (await db.execute(select(TresDelivery).where(
         TresDelivery.tenant_id == caller_tenant, TresDelivery.environment == environment,
-        TresDelivery.admission_id == last.id))).scalars()}
+        tuple_(TresDelivery.resource_type, TresDelivery.local_id).in_(keys)))).scalars()} if keys else {}
     items = []
     for item in sender.items:
         row = ledger.get((item["resource_type"], item["local_id"]))
@@ -272,10 +305,43 @@ async def preview(
     return PreviewOut(admission_id=last.id, board_key=stay.board_key, environment=environment, items=items)
 
 
+#: The audit result of a hand that failed in a way none of the refusals names (Task-12 review M6).
+RESULT_ERROR = "error"
+
+
+@dataclass
+class _Attempt:
+    """What a person's run of one stay's package came to: the answer (None unless it ran), the
+    result's code (`sent` or a refusal's), the board key, the stay's last admission, the refusal's
+    `extra` (a 429's `retry_after`), and an exception none of the refusals names (re-raised after the
+    audit row, M6)."""
+    answer: HandOut | None
+    result: str
+    key: str
+    last_id: uuid.UUID
+    extra: dict | None = None
+    error: Exception | None = None
+
+
+def _pacers(request: Request) -> dict[uuid.UUID, Pacer]:
+    """The process's one pacer per tenant, the rounds' (app.py `tres_pacers`; I1)."""
+    pacers = getattr(request.app.state, "tres_pacers", None)
+    if pacers is None:
+        pacers = request.app.state.tres_pacers = {}
+    return pacers
+
+
+def _seconds(value: float) -> int | float:
+    return int(value) if float(value).is_integer() else value
+
+
 async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID, *,
-                force: bool) -> tuple[HandOut | None, str, str, uuid.UUID]:
-    """A person's run of one stay's package: (the answer or None, the result code, the board key,
-    the stay's last admission). Raises the refusals that ask nothing."""
+                force: bool, environment: str | None = None) -> _Attempt:
+    """A person's run of one stay's package (`_Attempt`). Raises the refusals that ask nothing — the
+    locks, a parked tenant (M2: each click would be one more failed login, and the ministry may lock
+    the account), a retried row of the environment not selected (`environment`, M3: a row is never
+    sent to another environment's platform), a stay not the tenant's. The client is paced by the
+    tenant's one pacer, the rounds' (I1)."""
     egress = bool(getattr(request.app.state, "tres_egress", False))
     if not egress:
         raise refusal(409, EGRESS_OFF).http()
@@ -287,6 +353,11 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http()
     if live_closed(settings.environment, account.base_url):
         raise refusal(409, TRES_LIVE_CLOSED).http()
+    if settings.session_refused_at is not None:
+        # Parked (worker.park): the platform is not asked again until a save or a connection test clears it.
+        raise refusal(409, TRES_LOGIN_REFUSED).http()
+    if environment is not None and environment != settings.environment:
+        raise refusal(409, TRES_OTHER_ENVIRONMENT).http()
     last = (await _stay(db, tenant_id, admission_id))[-1]
     # Plain values: a rollback below expires every object this session holds.
     key, last_id = await _key_of(db, last), last.id
@@ -300,6 +371,7 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
         raise refusal(409, exc.code).http() from None
     except ValueError:
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
+    client.pace = pacer_of(_pacers(request), tenant_id).wait
     version, now = settings.updated_at, datetime.now(timezone.utc)
     sender = Sender(db, client, tenant_id=tenant_id, environment=settings.environment, mode=settings.mode,
                     now=now, enabled_types=settings.enabled_types or (), lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
@@ -308,35 +380,48 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
         outcome = await package(sender)
     except LedgerBusy:
         await db.rollback()
-        return None, TRES_BUSY, key, last_id
+        return _Attempt(None, TRES_BUSY, key, last_id)
     except TresLoginRefused as exc:
         await db.rollback()
         await park(db, tenant_id=tenant_id, now=now, status=exc.status, version=version)
-        return None, TRES_LOGIN_REFUSED, key, last_id
-    except TresError:
+        return _Attempt(None, TRES_LOGIN_REFUSED, key, last_id)
+    except TresError as exc:
         await db.rollback()
-        return None, TRES_PLATFORM_UNAVAILABLE, key, last_id
+        if exc.status == 429:
+            # M1: the platform's own wait, said to the person — not an outage's 503.
+            wait = {"retry_after": _seconds(exc.retry_after)} if exc.retry_after is not None else None
+            return _Attempt(None, TRES_THROTTLED, key, last_id, extra=wait)
+        return _Attempt(None, TRES_PLATFORM_UNAVAILABLE, key, last_id)
+    except Exception as exc:  # noqa: BLE001 — M6: rolled back, audited `error`, then raised again (500)
+        await db.rollback()
+        return _Attempt(None, RESULT_ERROR, key, last_id, error=exc)
     finally:
         await client.aclose()
     rows = [RowOut(resource_type=t, local_id=i, status=s, reason=r) for t, i, s, r in (outcome.rows if outcome else [])]
-    return HandOut(admission_id=last_id, rows=rows, counts=outcome.counts() if outcome else {}), "sent", key, last_id
+    answer = HandOut(admission_id=last_id, rows=rows, counts=outcome.counts() if outcome else {})
+    return _Attempt(answer, "sent", key, last_id)
 
 
 #: The status each result answers with.
-_RESULT_STATUS = {TRES_BUSY: 409, TRES_LOGIN_REFUSED: 409, TRES_PLATFORM_UNAVAILABLE: 503}
+_RESULT_STATUS = {TRES_BUSY: 409, TRES_LOGIN_REFUSED: 409, TRES_PLATFORM_UNAVAILABLE: 503, TRES_THROTTLED: 429}
 
 
 async def _answer(request: Request, db: AsyncSession, tenant_id: uuid.UUID, event: str, payload: dict,
-                  key: str, result: str, answer: HandOut | None) -> HandOut:
+                  attempt: _Attempt) -> HandOut:
+    """The attempt's audit row (AFTER it: D24), then its answer — its refusal, or its exception
+    raised again (M6: the row says `error`, no message, no value)."""
     hospital = await trail.hospital_of(db, tenant_id)
     await db.commit()
-    payload = {**payload, "result": result, **({"counts": answer.counts} if answer is not None else {})}
+    answer = attempt.answer
+    payload = {**payload, "result": attempt.result, **({"counts": answer.counts} if answer is not None else {})}
     if event == "tres.send":
-        trail.record(request, hospital, "tres.send", patient_id=key, payload=payload)
+        trail.record(request, hospital, "tres.send", patient_id=attempt.key, payload=payload)
     else:
-        trail.record(request, hospital, "tres.retry", patient_id=key, payload=payload)
+        trail.record(request, hospital, "tres.retry", patient_id=attempt.key, payload=payload)
+    if attempt.error is not None:
+        raise attempt.error
     if answer is None:
-        raise refusal(_RESULT_STATUS[result], result).http()
+        raise refusal(_RESULT_STATUS[attempt.result], attempt.result, attempt.extra).http()
     return answer
 
 
@@ -349,9 +434,9 @@ async def send_now(
     user: User = Depends(require_permission("tres.manage")),
 ) -> HandOut:
     actor = user.username
-    answer, result, key, last_id = await _hand(request, db, caller_tenant, admission_id, force=False)
-    return await _answer(request, db, caller_tenant, "tres.send", {"actor": actor, "admission_id": str(last_id)},
-                         key, result, answer)
+    attempt = await _hand(request, db, caller_tenant, admission_id, force=False)
+    return await _answer(request, db, caller_tenant, "tres.send",
+                         {"actor": actor, "admission_id": str(attempt.last_id)}, attempt)
 
 
 @router.post("/deliveries/{delivery_id}/retry", response_model=HandOut)
@@ -363,11 +448,11 @@ async def retry(
     user: User = Depends(require_permission("tres.manage")),
 ) -> HandOut:
     actor = user.username
-    row = (await db.execute(select(TresDelivery.admission_id).where(
+    row = (await db.execute(select(TresDelivery.admission_id, TresDelivery.environment).where(
         TresDelivery.id == delivery_id, TresDelivery.tenant_id == caller_tenant))).first()
     if row is None or row.admission_id is None:
         raise refusal(404, TRES_STAY_UNKNOWN).http()
-    answer, result, key, last_id = await _hand(request, db, caller_tenant, row.admission_id, force=True)
+    attempt = await _hand(request, db, caller_tenant, row.admission_id, force=True, environment=row.environment)
     return await _answer(request, db, caller_tenant, "tres.retry",
-                         {"actor": actor, "delivery_id": str(delivery_id), "admission_id": str(last_id)},
-                         key, result, answer)
+                         {"actor": actor, "delivery_id": str(delivery_id), "admission_id": str(attempt.last_id)},
+                         attempt)

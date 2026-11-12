@@ -53,16 +53,22 @@ a run that ends early (an outage among the vitals) says nothing, as amendment 17
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+
+from sqlalchemy import select
 
 from homunculus.tres import ids
 from homunculus.tres.ledger import held as ledger_held
+from homunculus.tres.ledger import yields as ledger_yields
 from homunculus.tres.mapping.common import Built, Skip
 from homunculus.tres.mapping.encounter import encounter as map_encounter
 from homunculus.tres.mapping.patient import patient as map_patient
 from homunculus.tres.mapping.practitioner import practitioner as map_practitioner
 from homunculus.tres.mapping.vitals import vitals as map_vitals
+from homunculus.tres.models import RESOURCE_TYPES, TresDelivery
 from homunculus.tres.stay import Stay
+from homunculus.tres.worker import TYPE_OFF
 
 NO_REFERENCE = "no_reference"
 PATIENT_UNHELD = "patient_unheld"
@@ -173,8 +179,8 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
 
 @dataclass(frozen=True)
 class PreviewRow:
-    """What `PreviewSender` answers in place of a ledger row. A preview takes no id (`took_id`) and
-    yields to no stay (`yielded`): it judges no row."""
+    """What `PreviewSender` answers in place of a ledger row. A preview takes no id (`took_id`);
+    `yielded` as a send's row would say it (the person's newer stay holds their Patient)."""
     status: str
     remote_id: str | None
     reason: str | None
@@ -188,33 +194,67 @@ class PreviewSender:
     its item says `held: false` — the preview shows what would be sent, references as they would be
     once the resources before it are there.
 
-    It shows THIS stay's own Patient even when a newer stay of the person is the authority for it
-    (`shared` is taken and not judged; amendment 25, A1): the references are the same either way —
-    the row is one, its platform id one — but the Patient itself would not be sent by this stay.
-    Whether the panel marks that is F1b's (Task 12's preview item carries no field for it)."""
+    IT JUDGES AS A SEND DOES (Task-12 review M5):
+    * the tenant's types — a type switched off is shown NOT SENT (`resource` None, the reason
+      `type_off`); one the platform does not hold then refers to nothing, so a Patient so left stops
+      the stay at its Encounter, as a send would (`patient_unheld`); one it holds keeps its id;
+    * the person's newest stay (amendment 25, A1, as `ledger.yields` judges it): a Patient the
+      person's newer stay holds on the platform is shown as THAT stay's — `yielded`, `held`, no body
+      (this stay would send nothing for it) — and the preview goes on to the Encounter and the
+      vitals, referring to it, as a send would."""
 
     mode = "send"
 
-    def __init__(self, db, *, tenant_id: uuid.UUID, environment: str) -> None:
+    def __init__(self, db, *, tenant_id: uuid.UUID, environment: str,
+                 enabled_types: Iterable[str] = RESOURCE_TYPES) -> None:
         self._db, self.tenant_id, self.environment = db, tenant_id, environment
+        self.enabled_types = frozenset(enabled_types)
         self.items: list[dict] = []
 
     async def held(self, *, resource_type: str, local_id: str) -> str | None:
         return await ledger_held(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                  resource_type=resource_type, local_id=local_id)
 
+    async def _owner(self, resource_type: str, local_id: str) -> tuple[str | None, uuid.UUID | None]:
+        """(the platform's id, the stay that holds the row) — read, never locked."""
+        row = (await self._db.execute(select(TresDelivery.remote_id, TresDelivery.admission_id).where(
+            TresDelivery.tenant_id == self.tenant_id, TresDelivery.environment == self.environment,
+            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id))).first()
+        return (row.remote_id, row.admission_id) if row is not None else (None, None)
+
+    async def _yielded(self, resource_type: str, local_id: str, admission_id: uuid.UUID | None,
+                       shared: bool) -> PreviewRow | None:
+        if not shared:
+            return None
+        remote, owner = await self._owner(resource_type, local_id)
+        if not await ledger_yields(self._db, owner_id=owner, remote_id=remote, admission_id=admission_id):
+            return None
+        self.items.append({"resource_type": resource_type, "local_id": local_id, "held": True,
+                           "resource": None, "reason": None, "yielded": True})
+        return PreviewRow("preview", remote, None, yielded=True)
+
     async def send(self, *, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                    admission_id: uuid.UUID | None = None, force: bool = False,
                    shared: bool = False) -> PreviewRow:
+        yielded = await self._yielded(resource_type, local_id, admission_id, shared)
+        if yielded is not None:
+            return yielded
         remote = await self.held(resource_type=resource_type, local_id=local_id)
+        if resource_type not in self.enabled_types:
+            self.items.append({"resource_type": resource_type, "local_id": local_id, "held": remote is not None,
+                               "resource": None, "reason": TYPE_OFF, "yielded": False})
+            return PreviewRow("skipped", remote, TYPE_OFF)
         self.items.append({"resource_type": resource_type, "local_id": local_id, "held": remote is not None,
-                           "resource": resource, "reason": None})
+                           "resource": resource, "reason": None, "yielded": False})
         return PreviewRow("preview", remote or local_id, None)
 
     async def skip(self, *, resource_type: str, local_id: str, reason: str,
                    admission_id: uuid.UUID | None = None, shared: bool = False) -> PreviewRow:
+        yielded = await self._yielded(resource_type, local_id, admission_id, shared)
+        if yielded is not None:
+            return yielded
         self.items.append({"resource_type": resource_type, "local_id": local_id, "held": False,
-                           "resource": None, "reason": reason})
+                           "resource": None, "reason": reason, "yielded": False})
         return PreviewRow("skipped", None, reason)
 
     async def forget_skip(self, *, resource_type: str, local_id: str) -> None:

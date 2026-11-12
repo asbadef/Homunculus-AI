@@ -31,7 +31,7 @@ from homunculus.tres.client import LOCAL_ID_EXTENSION, TresAccount, TresClient
 from homunculus.tres.egress import TresEgressRefused, open_client
 from homunculus.tres.models import TresDelivery, TresSettings
 from homunculus.tres.worker import (
-    MAX_CONSECUTIVE, PACE_S, ROUND_S, THROTTLED_S, RoundReport, no_packages, run_round, tres_loop,
+    MAX_CONSECUTIVE, PACE_S, ROUND_S, THROTTLED_S, Pacer, RoundReport, no_packages, pacer_of, run_round, tres_loop,
 )
 from tests.conftest import requires_db
 from tests.fake_tres import UNCHECKED_PROFILE, FakeTres
@@ -96,10 +96,35 @@ def test_the_lifespan_starts_the_rounds_only_when_the_lock_is_open(monkeypatch):
     # the rounds get the app's guarded factory (egress.open_client), never a bare TresClient
     with pytest.raises(TresEgressRefused):
         opened.state.tres_client_factory(TresAccount("https://tres.test", "sentetik", "gizli-parola", "PRV-0001"))
+    assert opened.state.tres_pacers == {}                # one pacer per tenant, the rounds' and the hand's
     with TestClient(opened):
         task = opened.state.tres_task
         assert task is not None and not task.done()      # asleep until the first round, 5 minutes on
     assert task.done()                                   # cancelled at shutdown
+
+
+# ---------------------------------------------------------------- the pacer (no database)
+async def test_one_pacer_spaces_every_request_of_a_tenant_whoever_makes_it():
+    """Batch-4 review (I1; spec D21, §13.1): at least PACE_S between ANY two requests of a tenant. One
+    pacer per tenant per process, shared by the rounds and the hand; two clients waiting on it at once
+    take turns — never both asleep together, so never two requests in one gap."""
+    events: list[tuple] = []
+
+    async def sleep(seconds: float) -> None:
+        events.append(("sleep", seconds))
+        await asyncio.sleep(0)                               # the other waiter runs, if it can
+        events.append(("woke",))
+
+    pacer = Pacer(sleep)
+    await pacer.wait()                                       # the first request of its life: no wait
+    assert events == []
+    await asyncio.gather(pacer.wait(), pacer.wait())         # a round's request and a hand's, at once
+    assert events == [("sleep", PACE_S), ("woke",), ("sleep", PACE_S), ("woke",)]
+    pacers: dict = {}
+    first, second = uuid.uuid4(), uuid.uuid4()
+    assert pacer_of(pacers, first) is pacer_of(pacers, first) is pacers[first]
+    assert pacer_of(pacers, second) is not pacers[first]
+    assert pacer_of(None, first) is not pacer_of(None, first)    # no registry: a pacer of its own
 
 
 # ---------------------------------------------------------------- the loop (no database)
@@ -130,12 +155,15 @@ async def test_the_loop_waits_five_minutes_survives_a_bad_round_and_backs_off_af
 
     monkeypatch.setattr(worker, "run_round", fake_round)
     clock = Clock(rounds=5)
+    pacers: dict = {}
     with pytest.raises(asyncio.CancelledError), caplog.at_level("ERROR"):
-        await tres_loop(never, source=no_packages, client_factory=never, sleep=clock.sleep, clock=lambda: T0)
+        await tres_loop(never, source=no_packages, client_factory=never, sleep=clock.sleep, clock=lambda: T0,
+                        pacers=pacers)
     # before the first round; after a good one; after the bad one; after 429 + 1200 s; after 429 + 30 s
     # (never less than a round); after a quiet one.
     assert clock.sleeps == [ROUND_S, ROUND_S, ROUND_S, 1200.0, ROUND_S, ROUND_S]
     assert len(seen) == 5 and all(k["egress"] is True and k["now"] == T0 for k in seen)
+    assert all(k["pacers"] is pacers for k in seen)                 # the process's one pacer per tenant
     assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
     assert re.search(r"test_tres_worker\.py:\d+:fake_round", caplog.text)          # where (review M9)
 

@@ -42,6 +42,8 @@ TABLES = {SETTINGS, DELIVERIES, DEPARTMENTS, IDENTITIES}
 KEY, INDEX = "uq_tres_deliveries_key", "ix_tres_deliveries_tenant_status"
 #: A stay's rows are read by its admission (the tab, the preview); and an admission's delete SETs NULL here.
 ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
+#: The ledger's list: a tenant's environment, newest change first, keyset by (updated_at, id) (Task-12 review M8).
+LIST_INDEX = "ix_tres_deliveries_list"
 CHECKS = {"ck_tres_settings_mode", "ck_tres_settings_environment", "ck_tres_settings_settle",
           "ck_tres_deliveries_environment", "ck_tres_deliveries_status", "ck_tres_deliveries_operation"}
 
@@ -219,7 +221,7 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
         if type_ == "column":
             return (object_.table.name if object_ is not None else None) in TABLES
         if type_ in ("index", "unique_constraint"):
-            return name in {INDEX, KEY, ADMISSION_INDEX, DEPARTMENTS_INDEX}
+            return name in {INDEX, KEY, ADMISSION_INDEX, DEPARTMENTS_INDEX, LIST_INDEX}
         return False
 
     with engine.connect() as conn:
@@ -232,10 +234,14 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
         indexes = set(conn.execute(text(
             "SELECT indexname FROM pg_indexes WHERE tablename = :t"), {"t": DELIVERIES}).scalars())
     assert checks == CHECKS
-    assert {INDEX, KEY, ADMISSION_INDEX} <= indexes
+    assert {INDEX, KEY, ADMISSION_INDEX, LIST_INDEX} <= indexes
     with engine.connect() as conn:
         assert DEPARTMENTS_INDEX in set(conn.execute(text(
             "SELECT indexname FROM pg_indexes WHERE tablename = :t"), {"t": DEPARTMENTS}).scalars())
+        # M8: the list's order, column by column — what its keyset query walks
+        definition = conn.execute(text("SELECT indexdef FROM pg_indexes WHERE indexname = :n"),
+                                  {"n": LIST_INDEX}).scalar_one()
+    assert definition.endswith("(tenant_id, environment, updated_at DESC, id DESC)"), definition
 
 
 @requires_db
@@ -338,6 +344,7 @@ def test_the_downgrade_runs_from_f0s_cut_and_the_upgrade_brings_everything_back(
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN send_from"))
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN retried_at"))
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN reached_to"))    # batch-3 review A3
+        conn.execute(text(f"DROP INDEX {LIST_INDEX}"))                          # Task-12 review M8
         for statement in F0_CUTS[cut]:
             conn.execute(text(statement))
     assert set(inspect(engine).get_table_names()) - before == {SETTINGS, DELIVERIES}
@@ -348,6 +355,6 @@ def test_the_downgrade_runs_from_f0s_cut_and_the_upgrade_brings_everything_back(
     columns = {c["name"] for c in inspect(engine).get_columns(SETTINGS)}
     assert {"send_from", "retried_at", "reached_to", "session_refused_at"} <= columns
     indexes = {i["name"] for t in (DELIVERIES, DEPARTMENTS) for i in inspect(engine).get_indexes(t)}
-    assert {INDEX, ADMISSION_INDEX, DEPARTMENTS_INDEX} <= indexes
+    assert {INDEX, ADMISSION_INDEX, DEPARTMENTS_INDEX, LIST_INDEX} <= indexes
     command.downgrade(cfg, "0019")                                   # and the full cut still goes down
     assert set(inspect(engine).get_table_names()) == before

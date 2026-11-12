@@ -31,18 +31,21 @@ TRES_USER_UNKNOWN = "tres_user_unknown"              # F1: no active member of t
 TRES_FIN_FORMAT = "tres_fin_format"                  # F1: a FİN that is not seven Latin capitals or digits
 TRES_NAME = "tres_name"                              # F1: a practitioner's name part empty or over 100 characters
 TRES_FILTER = "tres_filter"                          # F1: a ledger filter that names no status, type or environment
-TRES_CURSOR = "tres_cursor"                          # F1: a cursor the ledger's list did not write
+TRES_CURSOR = "tres_cursor"                          # F1: a cursor that does not read as one (unsigned: a time and an id)
 TRES_STAY_UNKNOWN = "tres_stay_unknown"              # F1: no stay of this tenant by that id or key
 TRES_OFF = "tres_off"                                # F1: the tenant's mode is off (a hand send, a retry)
-TRES_BUSY = "tres_busy"                              # F1: a round holds the stay's rows (N12): try again
+TRES_BUSY = "tres_busy"                              # F1: another send of this stay holds its rows (N12): try again
 TRES_LOGIN_REFUSED = "tres_login_refused"            # F1: the platform refused the login; the tenant is parked
 TRES_PLATFORM_UNAVAILABLE = "tres_platform_unavailable"   # F1: no answer, an outage or a server error
+TRES_THROTTLED = "tres_throttled"                    # F1: the platform answered 429 to a hand (`retry_after` beside it)
+TRES_OTHER_ENVIRONMENT = "tres_other_environment"    # F1: a retried row of the environment not selected (409)
 
 CODES = frozenset({TRES_MODE, TRES_ENVIRONMENT, TRES_SETTLE_HOURS, TRES_TYPES, TRES_BASE_URL,
                    TRES_FIELD_LENGTH, EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_HOST_NOT_ALLOWED,
                    TRES_LIVE_CLOSED, TRES_UNIT_UNKNOWN, TRES_DEPARTMENT_CODE, TRES_DEPARTMENT_DISPLAY,
                    TRES_USER_UNKNOWN, TRES_FIN_FORMAT, TRES_NAME, TRES_FILTER, TRES_CURSOR, TRES_STAY_UNKNOWN,
-                   TRES_OFF, TRES_BUSY, TRES_LOGIN_REFUSED, TRES_PLATFORM_UNAVAILABLE})
+                   TRES_OFF, TRES_BUSY, TRES_LOGIN_REFUSED, TRES_PLATFORM_UNAVAILABLE, TRES_THROTTLED,
+                   TRES_OTHER_ENVIRONMENT})
 
 WORDS = {
     TRES_MODE: "The mode is off, validate or send.",
@@ -65,17 +68,20 @@ WORDS = {
     TRES_FIN_FORMAT: "A FİN is seven Latin capital letters or digits.",
     TRES_NAME: "The family and the given name are required, each at most 100 characters.",
     TRES_FILTER: "A filter names no known status, record type or environment.",
-    TRES_CURSOR: "The page cursor is not one this list wrote.",
+    TRES_CURSOR: "The page cursor cannot be read; open the list again.",
     TRES_STAY_UNKNOWN: "No stay of this hospital has that id or number.",
     TRES_OFF: "The feed's mode is off for this hospital.",
-    TRES_BUSY: "A round is sending this stay right now; try again in a moment.",
+    TRES_BUSY: "Another send of this stay is in progress; try again in a moment.",
     TRES_LOGIN_REFUSED: "The platform refused the login; the feed waits until the account is saved again or a "
                         "connection test succeeds.",
     TRES_PLATFORM_UNAVAILABLE: "The platform did not answer, or answered with an error; nothing more was sent.",
+    TRES_THROTTLED: "The platform asks to wait before the next request (HTTP 429); nothing more was sent.",
+    TRES_OTHER_ENVIRONMENT: "This row belongs to the environment that is not selected; it is retried only there.",
 }
 
 
 def refusal(status: int, code: str, extra: dict | None = None) -> Refusal:
     """The refusal of `code`, with its words — and `extra` keys beside them in the detail (never a
-    value of the record: `tres_host_not_allowed` names the `environment`, test or live)."""
+    value of the record: `tres_host_not_allowed` names the `environment`, test or live;
+    `tres_throttled` the platform's `retry_after`, in seconds, when it said one)."""
     return Refusal(status, code, WORDS[code], extra)

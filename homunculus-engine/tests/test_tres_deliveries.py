@@ -10,21 +10,31 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from functools import partial
 
 import httpx
+import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission.models import AdmissionState
 from homunculus.tenant.models import Tenant
+from homunculus.tres import ids
 from homunculus.tres.client import TresClient
+from homunculus.tres.egress import open_client
+from homunculus.tres.errors import WORDS
 from homunculus.tres.ledger import _row
-from homunculus.tres.models import TresDelivery, TresSettings
+from homunculus.tres.models import TresDelivery
+from homunculus.tres.worker import PACE_S, Pacer, run_round
 from tests.conftest import requires_db
 from tests.fake_tres import FakeTres
 from tests.kabul_world import SLUG, build_ward, ward_client
-from tests.tres_world import ADMITTED, BAKU, ORGANIZATION, add_stay, chart, feed_settings, identify, map_unit
+from tests.test_tres_worker import sends, source_of
+from tests.tres_world import (
+    ADMITTED, BAKU, DISCHARGED, NOW, ORGANIZATION, add_stay, chart, feed_settings, identify, map_unit,
+    other_tenants_stay,
+)
 
 LIST, FIND = "/admin/tres/deliveries", "/admin/tres/admissions"
 
@@ -104,7 +114,6 @@ async def test_send_now_answers_busy_rather_than_wait_behind_a_round(desk, db_se
     """N12: a round holds the stay's Patient row; the hand is told at once, and nothing is asked."""
     ward, fake, stay, client, app = desk
     async with async_sessionmaker(db_session.bind, expire_on_commit=False)() as round_:
-        from homunculus.tres import ids
         await _row(round_, tenant_id=ward.tenant.id, environment="test", resource_type="patient",
                    local_id=ids.patient("AB12C3D"), admission_id=stay.id)       # held, uncommitted
         started = datetime.now(timezone.utc)
@@ -256,3 +265,220 @@ async def test_another_tenants_stay_and_rows_are_never_reached(desk, db_session)
         assert (await client.post(_send(stay), headers=ward.auth[who])).status_code == 403, who
         assert (await client.get(f"/admin/tres/admissions/{stay.id}/preview",
                                  headers=ward.auth[who])).status_code == 403, who
+
+
+# ---------------------------------------------------------------- the Task-12 review
+SENTINEL = "Sentetik-platform-sozu-0042"
+
+
+def _preview(admission_id) -> str:
+    return f"/admin/tres/admissions/{admission_id}/preview"
+
+
+@requires_db
+async def test_a_hand_send_is_paced_and_shares_the_tenants_pacer_with_the_rounds(desk, db_session):
+    """I1 (spec D21, §13.1): requests at least PACE_S apart between ANY two of a tenant's. The hand's
+    client is paced by the tenant's one pacer — the rounds' — so a round after it waits PACE_S before
+    its very first request too: a hand during a round cannot double the rate."""
+    ward, fake, stay, client, app = desk
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    app.state.tres_pacers = {ward.tenant.id: Pacer(sleep)}
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert r.status_code == 200, r.text
+    hand = len(fake.requests)
+    assert hand > 2 and slept == [PACE_S] * (hand - 1)
+    round_slept: list[float] = []
+
+    async def round_sleep(seconds: float) -> None:
+        round_slept.append(seconds)
+
+    report = await run_round(async_sessionmaker(db_session.bind, expire_on_commit=False), egress=True,
+                             source=source_of(sends("hmn-p-ortak.")), now=NOW, sleep=round_sleep,
+                             client_factory=lambda account: TresClient(account, transport=fake.transport),
+                             pacers=app.state.tres_pacers)
+    assert report.packages == 1 and len(fake.requests) == hand + 3       # a token, a search, a POST
+    assert slept == [PACE_S] * (hand + 2) and round_slept == []          # the round's first request waited too
+
+
+@requires_db
+async def test_a_429_during_a_hand_is_its_own_refusal_with_the_platforms_wait(desk):
+    """M1: not 503 — the panel says «the platform asks to wait», with how long when the platform said."""
+    ward, fake, stay, client, app = desk
+    fake.throttle(1, retry_after=600)
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert r.status_code == 429, r.text
+    assert r.json()["detail"] == {"code": "tres_throttled", "retry_after": 600, "message": WORDS["tres_throttled"]}
+    fake.throttle(1)
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (429, "tres_throttled")
+    assert "retry_after" not in r.json()["detail"]
+    assert [a.payload["result"] for a in _audit(app, "tres.send")] == ["tres_throttled", "tres_throttled"]
+
+
+@requires_db
+async def test_a_parked_tenant_is_refused_by_hand_without_asking_the_platform(desk, db_session):
+    """M2: each click would be one more failed login, and the ministry may lock the account. A refused
+    precondition: nothing asked, no audit row."""
+    ward, fake, stay, client, app = desk
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = now()"))
+    await db_session.commit()
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "tres_login_refused")
+    assert fake.requests == [] and _audit(app, "tres.send") == []
+
+
+@requires_db
+async def test_a_row_of_the_other_environment_is_never_retried_in_this_one_and_a_refused_retry_is_not_audited(
+        desk, db_session):
+    """M3: a live row is never sent to the test platform (nor the other way round): 409, nothing asked,
+    the row as it was. Any refused precondition of «Yeniden dene» writes no audit row."""
+    ward, fake, stay, client, app = desk
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="live", resource_type="vital",
+                                local_id="hmn-v-baska-heart-rate-first.", status="stuck", attempts=5,
+                                admission_id=stay.id))
+    await db_session.commit()
+    live = (await db_session.execute(select(TresDelivery.id).where(TresDelivery.environment == "live"))).scalar_one()
+    r = await client.post(f"{LIST}/{live}/retry", headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "tres_other_environment")
+    row = (await db_session.execute(select(TresDelivery).where(TresDelivery.id == live)
+                                    .execution_options(populate_existing=True))).scalar_one()
+    assert (row.status, row.attempts) == ("stuck", 5)
+    await client.post(_send(stay), headers=ward.auth["admin"])
+    asked = list(fake.requests)
+    test_row = (await db_session.execute(select(TresDelivery.id).where(TresDelivery.environment == "test")
+                                         .limit(1))).scalar_one()
+    app.state.tres_egress = False
+    r = await client.post(f"{LIST}/{test_row}/retry", headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "egress_off")
+    assert fake.requests == asked and _audit(app, "tres.retry") == []
+
+
+@requires_db
+async def test_the_platforms_words_are_in_the_audited_preview_and_never_in_the_list(desk, db_session):
+    """D25 with a sentinel: `last_error` may echo a value — the list never carries it, the preview does."""
+    ward, fake, stay, client, app = desk
+    assert (await client.post(_send(stay), headers=ward.auth["admin"])).status_code == 200
+    row = (await db_session.execute(select(TresDelivery).where(TresDelivery.resource_type == "encounter"))).scalar_one()
+    row.last_error = SENTINEL
+    await db_session.commit()
+    listed = await client.get(LIST, headers=ward.auth["admin"])
+    assert listed.status_code == 200 and SENTINEL not in listed.text
+    r = await client.get(_preview(stay.id), headers=ward.auth["admin"])
+    (encounter,) = [i for i in r.json()["items"] if i["resource_type"] == "encounter"]
+    assert encounter["last_error"] == SENTINEL and encounter["status"] == "sent"
+
+
+@requires_db
+async def test_the_preview_reads_each_items_row_by_its_key_not_by_the_stay(desk, db_session):
+    """M4: the doctor's Practitioner row follows the stay that last ran it; the first stay's preview still
+    shows its status."""
+    ward, fake, stay, client, app = desk
+    assert (await client.post(_send(stay), headers=ward.auth["admin"])).status_code == 200
+    second = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", fin="ZZ55YY5", bed="2")
+    assert (await client.post(_send(second), headers=ward.auth["admin"])).status_code == 200
+    moved = (await db_session.execute(select(TresDelivery.admission_id).where(
+        TresDelivery.resource_type == "practitioner"))).scalar_one()
+    assert moved == second.id
+    r = await client.get(_preview(stay.id), headers=ward.auth["admin"])
+    (practitioner,) = [i for i in r.json()["items"] if i["resource_type"] == "practitioner"]
+    assert (practitioner["status"], practitioner["held"]) == ("sent", True)
+
+
+@requires_db
+async def test_the_preview_shows_a_type_switched_off_as_not_sent_with_its_reason(desk, db_session):
+    """M5: the preview honours the tenant's types as a send does — a type off and not held is not sent,
+    and a Patient so left unheld stops the stay at its Encounter (`patient_unheld`)."""
+    ward, fake, stay, client, app = desk
+    await db_session.execute(text("""UPDATE tres_settings SET enabled_types = '["patient", "practitioner", "encounter"]'"""))
+    await db_session.commit()
+    items = (await client.get(_preview(stay.id), headers=ward.auth["admin"])).json()["items"]
+    vitals = [i for i in items if i["resource_type"] == "vital"]
+    assert vitals and all((i["reason"], i["resource"], i["held"]) == ("type_off", None, False) for i in vitals)
+    assert [i for i in items if i["resource_type"] == "encounter"][0]["resource"] is not None
+    await db_session.execute(text("""UPDATE tres_settings SET enabled_types = '["practitioner", "encounter", "vital"]'"""))
+    await db_session.commit()
+    items = (await client.get(_preview(stay.id), headers=ward.auth["admin"])).json()["items"]
+    assert [(i["resource_type"], i["reason"]) for i in items] == [
+        ("patient", "type_off"), ("practitioner", None), ("encounter", "patient_unheld")]
+    assert fake.requests == []
+
+
+@requires_db
+async def test_the_preview_shows_a_patient_left_to_the_persons_newer_stay_and_goes_on(desk, db_session):
+    """M5: as `_row` judges a send — the person's newer stay holds the Patient on the platform, so this
+    older stay sends nothing for it: the item says so (`yielded`, no body) and the preview goes on to the
+    Encounter and the vitals, referring to that Patient."""
+    ward, fake, stay, client, app = desk
+    newer = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                           admitted_at=DISCHARGED + timedelta(days=1), discharged_at=DISCHARGED + timedelta(days=2),
+                           phone="055 765 43 21")
+    assert (await client.post(_send(newer), headers=ward.auth["admin"])).status_code == 200
+    (person,) = fake.stored("Patient")
+    items = (await client.get(_preview(stay.id), headers=ward.auth["admin"])).json()["items"]
+    patient = items[0]
+    assert (patient["resource_type"], patient["local_id"]) == ("patient", ids.patient("AB12C3D"))
+    assert (patient["yielded"], patient["held"], patient["resource"], patient["status"]) == (True, True, None, "sent")
+    (encounter,) = [i for i in items if i["resource_type"] == "encounter"]
+    assert encounter["resource"]["subject"] == {"reference": f"Patient/{person['id']}"}
+    assert [i["resource_type"] for i in items].count("vital") >= 1
+    assert all(i["yielded"] is False for i in items[1:])
+
+
+@requires_db
+async def test_an_unexpected_failure_in_a_hand_is_rolled_back_audited_as_an_error_and_raised(desk, monkeypatch):
+    """M6: never a hand with no trail — `result: "error"`, no message, no value; then the 500."""
+    ward, fake, stay, client, app = desk
+    from homunculus.tres import package
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("Sentetikova Leyla")
+
+    monkeypatch.setattr(package, "map_encounter", broken)
+    with pytest.raises(RuntimeError):
+        await client.post(_send(stay), headers=ward.auth["admin"])
+    (row,) = _audit(app, "tres.send")
+    assert row.payload == {"actor": ward.users["admin"].username, "admission_id": str(stay.id), "result": "error"}
+
+
+@requires_db
+async def test_a_malformed_admission_filter_is_a_coded_422_that_echoes_nothing(desk):
+    """M7: never FastAPI's 422, which echoes the value it could not read."""
+    ward, fake, stay, client, app = desk
+    r = await client.get(LIST, params={"admission": "not-a-uuid<script>"}, headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "tres_filter")
+    assert "<script>" not in r.text and "not-a-uuid" not in r.text
+
+
+@requires_db
+async def test_another_tenants_admission_is_unknown_to_the_send_and_the_preview(desk, db_session):
+    ward, fake, stay, client, app = desk
+    other = await other_tenants_stay(db_session)
+    for r in (await client.post(_send(other), headers=ward.auth["admin"]),
+              await client.get(_preview(other.id), headers=ward.auth["admin"])):
+        assert (r.status_code, r.json()["detail"]["code"]) == (404, "tres_stay_unknown")
+    assert fake.requests == [] and _audit(app, "tres.send") == [] and _audit(app, "tres.preview") == []
+
+
+@requires_db
+async def test_an_address_the_factory_refuses_is_a_409_that_asks_nothing(desk):
+    """The app's own factory (egress.open_client) with an install that does not allow the stand-in's host."""
+    ward, fake, stay, client, app = desk
+    app.state.tres_client_factory = partial(open_client, egress=True, hosts=frozenset({"ehr-sandbox.e-health.gov.az"}))
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "tres_host_not_allowed")
+    assert fake.requests == [] and _audit(app, "tres.send") == []
+
+
+@requires_db
+async def test_a_stay_still_admitted_is_sent_by_hand_in_progress(desk, db_session):
+    ward, fake, stay, client, app = desk
+    admitted = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", fin="ZZ55YY5",
+                              bed="2", state=AdmissionState.ACTIVE)
+    r = await client.post(_send(admitted), headers=ward.auth["admin"])
+    assert r.status_code == 200, r.text
+    (encounter,) = fake.stored("Encounter")
+    assert encounter["status"] == "in-progress" and "end" not in encounter["period"]

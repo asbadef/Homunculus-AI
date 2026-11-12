@@ -185,6 +185,12 @@ class TresDelivery(Base):
     yielded = False
 
 
+#: The ledger's list (deliveries.py): one tenant's environment, newest change first, a page at a time by
+#: the keyset (updated_at, id) — in that order, so the page is an index walk (Task-12 review M8).
+Index("ix_tres_deliveries_list", TresDelivery.tenant_id, TresDelivery.environment,
+      TresDelivery.updated_at.desc(), TresDelivery.id.desc())
+
+
 class TresDepartmentMap(Base):
     __tablename__ = "tres_department_map"
     __table_args__ = (Index("ix_tres_department_map_tenant_id", "tenant_id"),)

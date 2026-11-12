@@ -9,7 +9,9 @@ whole, one after the other, each on its own client:
   Practitioner → Encounter → …), reading each row's `remote_id` for the references of the next.
   `no_packages` yields nothing (phase F0's, and a test's); the app's source is F1's
   `source.StaySource` (`app.state.tres_source`): the stays that are due.
-* requests are sequential and at least PACE_S apart (the client's `pace` hook);
+* requests are sequential and at least PACE_S apart (the client's `pace` hook) — between ANY two
+  requests of a tenant: the process holds one `Pacer` per tenant, shared by the rounds and the hand
+  routes (`pacer_of`, `app.state.tres_pacers`; Task-12 review I1);
 * HTTP 429 ends the tenant's round; the report carries how long to wait (`Retry-After`, or
   THROTTLED_S);
 * a session refused (`TresSessionError`: a wrong password, a blocked provider) ends the tenant's
@@ -182,16 +184,38 @@ def _where(exc: BaseException) -> str:
                       for frame in frames) or "?"
 
 
-class _Pacer:
-    """The spacing of one client's requests: nothing before the first, PACE_S before each next."""
+class Pacer:
+    """The spacing of ONE TENANT's requests to the platform (D21, spec §13.1: at least PACE_S between
+    ANY two of them; batch-4 / Task-12 review I1). The process holds one per tenant (`pacer_of`,
+    `app.state.tres_pacers`), and every client that carries the tenant's patient data is paced by
+    it — the rounds' and a person's («Şimdi gönder», «Yeniden dene») alike — so a hand during a
+    round cannot double the rate. Nothing before its first request; PACE_S before every next one,
+    whenever it comes: no clock is read, so the spacing is never less than PACE_S, at the cost of
+    300 ms on the first request of a round or a hand once the tenant has sent anything in this
+    process. The wait is taken under a lock: two clients waiting at once take turns, never asleep
+    together (so never two requests in one gap)."""
 
-    def __init__(self, sleep: Callable[[float], Awaitable[None]]) -> None:
+    def __init__(self, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
         self._sleep, self._started = sleep, False
+        self._lock = asyncio.Lock()
 
     async def wait(self) -> None:
-        if self._started:
-            await self._sleep(PACE_S)
-        self._started = True
+        async with self._lock:
+            if self._started:
+                await self._sleep(PACE_S)
+            self._started = True
+
+
+def pacer_of(pacers: dict[uuid.UUID, Pacer] | None, tenant_id: uuid.UUID,
+             sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> Pacer:
+    """The tenant's pacer in `pacers` (the process's, `app.state.tres_pacers`), made on first use
+    with `sleep`; with no registry, a pacer of its own (a round run alone, a test)."""
+    if pacers is None:
+        return Pacer(sleep)
+    pacer = pacers.get(tenant_id)
+    if pacer is None:
+        pacer = pacers[tenant_id] = Pacer(sleep)
+    return pacer
 
 
 async def _still_on(db: AsyncSession, sender: Sender, version: datetime | None) -> bool:
@@ -311,10 +335,13 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
 async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool,
                     source: PackageSource, now: datetime,
                     client_factory: Callable[[TresAccount], TresClient],
-                    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> RoundReport:
+                    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                    pacers: dict[uuid.UUID, Pacer] | None = None) -> RoundReport:
     """One round over every tenant (the module's docstring). With `egress` false nothing at all is
     touched: not the database, not the client factory. One tenant's failure — its package source
-    raising, say — is logged by its class and the round goes on to the next tenant."""
+    raising, say — is logged by its class and the round goes on to the next tenant. `pacers` is the
+    process's one pacer per tenant (`pacer_of`), shared with the hand routes; without it each tenant's
+    round has a pacer of its own."""
     report = RoundReport()
     if not egress:
         return report
@@ -348,7 +375,7 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 report.refused += 1
                 continue
             report.tenants += 1
-            client.pace = _Pacer(sleep).wait
+            client.pace = pacer_of(pacers, tenant_id, sleep).wait
             sender = Sender(db, client, tenant_id=tenant_id, environment=environment, mode=mode, now=now,
                             enabled_types=())        # `_work` reads the tenant's types before each package
             try:
@@ -370,18 +397,20 @@ def _utcnow() -> datetime:
 async def tres_loop(session_factory: Callable[[], AsyncSession], *, source: PackageSource,
                     client_factory: Callable[[TresAccount], TresClient],
                     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-                    clock: Callable[[], datetime] = _utcnow) -> None:
+                    clock: Callable[[], datetime] = _utcnow,
+                    pacers: dict[uuid.UUID, Pacer] | None = None) -> None:
     """A round every ROUND_S, for as long as the app runs — started by the lifespan ONLY when the
     install's lock is open, so every round here runs with `egress=True`. After a 429 the next
     round waits what the platform asked (never less than ROUND_S). A round that raises is logged
-    by its class and the loop goes on (`_escalation_loop`'s rule: a bad cycle never kills it)."""
+    by its class and the loop goes on (`_escalation_loop`'s rule: a bad cycle never kills it).
+    `pacers`: the process's one pacer per tenant, the hand routes' too (`app.state.tres_pacers`)."""
     wait = ROUND_S
     while True:
         await sleep(wait)
         wait = ROUND_S
         try:
             report = await run_round(session_factory, egress=True, source=source, now=clock(),
-                                     client_factory=client_factory, sleep=sleep)
+                                     client_factory=client_factory, sleep=sleep, pacers=pacers)
         except Exception as exc:  # noqa: BLE001 — a bad round must never kill the loop
             log.error("TRƏS round failed (%s at %s); the next one runs in %.0f s", type(exc).__name__,
                       _where(exc), ROUND_S)

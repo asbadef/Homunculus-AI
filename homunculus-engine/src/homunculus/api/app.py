@@ -787,7 +787,8 @@ def create_app(
         if app.state.tres_egress:
             from homunculus.db import AsyncSessionLocal
             tres = asyncio.create_task(tres_loop(AsyncSessionLocal, source=app.state.tres_source,
-                                                 client_factory=app.state.tres_client_factory))
+                                                 client_factory=app.state.tres_client_factory,
+                                                 pacers=app.state.tres_pacers))
         app.state.tres_task = tres
         try:
             yield
@@ -925,6 +926,9 @@ def create_app(
 
     app.state.tres_source = StaySource(audit)
     app.state.tres_client_factory = _tres_client
+    # One pacer per tenant (tres/worker.py `Pacer`, D21: 300 ms between ANY two of its requests),
+    # shared by the rounds and the hand routes.
+    app.state.tres_pacers = {}
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01

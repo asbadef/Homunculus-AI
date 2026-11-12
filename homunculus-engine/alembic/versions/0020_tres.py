@@ -21,7 +21,10 @@ the test with them. Phases F0 and F1 create the four tables they have models for
   status, operation, the platform's id, the payload's keyed digest, the attempt count and the next
   attempt's time, a skip's reason code, the platform's last message (Fernet ciphertext) and the
   admission it belongs to (FK admissions ON DELETE SET NULL, indexed: a stay's rows are read by
-  it, and an admission's delete must not scan the ledger). No request or response body.
+  it, and an admission's delete must not scan the ledger). No request or response body. Its list's
+  index `ix_tres_deliveries_list` (tenant, environment, updated_at DESC, id DESC): the tab's page,
+  newest change first, is an index walk (Task-12 review M8; our own table — the audit index is
+  main's, below).
 * `tres_department_map` (F1, D17): one row per unit (PK, FK units ON DELETE CASCADE) — its tenant
   (FK tenants ON DELETE CASCADE, indexed), the `hospital-departments` code and display, who and
   when.
@@ -65,6 +68,8 @@ SETTINGS = "tres_settings"
 DELIVERIES = "tres_deliveries"
 STATUS_INDEX = "ix_tres_deliveries_tenant_status"
 ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
+#: The ledger's list: a tenant's environment, newest change first, keyset (updated_at, id) — Task-12 review M8.
+LIST_INDEX = "ix_tres_deliveries_list"
 DEPARTMENTS = "tres_department_map"
 DEPARTMENTS_TENANT_INDEX = "ix_tres_department_map_tenant_id"
 IDENTITIES = "tres_practitioner_identity"
@@ -140,6 +145,9 @@ def upgrade() -> None:
     )
     op.create_index(STATUS_INDEX, DELIVERIES, ["tenant_id", "status"])
     op.create_index(ADMISSION_INDEX, DELIVERIES, ["admission_id"])
+    # IF NOT EXISTS, as O19's procedure asks of what a later review adds in place.
+    op.create_index(LIST_INDEX, DELIVERIES, ["tenant_id", "environment", sa.text("updated_at DESC"),
+                                             sa.text("id DESC")], if_not_exists=True)
     op.create_table(
         DEPARTMENTS,
         sa.Column("unit_id", UUID(as_uuid=True), sa.ForeignKey("units.id", ondelete="CASCADE"),
@@ -178,6 +186,7 @@ def downgrade() -> None:
     op.drop_table(IDENTITIES, if_exists=True)
     op.drop_index(DEPARTMENTS_TENANT_INDEX, table_name=DEPARTMENTS, if_exists=True)
     op.drop_table(DEPARTMENTS, if_exists=True)
+    op.drop_index(LIST_INDEX, table_name=DELIVERIES, if_exists=True)
     op.drop_index(ADMISSION_INDEX, table_name=DELIVERIES, if_exists=True)
     op.drop_index(STATUS_INDEX, table_name=DELIVERIES, if_exists=True)
     op.drop_table(DELIVERIES, if_exists=True)
