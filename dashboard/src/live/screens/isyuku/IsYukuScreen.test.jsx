@@ -179,6 +179,20 @@ describe("Decision 18: a zero only from a fresh answer", () => {
     act(() => { board.clear(); });
   });
 
+  // Review 7: the shift's end is judged on the server's clock (the board's skew), and the page reads again once it is
+  // over (one timer, useShiftEnd.test.js times it).
+  it("judges the shift's end on the server's clock, and reads again once it is over", async () => {
+    const skew = 10 * 60 * 60_000 + 30_000;                               // the server says 20:00:30; this browser 10:00
+    const { api, board } = await mountIsYuku({ setup: (a) => a.serverClockSkewMs.mockReturnValue(skew) });
+    expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — növbə dəyişdi, yenilənir");
+    const reads = () => api.shiftSchedule.mock.calls.filter((call) => call.length === 1).length;
+    const before = reads();
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 1_200); }); });
+    await settle();
+    expect(reads()).toBeGreaterThan(before);
+    act(() => { board.clear(); });
+  });
+
   it("a failed task queue, or one without the tasks' due times: late and remaining work say «oxunmadı»", async () => {
     let mounted = await mountIsYuku({ setup: (api) => api.tasks.mockRejectedValue(refusal(503, "down")) });
     expect(unitRows().map((row) => [row[5], row[6]])).toEqual([["— oxunmadı", "— oxunmadı"], ["— oxunmadı", "— oxunmadı"]]);

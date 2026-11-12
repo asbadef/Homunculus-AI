@@ -17,6 +17,7 @@ import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/index.js";
 import { WHY, boardReachSource, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
+import { useShiftEnd } from "./useShiftEnd.js";
 import {
   ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, isWorkAnswer,
   listedKeysOf, meanOf,
@@ -299,7 +300,13 @@ export function IsYukuScreen() {
   const reads = useSummaryReads({ store, rights: summaryRights, reloadStructure: tree.reload, extra });
   const [selected, setSelected] = useState(ALL);
   const occupancy = structureSource(tree, rights.structure);
-  const { schedule, tasks } = workSources(reads.extra, rights, Date.now());
+  // The server decides which shift is current: an answer's end is judged on its clock — this browser's corrected by the
+  // board's skew (`useBoardNow`'s rule; unknown is 0) — and the page reads again when it comes (review 7).
+  const skewMs = Number.isFinite(board.clockSkewMs) ? board.clockSkewMs : 0;
+  const { schedule, tasks } = workSources(reads.extra, rights, Date.now() + skewMs);
+  const endMs = reads.extra.phase === "ok" && isWorkAnswer(reads.extra.data) ? Date.parse(reads.extra.data.schedule.shift.end)
+    : null;
+  useShiftEnd({ endMs, skewMs, onEnd: reads.refresh });
   // The units the last fresh answer listed, kept while a read fails or its shift ends, so the unit picker and the form
   // being edited stay (§5 A7, review 1). A text, so the effect runs only when the listing changes.
   const fresh = schedule.ok ? listedKeysOf(schedule.data) : null;
