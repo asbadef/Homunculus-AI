@@ -21,7 +21,7 @@ from homunculus.api.app import create_app
 from homunculus.api.audit import AuditRecord, InMemoryAuditLog
 from homunculus.api.identity import Caller
 from homunculus.api.rehydrate import retracted_entries
-from homunculus.tres import ids, stay as stay_module
+from homunculus.tres import codes, ids, stay as stay_module
 from homunculus.tres.client import LOCAL_ID_EXTENSION
 from homunculus.tres.mapping.common import Built, Skip
 from homunculus.tres.mapping.encounter import encounter
@@ -167,13 +167,14 @@ def test_each_signal_goes_as_its_first_and_last_then_weight_and_height():
     built = vitals(stay(), patient_id="7001", encounter_id="7003")
     assert [(b.resource_type, b.fhir_type) for b in built] == [("vital", "Observation")] * 6
     assert [b.local_id for b in built] == [
-        f"hmn-v-{ROOT}-8867-4-first.", f"hmn-v-{ROOT}-8867-4-last.", f"hmn-v-{ROOT}-2708-6-first.",
-        f"hmn-v-{ROOT}-8310-5-first.", f"hmn-v-{ROOT}-29463-7-first.", f"hmn-v-{ROOT}-8302-2-first."]
+        f"hmn-v-{ROOT}-heart-rate-first.", f"hmn-v-{ROOT}-heart-rate-last.", f"hmn-v-{ROOT}-spo2-first.",
+        f"hmn-v-{ROOT}-temperature-first.", f"hmn-v-{ROOT}-weight-first.", f"hmn-v-{ROOT}-height-first."]
+    assert all(ids.is_local_id(b.local_id) and len(b.local_id) <= 64 for b in built)
     first_hr = built[0].resource
     assert first_hr == {
         "resourceType": "Observation",
         "meta": {"profile": ["http://fhir.az/StructureDefinition/az-observation"]},
-        "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": f"hmn-v-{ROOT}-8867-4-first."}],
+        "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": f"hmn-v-{ROOT}-heart-rate-first."}],
         "status": "final",
         "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
                                   "code": "vital-signs", "display": "Vital Signs"}]}],
@@ -193,6 +194,20 @@ def test_each_signal_goes_as_its_first_and_last_then_weight_and_height():
         "2026-11-02T10:30:00+04:00", 72.5, "kg")
     assert built[5].resource["valueQuantity"] == {"value": 168, "unit": "cm", "system": "http://unitsofmeasure.org",
                                                   "code": "cm"}
+
+
+def test_a_changed_loinc_code_is_the_same_resource_under_the_same_local_id(monkeypatch):
+    """O7: SpO2 may move from `2708-6` to `59408-5` (the ministry's answer). A sent local id never
+    changes (amendment 1), so the code is not in it: the next round PUTs the same resource."""
+    before = {b.local_id: b.resource for b in vitals(stay(), patient_id="7001", encounter_id="7003")}
+    other = replace(codes.SIGNALS["spo2"], loinc=codes.Coded(
+        codes.LOINC, "59408-5", "Oxygen saturation in Arterial blood by Pulse oximetry"))
+    monkeypatch.setitem(codes.SIGNALS, "spo2", other)
+    after = {b.local_id: b.resource for b in vitals(stay(), patient_id="7001", encounter_id="7003")}
+    assert list(after) == list(before)
+    spo2 = f"hmn-v-{ROOT}-spo2-first."
+    assert before[spo2]["code"]["coding"][0]["code"] == "2708-6"
+    assert after[spo2]["code"]["coding"][0]["code"] == "59408-5"
 
 
 def test_no_readings_and_no_measurements_send_no_vitals():

@@ -17,7 +17,10 @@ placeholder `id` (spec §4.2). `is_local_id` checks both rules; the tests hold e
     Patient        hmn-p-{phi_digest(FİN)[:32]}.        the person, not the admission row (D5)
     Practitioner   hmn-pr-{user id}.
     Encounter      hmn-e-{root admission id}.           one stay across beds (D5)
-    vital sign     hmn-v-{root admission id}-{LOINC}-{first|last}.
+    vital sign     hmn-v-{root admission id}-{signal key}-{first|last}.
+                   the key is `codes.Signal.id_key` (`heart-rate`, `resp-rate`, `spo2`, `temperature`,
+                   `sbp`, `map`, `weight`, `height`) — NEVER the LOINC code: a sent id never changes,
+                   a code may (SpO2, O7), and then it is the same resource PUT again
 
 A Patient that cannot be built for want of a usable FİN has no digest to be keyed by; its skip is
 recorded under `hmn-p-s-{root admission id}.` (the stay's placeholder), which the package removes
@@ -28,12 +31,18 @@ import re
 import uuid
 
 from homunculus.crypto import phi_digest
+from homunculus.tres import az
 
 PREFIX = "hmn-"
 END = "."
 #: FHIR's `id`: letters, digits, '-' and '.', 1 to 64 of them.
 _FHIR_ID = re.compile(r"[A-Za-z0-9\-.]{1,64}")
 FIRST, LAST = "first", "last"
+#: A vital sign's id key: lower-case ASCII words joined by single hyphens (FHIR ids allow no `_`).
+_VITAL_KEY = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+#: Constant messages: an exception raised here never carries the FİN or the key it was given.
+FIN_UNUSABLE = "a patient's id needs a usable FİN (seven Latin capitals or digits)"
+VITAL_KEY_INVALID = "a vital sign's id key is lower-case words joined by single hyphens, and its id fits 64 characters"
 
 
 def is_local_id(value: str) -> bool:
@@ -42,9 +51,14 @@ def is_local_id(value: str) -> bool:
             and value.endswith(END) and value.count(END) == 1)
 
 
-def patient(fin: str) -> str:
-    """The person's id, from the NORMALISED FİN (az.normal_fin): one person, one national Patient."""
-    return f"{PREFIX}p-{phi_digest(fin)[:32]}{END}"
+def patient(fin: str | None) -> str:
+    """The person's id: the digest of the FİN as `az.normal_fin` normalises it, so one person is one
+    national Patient however the FİN was typed (`ab12c3d` and `AB12C3D` are the same id). A FİN the
+    platform would not accept has no id: ValueError, whose message never holds the FİN."""
+    normal, _ = az.normal_fin(fin)
+    if normal is None:
+        raise ValueError(FIN_UNUSABLE)
+    return f"{PREFIX}p-{phi_digest(normal)[:32]}{END}"
 
 
 def patient_placeholder(root: uuid.UUID) -> str:
@@ -60,7 +74,15 @@ def encounter(root: uuid.UUID) -> str:
     return f"{PREFIX}e-{root}{END}"
 
 
-def vital(root: uuid.UUID, loinc: str, which: str) -> str:
+def vital(root: uuid.UUID, key: str, which: str) -> str:
+    """A vital sign's id: the stay's root, the signal's key (`codes.Signal.id_key`, never its LOINC
+    code) and `first` or `last`. Raises ValueError for a key that is not hyphenated lower-case words
+    or that would make the id longer than FHIR allows."""
     if which not in (FIRST, LAST):
         raise ValueError("a vital sign's id is its first or its last value")
-    return f"{PREFIX}v-{root}-{loinc}-{which}{END}"
+    if not isinstance(key, str) or not _VITAL_KEY.fullmatch(key):
+        raise ValueError(VITAL_KEY_INVALID)
+    local_id = f"{PREFIX}v-{root}-{key}-{which}{END}"
+    if not is_local_id(local_id):
+        raise ValueError(VITAL_KEY_INVALID)
+    return local_id

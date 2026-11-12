@@ -24,7 +24,7 @@ PROFILE = "az-observation"
 
 def _observation(stay: Stay, signal: Signal, which: str, value: float, at: datetime, *,
                  patient_id: str, encounter_id: str) -> Built:
-    local_id = ids.vital(stay.root_id, signal.loinc.code, which)
+    local_id = ids.vital(stay.root_id, signal.id_key, which)
     resource = base("Observation", PROFILE, local_id)
     resource.update({
         "status": "final",

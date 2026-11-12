@@ -53,10 +53,17 @@ class Coded:
 
 @dataclass(frozen=True)
 class Signal:
-    """A vital sign as it is sent: its LOINC coding, the unit the engine charts it in, and its UCUM code."""
+    """A vital sign as it is sent: its LOINC coding, the unit the engine charts it in, its UCUM code and
+    the key its local id carries.
+
+    `id_key` is what `ids.vital` puts in the id (`hmn-v-{root}-{id_key}-{first|last}.`), NEVER the LOINC
+    code: a sent local id never changes (plan F1, amendment 1) and a code may (SpO2 — O7: `2708-6` now,
+    perhaps `59408-5`), and then the same resource must be PUT again under the same id. The key is
+    lower-case words joined by single hyphens (a FHIR id allows no `_`), and no two signals share one."""
     loinc: Coded
     charted_unit: str | None          # the chart row's `unit`; None: not a chart row (weight, height)
     ucum: str
+    id_key: str
 
 
 #: observation-category `vital-signs` — checked 2026-11-12, display «Vital Signs».
@@ -67,18 +74,18 @@ INPATIENT = Coded(ACT_CODE, "IMP", "inpatient encounter")
 #: The bedside signals (D10) by the engine's slug, in the order they are sent. Each checked
 #: 2026-11-12 (CHECKED_WITH); the UCUM codes `/min`, `%`, `Cel`, `mm[Hg]` likewise.
 SIGNALS: dict[str, Signal] = {
-    "heart_rate": Signal(Coded(LOINC, "8867-4", "Heart rate"), "/min", "/min"),
-    "resp_rate": Signal(Coded(LOINC, "9279-1", "Respiratory rate"), "/min", "/min"),
-    "spo2": Signal(Coded(LOINC, "2708-6", "Oxygen saturation in Arterial blood"), "%", "%"),   # O7
-    "temperature": Signal(Coded(LOINC, "8310-5", "Body temperature"), "°C", "Cel"),
-    "sbp": Signal(Coded(LOINC, "8480-6", "Systolic blood pressure"), "mmHg", "mm[Hg]"),
-    "map": Signal(Coded(LOINC, "8478-0", "Mean blood pressure"), "mmHg", "mm[Hg]"),
+    "heart_rate": Signal(Coded(LOINC, "8867-4", "Heart rate"), "/min", "/min", "heart-rate"),
+    "resp_rate": Signal(Coded(LOINC, "9279-1", "Respiratory rate"), "/min", "/min", "resp-rate"),
+    "spo2": Signal(Coded(LOINC, "2708-6", "Oxygen saturation in Arterial blood"), "%", "%", "spo2"),   # O7
+    "temperature": Signal(Coded(LOINC, "8310-5", "Body temperature"), "°C", "Cel", "temperature"),
+    "sbp": Signal(Coded(LOINC, "8480-6", "Systolic blood pressure"), "mmHg", "mm[Hg]", "sbp"),
+    "map": Signal(Coded(LOINC, "8478-0", "Mean blood pressure"), "mmHg", "mm[Hg]", "map"),
 }
 
 #: The admission's measurements (D10): one value each, at the admission. Checked 2026-11-12; UCUM
 #: `kg`, `cm`.
-WEIGHT = Signal(Coded(LOINC, "29463-7", "Body weight"), None, "kg")
-HEIGHT = Signal(Coded(LOINC, "8302-2", "Body height"), None, "cm")
+WEIGHT = Signal(Coded(LOINC, "29463-7", "Body weight"), None, "kg", "weight")
+HEIGHT = Signal(Coded(LOINC, "8302-2", "Body height"), None, "cm", "height")
 
 #: The record of each check, per code, as the plan and the guide print it.
 CHECKS: tuple[tuple[str, str, str, str], ...] = tuple(
