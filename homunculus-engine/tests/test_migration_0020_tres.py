@@ -1,14 +1,17 @@
 # homunculus-engine/tests/test_migration_0020_tres.py
-"""Migration 0020 (TRƏS-01, spec D3, D6, D23, D26) on the real chain (`clean_db`, never
-`create_all`): purely additive — `tres_settings` (one row per tenant, none written: no row reads
-as "off") and `tres_deliveries` (the ledger). The defaults, the CHECKs, the ledger's key with the
-environment in it, the settings and the ledger gone with their tenant, a ledger row outliving its
-admission; NO permission row for `tres.manage` (the system group holds it by rule); the model
-agrees with the migration; 0019 → 0020 → 0019 → 0020 runs and the downgrade drops exactly the two
-tables. The migration's two constants are the models' (no database for that one). Synthetic rows
-only. F1–F5 extend this file with their tables (D26): F1 adds `tres_department_map` and
-`tres_practitioner_identity` (each gone with its unit or user and with its tenant; the FİN is
-ciphertext at rest) and the settings' `send_from` and `retried_at`."""
+"""Migration 0020 (TRƏS-01, spec D3, D6, D16, D17, D23, D26) on the real chain (`clean_db`, never
+`create_all`): purely additive — FOUR tables, `tres_settings` (one row per tenant, none written: no
+row reads as "off"), `tres_deliveries` (the ledger), and F1's `tres_department_map` and
+`tres_practitioner_identity`. The defaults, the CHECKs, the ledger's key with the environment in it,
+the settings and the ledger gone with their tenant, a ledger row outliving its admission; NO
+permission row for `tres.manage` (the system group holds it by rule); the model agrees with the
+migration; 0019 → 0020 → 0019 → 0020 runs and the downgrade drops exactly the four tables — and it
+also runs from EARLIER CUTS of 0020 (O19: this one file is extended in place, so a development
+database may hold F0's cut, which has none of F1's objects). The migration's two constants are the
+models' (no database for that one). Synthetic rows only. F2–F5 extend this file with their tables
+(D26): F1 added `tres_department_map` and `tres_practitioner_identity` (each gone with its unit or
+user and with its tenant; the FİN is ciphertext at rest) and the settings' `send_from` and
+`retried_at`."""
 from __future__ import annotations
 
 import importlib.util
@@ -114,7 +117,7 @@ def _delivery(conn, tenant: uuid.UUID, **columns) -> uuid.UUID:
 
 
 @requires_db
-def test_0020_adds_the_two_tables_and_writes_no_row_and_no_permission(clean_db):
+def test_0020_adds_its_four_tables_and_writes_no_row_and_no_permission(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "0019")
     before = set(inspect(engine).get_table_names())
@@ -269,3 +272,80 @@ def test_the_two_maps_go_with_their_unit_user_and_tenant_and_the_fin_is_cipherte
         conn.execute(text("DELETE FROM rooms"))
         conn.execute(text("DELETE FROM units WHERE id = :u"), {"u": unit})
         assert conn.execute(text(f"SELECT count(*) FROM {DEPARTMENTS}")).scalar_one() == 0
+
+
+@requires_db
+def test_both_maps_are_cascaded_by_every_foreign_key_they_have(clean_db):
+    """Review M5, on the real chain: a unit's department goes with its unit and its tenant, an
+    identity with its user and its tenant — read from the constraints themselves."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT conrelid::regclass::text, confrelid::regclass::text, confdeltype FROM pg_constraint "
+            "WHERE contype = 'f' AND conrelid IN (CAST(:d AS regclass), CAST(:i AS regclass))"),
+            {"d": DEPARTMENTS, "i": IDENTITIES}).all()
+    assert {(table, target): kind for table, target, kind in rows} == {
+        (DEPARTMENTS, "units"): "c", (DEPARTMENTS, "tenants"): "c",
+        (IDENTITIES, "tenants"): "c", (IDENTITIES, "users"): "c"}
+
+
+@requires_db
+def test_deleting_a_tenant_removes_its_department_map_and_identities_and_no_other_tenants(clean_db):
+    engine, cfg = clean_db
+    command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        a, b = _tenant(conn, "hastane-a"), _tenant(conn, "hastane-b")
+        doctor_a, doctor_b = _user(conn), _user(conn)
+        for tenant, doctor in ((a, doctor_a), (b, doctor_b)):
+            unit = _unit_of(conn, _admission(conn, tenant))
+            conn.execute(text(f"INSERT INTO {DEPARTMENTS} (unit_id, tenant_id, code, display) "
+                              "VALUES (:u, :t, 'RE-01', 'Reanimasiya')"), {"u": unit, "t": tenant})
+            conn.execute(text(f"INSERT INTO {IDENTITIES} (tenant_id, user_id, family_name, given_name) "
+                              "VALUES (:t, :u, 'Sentetikov', 'Elçin')"), {"t": tenant, "u": doctor})
+        conn.execute(text("DELETE FROM admissions WHERE tenant_id = :t"), {"t": a})
+        conn.execute(text("DELETE FROM patients WHERE tenant_id = :t"), {"t": a})
+        conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": a})
+        assert conn.execute(text(f"SELECT tenant_id FROM {DEPARTMENTS}")).scalars().all() == [b]
+        assert conn.execute(text(f"SELECT tenant_id FROM {IDENTITIES}")).scalars().all() == [b]
+        # the user outlives the tenant: it is the tenant's key that took the identity
+        assert conn.execute(text("SELECT count(*) FROM users WHERE id = :u"), {"u": doctor_a}).scalar_one() == 1
+
+
+#: The two cuts an earlier checkout of this branch may have left in a development database (O19):
+#: F0's final cut (no department map, no identities, no `send_from` / `retried_at`), and the first
+#: cut of all (also without the ledger's admission index, which came with F0's review).
+F0_CUTS = {
+    "f0s-final-cut": [],
+    "the-first-cut": [f"DROP INDEX {ADMISSION_INDEX}"],
+}
+
+
+@requires_db
+@pytest.mark.parametrize("cut", list(F0_CUTS))
+def test_the_downgrade_runs_from_f0s_cut_and_the_upgrade_brings_everything_back(clean_db, cut):
+    """O19, review I1: this one file is extended in place, so a development database holds an
+    EARLIER cut of 0020 and is taken down to 0019 and up again. The F0 cut is made here by hand
+    from the full one (drop what F1 added), and the downgrade must not stumble on what is not there."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "0019")
+    before = set(inspect(engine).get_table_names())
+    command.upgrade(cfg, "0020")
+    with engine.begin() as conn:
+        conn.execute(text(f"DROP TABLE {IDENTITIES}"))
+        conn.execute(text(f"DROP TABLE {DEPARTMENTS}"))             # its tenant index goes with it
+        conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN send_from"))
+        conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN retried_at"))
+        for statement in F0_CUTS[cut]:
+            conn.execute(text(statement))
+    assert set(inspect(engine).get_table_names()) - before == {SETTINGS, DELIVERIES}
+    command.downgrade(cfg, "0019")
+    assert set(inspect(engine).get_table_names()) == before
+    command.upgrade(cfg, "0020")
+    assert set(inspect(engine).get_table_names()) - before == TABLES
+    columns = {c["name"] for c in inspect(engine).get_columns(SETTINGS)}
+    assert {"send_from", "retried_at", "session_refused_at"} <= columns
+    indexes = {i["name"] for t in (DELIVERIES, DEPARTMENTS) for i in inspect(engine).get_indexes(t)}
+    assert {INDEX, ADMISSION_INDEX, DEPARTMENTS_INDEX} <= indexes
+    command.downgrade(cfg, "0019")                                   # and the full cut still goes down
+    assert set(inspect(engine).get_table_names()) == before

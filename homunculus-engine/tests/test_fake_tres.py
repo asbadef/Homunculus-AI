@@ -13,6 +13,7 @@ from tests.fake_tres import (
     FakeTres, local_id_of, references_of,
 )
 
+
 def resource(resource_type: str, local_id: str, **elements) -> dict:
     return {"resourceType": resource_type, "meta": {"profile": [UNCHECKED_PROFILE]},
             "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}], **elements}

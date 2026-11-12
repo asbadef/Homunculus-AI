@@ -188,3 +188,31 @@ async def test_the_department_map_and_the_identities_and_the_fin_at_rest(db_sess
     assert (department.code, department.display, department.tenant_id) == ("RE-01", "Reanimasiya", tenant_id)
     settings = (await db_session.execute(select(TresSettings))).scalar_one()
     assert (settings.send_from, settings.retried_at) == (None, None)
+
+
+@requires_db
+async def test_the_department_map_and_the_identities_go_with_their_tenant(db_session):
+    """Review M5: the models' own foreign keys (a schema made by `create_all`; the migration's are
+    read in test_migration_0020_tres.py) — deleting a tenant removes its department map and its
+    practitioner identities, and not the user an identity names."""
+    from homunculus.auth.models import User
+    from homunculus.tenant.models import Site, Unit, UnitType
+    tenant = await _tenant(db_session)
+    tenant_id = tenant.id
+    site = Site(tenant_id=tenant_id, name="Ana bina")
+    db_session.add(site)
+    await db_session.flush()
+    unit = Unit(site_id=site.id, name="Reanimasiya", unit_type=UnitType.ADULT_ICU)
+    doctor = User(username="hekim@sentetik.example.com", full_name="Sentetik Hekim", is_active=True)
+    db_session.add_all([unit, doctor])
+    await db_session.flush()
+    doctor_id = doctor.id
+    db_session.add_all([TresDepartmentMap(unit_id=unit.id, tenant_id=tenant_id, code="RE-01", display="Reanimasiya"),
+                        TresPractitionerIdentity(tenant_id=tenant_id, user_id=doctor_id, fin="ZZ99YY8",
+                                                 family_name="Sentetikov", given_name="Elçin")])
+    await db_session.commit()
+    await db_session.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tenant_id})
+    await db_session.commit()
+    for table in ("tres_department_map", "tres_practitioner_identity"):
+        assert (await db_session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one() == 0, table
+    assert (await db_session.execute(text("SELECT count(*) FROM users WHERE id = :u"), {"u": doctor_id})).scalar_one() == 1

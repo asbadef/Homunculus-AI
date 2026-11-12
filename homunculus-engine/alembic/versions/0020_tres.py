@@ -34,7 +34,8 @@ group holds every key by rule at token issuance (auth/permissions.py) — as `su
 PURELY ADDITIVE: an image from before this revision serves against it (it never reads the new
 tables); only its start command's `alembic upgrade head` refuses the unknown revision. Downgrade
 drops exactly these four tables — and with them every tenant's account, the whole ledger and both
-maps.
+maps — each `IF EXISTS`, so that it also runs from an earlier cut of this file (O19: F0's has
+neither of F1's tables, nor `send_from` / `retried_at`).
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013) — this revision needs none.
 
 Revision ID: 0020
@@ -161,10 +162,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table(IDENTITIES)
-    op.drop_index(DEPARTMENTS_TENANT_INDEX, table_name=DEPARTMENTS)
-    op.drop_table(DEPARTMENTS)
-    op.drop_index(ADMISSION_INDEX, table_name=DELIVERIES)
-    op.drop_index(STATUS_INDEX, table_name=DELIVERIES)
-    op.drop_table(DELIVERIES)
-    op.drop_table(SETTINGS)
+    # EVERY DROP IS `IF EXISTS` (O19, review I1): this one file is extended in place, so a
+    # development database may hold an EARLIER cut of 0020 — F0's has `tres_settings` and
+    # `tres_deliveries` only, with none of F1's tables, indexes or settings columns — and is taken
+    # down to 0019 and up again. A plain DROP would stop on the first object that cut never had.
+    # The settings columns `send_from` and `retried_at` go with their table (no drop of their own).
+    op.drop_table(IDENTITIES, if_exists=True)
+    op.drop_index(DEPARTMENTS_TENANT_INDEX, table_name=DEPARTMENTS, if_exists=True)
+    op.drop_table(DEPARTMENTS, if_exists=True)
+    op.drop_index(ADMISSION_INDEX, table_name=DELIVERIES, if_exists=True)
+    op.drop_index(STATUS_INDEX, table_name=DELIVERIES, if_exists=True)
+    op.drop_table(DELIVERIES, if_exists=True)
+    op.drop_table(SETTINGS, if_exists=True)
