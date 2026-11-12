@@ -97,6 +97,24 @@ class ReadingStoreContract:
         assert store.seen("h1", KEY, "spo2", T0 + timedelta(seconds=1), "CONNEX-3A", 97.0) is False
         assert store.seen("h2", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False     # another hospital's is not ours
 
+    def test_seen_also_knows_a_reading_filed_under_a_patient_whatever_number_it_arrived_under(self, store):
+        """B6 review: a linked reading keeps the number it arrived under (TYPO) as its `received_key`, and counts
+        under the patient it was linked to (KEY): a re-send under KEY is the same measurement."""
+        linked(store, "heart_rate", 131.0, audit_id=1)
+        assert store.seen("h1", KEY, "heart_rate", T0, "CONNEX-3A", 131.0) is True          # filed under KEY
+        assert store.seen("h1", TYPO, "heart_rate", T0, "CONNEX-3A", 131.0) is True         # arrived under TYPO
+        assert store.seen("h1", "202600000002", "heart_rate", T0, "CONNEX-3A", 131.0) is False
+        assert store.seen("h1", KEY, "heart_rate", T0, "CONNEX-3A", 130.0) is False
+        assert store.seen("h1", KEY, "heart_rate", T0, "CONNEX-3B", 131.0) is False
+        assert store.seen("h2", KEY, "heart_rate", T0, "CONNEX-3A", 131.0) is False         # another hospital's
+
+    def test_seen_does_not_take_a_claim_or_a_rejection_for_a_reading_filed_under_a_patient(self, store):
+        claimed = store.add(unmatched("spo2", 97.0, audit_id=1))
+        store.claim("h1", [claimed.id], by="hem.ayse", at=T0)
+        rejected(store, "heart_rate", 88.0, audit_id=2)
+        assert store.seen("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False                # not filed yet
+        assert store.seen("h1", KEY, "heart_rate", T0, "CONNEX-3A", 88.0) is False          # never filed
+
     def test_seen_never_takes_a_hand_entry_for_a_device_reading(self, store):
         store.add(replace(manual("spo2", 97.0, audit_id=1), source="CONNEX-3A"))
         assert store.seen("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False
@@ -151,6 +169,16 @@ class ReadingStoreContract:
         store.add(device(audit_id=4))                                               # matched: not listed
         assert store.unmatched("h1", since=T0 - timedelta(days=7)) == [a, b]
         assert store.unmatched("h2", since=T0 - timedelta(days=7)) == []
+
+    def test_the_unmatched_list_can_be_limited_to_the_newest_rows(self, store):
+        """B6 review: a `limit` keeps the NEWEST rows (cut in the database), still oldest first."""
+        rows = [store.add(unmatched("spo2", 90.0 + i, at=T0 + timedelta(seconds=i), audit_id=i + 1)) for i in range(5)]
+        since = T0 - timedelta(days=7)
+        assert store.unmatched("h1", since=since) == rows
+        assert store.unmatched("h1", since=since, limit=3) == rows[2:]
+        assert store.unmatched("h1", since=since, limit=5) == rows
+        assert store.unmatched("h1", since=since, limit=50) == rows
+        assert store.unmatched("h1", since=since, limit=0) == []
 
     def test_the_unmatched_window_includes_the_instant_it_starts_at(self, store):
         """`received_at >= since` (plan B2's SQL): a row received exactly at `since` is still listed."""

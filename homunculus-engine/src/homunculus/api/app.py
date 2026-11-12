@@ -896,8 +896,9 @@ def create_app(
         target=lambda who, authorization, patient_id: _link_target(who, authorization, patient_id),
         identity=lambda hospital, patient_id: identities.get(hospital, patient_id),
         admission_for=lambda hospital, record: _admission_for(hospital, record),
-        apply=lambda hospital, obs, record, now, reading: _apply_reading(hospital, obs, record, now, reading=reading,
-                                                                         judge_at=now),   # a link is judged now
+        apply=lambda hospital, obs, record, now, reading, actor, on_written: _apply_reading(
+            hospital, obs, record, now, reading=reading, judge_at=now,        # a link is judged now
+            linked_by=actor, on_written=on_written),
         audit=audit, store=readings))
 
     app.state.broadcaster = broadcaster
@@ -1508,8 +1509,11 @@ def create_app(
             admission = _admission_for(hospital, record)
             for row in rows:
                 readings.add(replace(row, admission_id=admission))
-        except Exception:
-            log.exception("vital_readings: %d satır yazılamadı (hastane %s); reconcile tamamlar", len(rows), hospital)
+        except Exception as exc:
+            # The class only, never `log.exception`: the driver's text («Failing row contains (…)») carries the
+            # number and the value, as `_file_unmatched` already knows (B6 review).
+            log.error("vital_readings: %d satır yazılamadı (hastane %s, %s); reconcile tamamlar",
+                      len(rows), hospital, type(exc).__name__)
 
     def _resent(hospital: str, obs) -> bool:
         """G3-05 (D14): has the record this very reading already — the same number, code, time, device and
@@ -1524,20 +1528,31 @@ def create_app(
         try:
             return readings.seen(hospital, obs.patient_id, obs.code.value, obs.timestamp, device_source(obs),
                                  obs.value)
-        except Exception:
-            log.exception("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s); ölçüm işlenir", hospital)
+        except Exception as exc:
+            log.error("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s, %s); ölçüm işlenir",
+                      hospital, type(exc).__name__)
             return False
 
     async def _reading_visibility(caller: Caller, authorization: str | None) -> Callable[[str], bool]:
         """G3-05 (D11): «may this caller see the patient under this number» — for the unmatched sets of a
-        DISCHARGED number, which are shown only where the caller's scope reaches that patient's last unit (the
-        tombstone keeps it; `_scope_card` reads it there). The scope is resolved once per request; one that
-        cannot be read is 503, never an empty list (G2-A2, D13)."""
+        number a patient is, or was, admitted under: shown only where the caller's scope reaches that patient —
+        a discharged one at the last unit the tombstone keeps (`_scope_card` reads it there), one admitted AFTER
+        its readings arrived at the unit it lies in (B6 review: the set keeps `unknown` as its reason, but the
+        number is a patient's now, and its values are not another ward's to see, reject or link elsewhere). A
+        number nobody is admitted under has no patient and no unit: every holder of the right sees it. The
+        scope is resolved once per request; one that cannot be read is 503, never an empty list (G2-A2, D13).
+        The scope card is built uncounted: a list that polls every minute is no bed-access event."""
         scope = _readable(await _scope(authorization))
         if scope.unrestricted:
             return lambda key: True
         hospital = caller.hospital
-        return lambda key: sees_patient(_scope_card(hospital, key), scope)
+
+        def visible(key: str) -> bool:
+            record = identities.get(hospital, key)
+            if record is None:
+                return True
+            return sees_patient(_scope_card(hospital, key, record, counted=False), scope)
+        return visible
 
     async def _link_target(caller: Caller, authorization: str | None, patient_id: str):
         """G3-05 (D11): the patient an unmatched reading may be linked to — in the caller's scope
@@ -1579,7 +1594,9 @@ def create_app(
         return {"patient_id": obs.patient_id, "dropped": dropped}
 
     async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,
-                             reading: int | None = None, judge_at: datetime | None = None) -> tuple[list, AuditRecord]:
+                             reading: int | None = None, judge_at: datetime | None = None,
+                             linked_by: str | None = None,
+                             on_written: Callable[[AuditRecord], None] | None = None) -> tuple[list, AuditRecord]:
         """One reading into the real engine, as the device door does it (G3-05, spec D12): the evaluation, the
         lifecycle hook, the shadow mirror, the `ingest` row, the alert, clear and first-seen rows, the card's
         frame, the nurse's notification. `/ingest` runs it for a matched reading;
@@ -1595,7 +1612,21 @@ def create_app(
         replace an `antibiotic_overdue` with an `antibiotic_due` («300 min remaining» — false reassurance) and
         end an acknowledged overdue's episode. Judged now, a stale value simply does not count for NEWS2's
         freshness, and no clock goes backwards. The replay agrees: an `ingest` row naming a `reading` is
-        replayed at the row's write time (rehydrate `_replay_ingest`)."""
+        replayed at the row's write time (rehydrate `_replay_ingest`).
+
+        WHO LINKED IT. `linked_by` — the person — goes into the linked reading's `ingest` payload as `actor`, so
+        the chain from the reading to its person stands even when the link's own `reading_assigned` row is lost.
+
+        THE TABLE'S ROW, AT ONCE. `on_written(row)` is called right after the `ingest` row is written, before
+        the alert, clear, first-seen and notification rows and the frame (B6 review): the door files its
+        `vital_readings` row there, the link finalizes its claim. A raise later in the tail (an alert append, a
+        publish) answers 500 and the bridge sends the reading again — which `_resent` then finds already filed
+        (D14), instead of entering the engine and the trail a second time. The callback must not raise (both
+        callers log and carry on: `reconcile` files a row from its `ingest` row). Two windows remain: a raise
+        between `engine.ingest` and the `ingest` row leaves the engine holding a value with no row, and a raise
+        after the row leaves that tail unfinished — the rest of that reading's alert, first-seen and
+        notification rows are not written on the re-send, which is answered as a duplicate; the next reading of
+        the patient stamps and tells whatever is still firing."""
         engine = _engine(hospital)
         store = _store(hospital)
         # The rules judge at the reading's own time but never past the wall clock (G2-A2, X10): judged at a
@@ -1616,7 +1647,11 @@ def create_app(
                    "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}
         if reading is not None:
             payload["reading"] = reading
+            if linked_by:
+                payload["actor"] = linked_by
         written = audit.append(AuditEvent(hospital, "ingest", obs.patient_id, obs.code.value, payload))
+        if on_written is not None:
+            on_written(written)
         for a in alerts:
             audit.append(AuditEvent(hospital, "alert", a.patient_id, a.kind,
                                     {"severity": a.severity, "urgency": a.urgency, "summary": a.summary,
@@ -1704,9 +1739,12 @@ def create_app(
         _engine(hospital)       # the tenant is rehydrated before the request's clock is read, as before the move
         # One wall-clock instant per request (G2-A2, X10): `_apply_reading` judges, stamps and frames at it.
         wall_now = datetime.now(timezone.utc)
-        alerts, written = await _apply_reading(hospital, obs, record, wall_now)
-        # G3-05 (D6, D7): the record's row, after the `ingest` row it points at.
-        _file_recorded(hospital, record, [device_reading(hospital, obs, received_at=wall_now, audit_id=written.id)])
+        # G3-05 (D6, D7): the record's row is filed by `_apply_reading` right after the `ingest` row it points at —
+        # before the rest of the tail, so a failure there leaves a row a re-send is recognised by (D14).
+        alerts, _ = await _apply_reading(
+            hospital, obs, record, wall_now,
+            on_written=lambda written: _file_recorded(
+                hospital, record, [device_reading(hospital, obs, received_at=wall_now, audit_id=written.id)]))
         return {"patient_id": obs.patient_id, "alerts": [asdict(a) for a in alerts]}
 
     @app.post("/ack")

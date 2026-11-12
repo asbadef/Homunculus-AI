@@ -5,6 +5,7 @@ claim released when the write fails, and a restart replaying the same picture. S
 (CLAUDE.md rule 6)."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,7 +17,7 @@ from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
 from homunculus.api.readings import (
     LIST_MAX, POLICY_UNMATCHED, READING_ASSIGNED, READING_NEEDS_PERSON, READING_REJECTED, REASON_UNKNOWN,
-    STATE_ASSIGNED, STATE_REJECTED, STATE_UNMATCHED, device_reading,
+    RESOLVE_ALREADY_HELD, STATE_ASSIGNED, STATE_REJECTED, STATE_UNMATCHED, device_reading,
 )
 from homunculus.canonical import Observation, SignalCode
 from homunculus.scope import Scope, ScopeReason
@@ -361,6 +362,7 @@ class TestLinking:
         rows = audit.records(tenant="h1", patient_id=KEY, event_type="ingest", limit=100)
         assert sorted(row.payload["reading"] for row in rows) == ids
         assert all(row.payload["device"] == "CONNEX-3A" and row.payload["obs_ts"] == WHEN.isoformat() for row in rows)
+        assert all(row.payload["actor"] == "hem.ayse" for row in rows)    # the chain names who linked each one (I-4)
         assert len(audit.records(tenant="h1", patient_id=KEY, event_type="notification", limit=10)) == 1
         [linked] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
         assert (linked.patient_id, linked.subject) == (KEY, "reading")
@@ -494,12 +496,12 @@ class TestLinking:
             assert _assign(client, [still["id"]]).status_code == 200
             assert store.get("h1", [still["id"]])[0].state == STATE_ASSIGNED
 
-    def test_a_raise_mid_set_keeps_the_reading_in_progress_claimed_and_releases_the_rest(self):
-        """B3 review, change 1: the second reading's `ingest` row was written but a later append (its alert) fails —
-        the engine holds it and the audit trail names it. It is NOT released (released, a retry or a link elsewhere
-        would write a second `ingest` row for it): it stays claimed, `patient_key` None, for `reconcile` to finish
-        from its `ingest` row. The first reading, applied and finalized, stays linked; the third, never attempted,
-        goes back to the list. The answer is 500."""
+    def test_a_raise_after_a_readings_ingest_row_leaves_it_linked_and_releases_only_the_rest(self):
+        """The second reading's `ingest` row was written and the table's row filed at once (B6 review); then a
+        later append (its alert) fails. The engine holds the reading, the trail names it, the table has it linked:
+        it is NOT released (released, a retry or a link elsewhere would write a second `ingest` row). The first
+        reading stays linked too; the third, never attempted, goes back to the list. The answer is 500, and the
+        audit row names the two that went in."""
         audit = _FailsOnce()
         app, store, _ = _app(audit=audit)
         with TestClient(app, raise_server_exceptions=False) as client:
@@ -521,21 +523,22 @@ class TestLinking:
             assert r.status_code == 500
             assert seen["n"] == 2                                        # the third reading was never attempted
             states = {row.code: (row.state, row.patient_key) for row in store.get("h1", ids)}
-            assert states == {"heart_rate": (STATE_ASSIGNED, KEY),       # applied and finalized: stays linked
-                              "resp_rate": (STATE_ASSIGNED, None),       # in progress: stays claimed
+            assert states == {"heart_rate": (STATE_ASSIGNED, KEY),       # applied and filed
+                              "resp_rate": (STATE_ASSIGNED, KEY),        # its `ingest` row was written: filed too
                               "spo2": (STATE_UNMATCHED, None)}           # not yet attempted: back on the list
             assert [x["code"] for s in _list(client)["sets"] for x in s["readings"]] == ["spo2"]
-            # its `ingest` row is there, naming it: `reconcile` finalizes the claim from it, never a second row
-            [row] = [e for e in audit.records(tenant="h1", patient_id=KEY, event_type="ingest", limit=10)
-                     if e.subject == "resp_rate"]
-            assert row.payload["reading"] == next(x.id for x in store.get("h1", ids) if x.code == "resp_rate")
-            # B6 review: the part that DID go in is audited — one `reading_assigned` row naming only the linked
-            # reading (not the claimed one, not the released one), by whom, under the patient
-            [linked] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+            # each `ingest` row names its reading and the person who linked it (I-4)
             by_code = {x.code: x.id for x in store.get("h1", ids)}
+            rows = {e.subject: e for e in audit.records(tenant="h1", patient_id=KEY, event_type="ingest", limit=10)}
+            assert {code: (e.payload["reading"], e.payload["actor"]) for code, e in rows.items()} == {
+                "heart_rate": (by_code["heart_rate"], "hem.ayse"), "resp_rate": (by_code["resp_rate"], "hem.ayse")}
+            # B6 review: the part that DID go in is audited — one `reading_assigned` row naming the two linked
+            # readings (not the released one), by whom, under the patient
+            [linked] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
             assert (linked.patient_id, linked.subject) == (KEY, "reading")
-            assert linked.payload == {"readings": [by_code["heart_rate"]], "received_key": TYPO, "reason": "unknown",
-                                      "device": "CONNEX-3A", "obs_ts": WHEN.isoformat(), "actor": "hem.ayse"}
+            assert linked.payload == {"readings": [by_code["heart_rate"], by_code["resp_rate"]], "received_key": TYPO,
+                                      "reason": "unknown", "device": "CONNEX-3A", "obs_ts": WHEN.isoformat(),
+                                      "actor": "hem.ayse"}
 
     def test_a_raise_with_no_reading_linked_writes_no_assigned_row(self):
         """Nothing went in (the first reading is the one in progress): there is no part of the set to audit."""
@@ -549,7 +552,7 @@ class TestLinking:
 
     def test_a_failing_audit_of_the_linked_part_changes_no_answer_after_a_raise(self):
         """B6 review: the partial row is best effort. The audit being down is why the link raised, and the append of
-        the row may fail too: the answer is still the original 500, nothing else is raised, and the claims stand."""
+        the row may fail too: the answer is still the original 500, and nothing else is raised."""
         audit = _FailsOnce()
         app, store, _ = _app(audit=audit)
         with TestClient(app, raise_server_exceptions=False) as client:
@@ -570,7 +573,7 @@ class TestLinking:
             assert r.status_code == 500
             assert audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10) == []
             states = {row.code: (row.state, row.patient_key) for row in store.get("h1", ids)}
-            assert states == {"heart_rate": (STATE_ASSIGNED, KEY), "resp_rate": (STATE_ASSIGNED, None),
+            assert states == {"heart_rate": (STATE_ASSIGNED, KEY), "resp_rate": (STATE_ASSIGNED, KEY),
                               "spo2": (STATE_UNMATCHED, None)}
 
     def test_a_reading_the_engine_took_is_never_released(self):
@@ -869,3 +872,241 @@ def test_another_hospital_neither_sees_nor_touches_the_list():
         assert _list(client, h2) == {"count": 0, "sets": []}
         assert _code(_reject(client, ids, headers=h2)) == "reading_not_unmatched"
         assert store.get("h1", ids)[0].state == STATE_UNMATCHED
+
+
+# ----------------------------------------------------------------------------- the independent review's findings
+
+def _ingest_rows(audit, patient=KEY):
+    return [r for r in audit.records(tenant="h1", event_type="ingest", limit=1000) if r.patient_id == patient]
+
+
+def _history(client, code, key=KEY):
+    return client.app.state.board_link._engine("h1").state(key).history(SignalCode(code))
+
+
+class TestOneReadingEntersTheTargetOnce:
+    """Review I-1: D14 compares the number a reading arrived under, and a linked row keeps the WRONG one — so the
+    device's re-send under the corrected number was not recognised, and the engine, the trail and the replay held
+    one measurement twice. The record is asked under the patient it is FILED under as well, in both orders."""
+
+    def test_a_linked_reading_re_sent_under_the_corrected_number_is_a_duplicate(self, world):
+        client, store, audit = world
+        _send(client, [("heart_rate", 131)])                              # under the typo: listed
+        assert _assign(client, _ids(client)).status_code == 200
+        r = client.post("/ingest", json=obs("heart_rate", 131, KEY, WHEN), headers=DEVICE)
+        assert r.json() == {"patient_id": KEY, "duplicate": True}
+        assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1
+        assert len(store.for_patient("h1", KEY, since=WHEN - timedelta(hours=1), until=WHEN + timedelta(hours=1))) == 1
+
+    def test_a_reading_re_sent_under_the_corrected_number_first_is_not_entered_again_by_the_link(self, world):
+        """The other order: the device re-sends under KEY (applied), then the nurse links the typo's set to KEY."""
+        client, store, audit = world
+        _send(client, [("heart_rate", 131)])                              # under the typo: listed
+        ids = _ids(client)
+        r = client.post("/ingest", json=obs("heart_rate", 131, KEY, WHEN), headers=DEVICE)
+        assert "alerts" in r.json()                                       # KEY is admitted: applied
+        linked = _assign(client, ids)
+        assert linked.status_code == 200 and linked.json()["assigned"] == ids
+        assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1     # not twice
+        [row] = store.get("h1", ids)
+        assert (row.state, row.patient_key, row.resolved_by) == (STATE_REJECTED, None, "hem.ayse")
+        assert row.resolve_reason == RESOLVE_ALREADY_HELD and row.value == 131.0      # closed; the value is kept
+        [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+        assert assigned.payload["already_held"] == ids and assigned.payload["readings"] == ids
+        assert _list(client) == {"count": 0, "sets": []}
+
+    def test_in_one_set_only_the_reading_the_target_holds_is_left_out(self, world):
+        client, store, audit = world
+        _send(client, [("heart_rate", 131), ("spo2", 97)])
+        ids = _ids(client)
+        assert "alerts" in client.post("/ingest", json=obs("heart_rate", 131, KEY, WHEN), headers=DEVICE).json()
+        assert _assign(client, ids).status_code == 200
+        by_code = {row.code: row for row in store.get("h1", ids)}
+        assert (by_code["heart_rate"].state, by_code["heart_rate"].patient_key) == (STATE_REJECTED, None)
+        assert (by_code["spo2"].state, by_code["spo2"].patient_key) == (STATE_ASSIGNED, KEY)
+        assert {r.subject for r in _ingest_rows(audit)} == {"heart_rate", "spo2"} and len(_ingest_rows(audit)) == 2
+        [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+        assert assigned.payload["already_held"] == [by_code["heart_rate"].id]
+
+    def test_a_target_that_holds_nothing_of_the_set_gets_no_already_held_key(self, world):
+        client, _, audit = world
+        _send(client, [("heart_rate", 131)])
+        assert _assign(client, _ids(client)).status_code == 200
+        [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+        assert "already_held" not in assigned.payload
+
+    def test_a_store_that_cannot_answer_links_the_reading(self, caplog):
+        """The check fails OPEN, as the door's: a doubt never keeps a reading out. Logged: class and hospital only."""
+        store = _Leaky(admitted={("h1", KEY): ADMISSION})
+        app, _, audit = _app(store=store)
+        with caplog.at_level(logging.ERROR, logger="homunculus.api.readings"), \
+                TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("heart_rate", 131.5)])
+            ids = _ids(client)
+            store.fail = {"seen"}
+            assert _assign(client, ids).status_code == 200
+        assert len(_ingest_rows(audit)) == 1
+        text = " ".join(r.getMessage() for r in caplog.records)
+        assert "RuntimeError" in text and "h1" in text and KEY not in text and "131.5" not in text
+
+
+class _Leaky(_Flaky):
+    """A store that fails with a driver's kind of text — the number and the value in it."""
+
+    def seen(self, tenant, received_key, code, observed_at, source, value):
+        if "seen" in self.fail:
+            raise RuntimeError(f"Failing row contains ({received_key}, {value})")
+        return super().seen(tenant, received_key, code, observed_at, source, value)
+
+    def add(self, row):
+        if "add" in self.fail:
+            raise RuntimeError(f"Failing row contains ({row.received_key}, {row.value})")
+        return super().add(row)
+
+
+class TestARetryAfterAPartialFailure:
+    """Review I-2: the table's row used to be filed after the whole tail, so a failure inside the tail (an alert
+    row) made the bridge's retry look new — and enter the engine and the trail a second time. It is filed the
+    moment the `ingest` row is written."""
+
+    def test_a_retry_after_a_failed_alert_append_is_a_duplicate_and_the_engine_holds_the_value_once(self):
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        body = obs("heart_rate", 140, KEY, WHEN)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            audit.fail_on = "alert"
+            first = client.post("/ingest", json=body, headers=DEVICE)
+            retry = client.post("/ingest", json=body, headers=DEVICE)
+            assert first.status_code == 500
+            assert (retry.status_code, retry.json()) == (200, {"patient_id": KEY, "duplicate": True})
+            assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1
+            assert len(store.for_patient("h1", KEY, since=WHEN - timedelta(hours=1),
+                                         until=WHEN + timedelta(hours=1))) == 1
+
+    def test_a_retry_after_a_failed_ingest_append_is_applied_once(self):
+        """The window that remains, stated: the `ingest` append itself failed, so there is no row and nothing is
+        filed — the retry is the first time the trail sees the reading."""
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        body = obs("heart_rate", 140, KEY, WHEN)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            audit.fail_on = "ingest"
+            assert client.post("/ingest", json=body, headers=DEVICE).status_code == 500
+            assert store.for_patient("h1", KEY, since=WHEN - timedelta(hours=1), until=WHEN + timedelta(hours=1)) == []
+            assert "alerts" in client.post("/ingest", json=body, headers=DEVICE).json()
+            assert len(_ingest_rows(audit)) == 1
+
+    def test_the_door_still_answers_what_it_answered(self, world):
+        client, store, audit = world
+        r = client.post("/ingest", json=obs("heart_rate", 140, KEY, WHEN), headers=DEVICE)
+        assert r.status_code == 200 and sorted(r.json()) == ["alerts", "patient_id"]
+        [row] = store.for_patient("h1", KEY, since=WHEN - timedelta(hours=1), until=WHEN + timedelta(hours=1))
+        assert (row.audit_id, row.entry_id, row.admission_id) == (_ingest_rows(audit)[0].id,) * 2 + (ADMISSION,)
+
+    def test_a_link_whose_tail_fails_leaves_the_reading_filed_so_a_re_send_is_a_duplicate(self):
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("heart_rate", 140)])
+            ids = _ids(client)
+            audit.fail_on = "alert"
+            assert _assign(client, ids).status_code == 500
+            [row] = store.get("h1", ids)
+            assert (row.state, row.patient_key) == (STATE_ASSIGNED, KEY)           # filed, not left claimed
+            again = client.post("/ingest", json=obs("heart_rate", 140, KEY, WHEN), headers=DEVICE)
+            assert again.json() == {"patient_id": KEY, "duplicate": True}
+            assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1
+
+
+class TestAnAdmittedNumberIsThatPatientsScope:
+    """Review I-3: a number unknown when its readings arrived and ADMITTED since belongs to a patient now: its set
+    is visible only where the caller's scope reaches that patient, however its reason still reads."""
+    LATE = "202600000077"
+
+    def _arrive_then_admit(self, client, identities, unit="u-2"):
+        client.post("/ingest", json=obs("spo2", 86, self.LATE, WHEN), headers=DEVICE)
+        identities.apply("h1", IdentityRecord(self.LATE, family="Hasta", given="Test", state="admitted", source=KABUL,
+                                              unit_id=unit, bed_id="b-77", updated_at=WHEN + timedelta(minutes=1)))
+
+    def test_a_scoped_nurse_does_not_see_the_set_of_another_units_patient(self):
+        identities = _identities()
+        app, store, _ = _app(identities=identities)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            self._arrive_then_admit(client, identities)
+            ids = _ids(client, self.LATE)
+            assert ids and _ids(client, self.LATE, WARD2) == ids and _ids(client, self.LATE, NURSE) == ids
+            assert _ids(client, self.LATE, WARD1) == []                 # unit u-1: not hers
+            assert _list(client, WARD1)["count"] == 0
+
+    def test_nor_can_she_reject_it_or_link_it_to_her_own_patient(self):
+        identities = _identities()
+        app, store, _ = _app(identities=identities)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            self._arrive_then_admit(client, identities)
+            ids = _ids(client, self.LATE)
+            assert _code(_reject(client, ids, headers=WARD1)) == "reading_not_unmatched"
+            assert _code(_assign(client, ids, KEY, WARD1)) == "reading_not_unmatched"
+            assert store.get("h1", ids)[0].state == STATE_UNMATCHED
+
+    def test_a_number_nobody_is_admitted_under_stays_everybodys(self, world):
+        client, _, _ = world
+        _send(client, [("spo2", 97)], key=TYPO)
+        assert all(_ids(client, TYPO, who) for who in (NURSE, WARD1, WARD2))
+
+    def test_the_scope_card_is_built_uncounted(self):
+        """A list polled every minute by every nurse is no bed-access event: a HIS-fed patient on a location the
+        bed map does not cover must not move the discovery counter (`BedMap.unmatched`)."""
+        from homunculus.tenant.bedmap import BedMap
+        bedmap, identities = BedMap(), _identities()
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, resolve_scope=_resolve_scope,
+                         audit=InMemoryAuditLog(), identities=identities, readings=_Flaky(), bedmap=bedmap,
+                         unknown_readings=POLICY_UNMATCHED)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            client.post("/ingest", json=obs("spo2", 86, self.LATE, WHEN), headers=DEVICE)
+            identities.apply("h1", IdentityRecord(self.LATE, family="Hasta", given="Test", state="admitted",
+                                                  source="comed", unit="ICU", room="9", bed="9",
+                                                  updated_at=WHEN + timedelta(minutes=1)))
+            before = bedmap.unmatched()
+            for _ in range(2):
+                _list(client, WARD1)
+            assert bedmap.unmatched() == before
+
+
+class TestTheListIsBoundedAtTheDatabase:
+    def test_the_list_asks_the_store_for_a_bounded_number_of_rows(self, world, monkeypatch):
+        """Review M2: the newest UNMATCHED_ROWS_MAX rows are read, never a week of a flooded list; when the cut
+        bites, `truncated` says so and `count` is the number of sets among the rows read."""
+        import homunculus.api.readings as module
+        client, store, _ = world
+        monkeypatch.setattr(module, "UNMATCHED_ROWS_MAX", 5)
+        TestTheList._fill(store, 8)
+        body = _list(client)
+        assert (body["count"], body["truncated"]) == (5, True)
+        assert [s["observed_at"] for s in body["sets"]] == [(WHEN - timedelta(seconds=i)).isoformat() for i in range(5)]
+
+    def test_rows_exactly_at_the_bound_are_not_a_cut(self, world, monkeypatch):
+        import homunculus.api.readings as module
+        client, store, _ = world
+        monkeypatch.setattr(module, "UNMATCHED_ROWS_MAX", 5)
+        TestTheList._fill(store, 5)
+        body = _list(client)
+        assert body["count"] == 5 and "truncated" not in body
+
+
+class TestTheLogsCarryNoNumberOrValue:
+    """Review M1: the driver's text («Failing row contains (…)») carries the number and the value. A failed table
+    write, or a failed duplicate check, is logged with the hospital and the class only — and no traceback."""
+
+    @pytest.mark.parametrize("failing", ["add", "seen"])
+    def test_the_door_logs_the_class_and_the_hospital_only(self, caplog, failing):
+        store = _Leaky(admitted={("h1", KEY): ADMISSION})
+        app, _, _ = _app(store=store)
+        store.fail = {failing}
+        with caplog.at_level(logging.ERROR, logger="homunculus.api.app"), \
+                TestClient(app, raise_server_exceptions=False) as client:
+            r = client.post("/ingest", json=obs("spo2", 91.5, KEY, WHEN), headers=DEVICE)
+            assert r.status_code == 200 and "alerts" in r.json()           # the request never fails for it
+        [logged] = [rec for rec in caplog.records if rec.name == "homunculus.api.app" and rec.levelno >= logging.ERROR]
+        assert "RuntimeError" in logged.getMessage() and "h1" in logged.getMessage()
+        assert logged.exc_info is None
+        assert KEY not in caplog.text and "91.5" not in caplog.text and "Failing row" not in caplog.text

@@ -63,7 +63,8 @@ class PostgresReadingStore:
              value: float) -> bool:
         with self._engine.connect() as conn:
             return conn.execute(text(
-                "SELECT 1 FROM vital_readings WHERE origin = 'device' AND tenant = :tenant AND received_key = :key "
+                "SELECT 1 FROM vital_readings WHERE origin = 'device' AND tenant = :tenant "
+                "AND (received_key = :key OR patient_key = :key) "
                 "AND code = :code AND observed_at = :at AND source = :source AND value = :value LIMIT 1"),
                 {"tenant": tenant, "key": received_key, "code": code, "at": observed_at, "source": source,
                  "value": value}).first() is not None
@@ -93,11 +94,19 @@ class PostgresReadingStore:
                                 {"tenant": tenant, "key": patient_key, "since": since, "until": until}).mappings().all()
         return [_row(r) for r in rows]
 
-    def unmatched(self, tenant: str, *, since: datetime) -> list[Reading]:
+    def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]:
+        """The waiting rows, oldest arrival first. With a `limit`: the NEWEST `limit` of them (the database cuts
+        the list; a flooded week is never read whole), in the same order."""
+        where = " WHERE tenant = :tenant AND state = 'unmatched' AND received_at >= :since"
+        if limit is None:
+            query, params = where + " ORDER BY received_at, id", {"tenant": tenant, "since": since}
+        else:
+            query = where + " ORDER BY received_at DESC, id DESC LIMIT :limit"
+            params = {"tenant": tenant, "since": since, "limit": max(int(limit), 0)}
         with self._engine.connect() as conn:
-            rows = conn.execute(text(_SELECT + " WHERE tenant = :tenant AND state = 'unmatched' AND received_at >= :since "
-                                     "ORDER BY received_at, id"), {"tenant": tenant, "since": since}).mappings().all()
-        return [_row(r) for r in rows]
+            rows = conn.execute(text(_SELECT + query), params).mappings().all()
+        found = [_row(r) for r in rows]
+        return found if limit is None else found[::-1]
 
     def claim(self, tenant: str, ids: Iterable[int], *, by: str, at: datetime) -> list[Reading]:
         """Every row or none: the update and the count are one transaction, and the raise rolls it back."""

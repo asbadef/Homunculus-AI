@@ -84,6 +84,13 @@ SET_MAX = 50
 #: that the answer is short of them (B6 review). A monitor left on a discharged number lists a set per round,
 #: and the list is polled every minute by every nurse.
 LIST_MAX = 200
+#: The most ROWS the list reads from the table: the newest ones (B6 review). A set is one device round, far fewer
+#: than SET_MAX values, so LIST_MAX sets fit; a week of a flooded list is cut in the database, never read whole.
+#: When the cut bites, `truncated` is set and `count` is the number of sets among the rows read — a lower bound.
+UNMATCHED_ROWS_MAX = LIST_MAX * SET_MAX
+#: The reason a reading is closed with when the patient it was linked to already holds it (the device sent it
+#: again under the corrected number, or a nurse typed it): linking it would put it in the engine twice.
+RESOLVE_ALREADY_HELD = "the patient's record already holds this reading: it was not entered a second time"
 #: A reading id is a 64-bit signed integer in the table: a larger one names no reading, and is refused as a
 #: malformed body rather than left to the database.
 ID_MAX = 2**63 - 1
@@ -157,6 +164,10 @@ class ReadingStore(Protocol):
 
     `add` answers the stored row, or None when the table already holds it: the same audit row (`audit_id`), or —
     a device reading — the same number, code, time, device and value (spec D14).
+    `seen` is D14's question asked of a number: does the record hold this device reading under it — as RECEIVED
+    under that number, or FILED under that patient (a reading linked from a mistyped number keeps the wrong one as
+    its `received_key`, and `patient_key` is where it counts: B6 review). `unmatched` with a `limit` answers only
+    the newest `limit` rows (still oldest first), so the database never reads a week of a flooded list.
     `claim` moves EVERY row named from `unmatched` to `assigned` (with `resolved_by`, `resolved_at`, and
     `patient_key` still None) or none of them: ReadingNotUnmatched. `release` puts a claim back; `finalize` files
     one under a patient; `reject` closes claims as `rejected`. The three touch claims only, so each is safe to
@@ -171,7 +182,7 @@ class ReadingStore(Protocol):
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]: ...
     def get(self, tenant: str, ids: Iterable[int]) -> list[Reading]: ...
     def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime) -> list[Reading]: ...
-    def unmatched(self, tenant: str, *, since: datetime) -> list[Reading]: ...
+    def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]: ...
     def claim(self, tenant: str, ids: Iterable[int], *, by: str, at: datetime) -> list[Reading]: ...
     def claims(self, tenant: str) -> list[Reading]: ...
     def release(self, tenant: str, ids: Iterable[int]) -> None: ...
@@ -188,6 +199,15 @@ def _same_reading(row: Reading, tenant: str, received_key: str, code: str, obser
                   value: float) -> bool:
     """D14's identity of a device reading: the columns of the table's unique index."""
     return (row.origin == ORIGIN_DEVICE and row.tenant == tenant and row.received_key == received_key
+            and row.code == code and row.observed_at == observed_at and row.source == source
+            and row.value == value)
+
+
+def _filed_as(row: Reading, tenant: str, patient_key: str, code: str, observed_at: datetime, source: str,
+              value: float) -> bool:
+    """The same device reading, FILED under `patient_key` — whatever number it arrived under. `seen` asks this
+    as well as `_same_reading`; `add` does not (the unique index is on the number as received)."""
+    return (row.origin == ORIGIN_DEVICE and row.tenant == tenant and row.patient_key == patient_key
             and row.code == code and row.observed_at == observed_at and row.source == source
             and row.value == value)
 
@@ -227,6 +247,7 @@ class InMemoryReadingStore:
     def seen(self, tenant: str, received_key: str, code: str, observed_at: datetime, source: str,
              value: float) -> bool:
         return any(_same_reading(r, tenant, received_key, code, observed_at, source, value)
+                   or _filed_as(r, tenant, received_key, code, observed_at, source, value)
                    for r in self._rows.values())
 
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]:
@@ -241,9 +262,10 @@ class InMemoryReadingStore:
         rows = [r for r in self._of(tenant) if r.patient_key == patient_key and since <= r.observed_at <= until]
         return sorted(rows, key=lambda r: (r.observed_at, r.id))
 
-    def unmatched(self, tenant: str, *, since: datetime) -> list[Reading]:
+    def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]:
         rows = [r for r in self._of(tenant) if r.state == STATE_UNMATCHED and r.received_at >= since]
-        return sorted(rows, key=lambda r: (r.received_at, r.id))
+        rows.sort(key=lambda r: (r.received_at, r.id))
+        return rows if limit is None else rows[max(len(rows) - limit, 0):]
 
     def claim(self, tenant: str, ids: Iterable[int], *, by: str, at: datetime) -> list[Reading]:
         wanted = sorted(set(ids))
@@ -366,8 +388,10 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     is the link's target check — in scope (404), not discharged (409), on the board (404) — answering the
     identity record; `identity(hospital, patient_id)` reads that record again, synchronously, before each reading
     of a set goes in (the target may be discharged between two of them — see `assign`); `admission_for(hospital,
-    record)` is the stay a reading is stamped with (D8); `apply(hospital, obs, record, now, reading=id)` is the
-    device door's own tail (`_apply_reading`)."""
+    record)` is the stay a reading is stamped with (D8); `apply(hospital, obs, record, now, reading=id, actor=name,
+    on_written=callback)` is the device door's own tail (`_apply_reading`): it names the reading and the person who
+    linked it in the `ingest` row, and calls `on_written(row)` right after that row is written, so the table's row
+    is filed before the rest of the tail can fail (B6 review)."""
     router = APIRouter(tags=["readings"])
 
     def _person(who: Caller) -> str:
@@ -398,33 +422,64 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             return known[key]
         return check
 
-    def _assigned_event(hospital: str, patient_id: str, first: Reading, ids: list[int], actor: str) -> AuditEvent:
-        """The one row of a link: the readings of the set that went in, under the patient they went in for."""
-        return AuditEvent(hospital, READING_ASSIGNED, patient_id, "reading", {
-            "readings": ids, "received_key": first.received_key, "reason": first.unmatched_reason,
-            "device": first.source, "obs_ts": _iso(first.observed_at), "actor": actor})
+    def _assigned_event(hospital: str, patient_id: str, first: Reading, ids: list[int], actor: str,
+                        held: Iterable[int] = ()) -> AuditEvent:
+        """The one row of a link: the readings of the set that went in, under the patient they went in for.
+        `already_held` (present only when there are any): readings of the set the patient's record held already —
+        closed, never entered a second time; they are among `readings` on a finished link."""
+        payload = {"readings": ids, "received_key": first.received_key, "reason": first.unmatched_reason,
+                   "device": first.source, "obs_ts": _iso(first.observed_at), "actor": actor}
+        if held:
+            payload["already_held"] = list(held)
+        return AuditEvent(hospital, READING_ASSIGNED, patient_id, "reading", payload)
 
-    def _note_partial(hospital: str, patient_id: str, first: Reading, linked: list[int], actor: str) -> None:
+    def _note_partial(hospital: str, patient_id: str, first: Reading, linked: list[int], held: list[int],
+                      actor: str) -> None:
         """A set that stopped part-way (a raise, or a discharge between two readings) is audited for what DID go
         in: one `reading_assigned` row listing only the readings linked, if there is one. The readings are in the
-        engine with their `ingest` rows; this row says who linked them. Best effort — the request is already
-        failing, and the answer it gives must not change: a failed append is logged with its class only, never
-        the number or a value."""
+        engine with their `ingest` rows (which also name the person: `actor`); this row says it once for the set.
+        Best effort — the request is already failing, and the answer it gives must not change: a failed append is
+        logged with its class only, never the number or a value."""
         if not linked:
             return
         try:
-            audit.append(_assigned_event(hospital, patient_id, first, linked, actor))
+            audit.append(_assigned_event(hospital, patient_id, first, linked, actor, held))
         except Exception as exc:
             log.error("vital_readings: kısmen bağlanan kümenin denetim satırı yazılamadı (hastane %s, %d ölçüm, %s)",
                       hospital, len(linked), type(exc).__name__)
+
+    def _already_held(hospital: str, patient_id: str, row: Reading) -> bool:
+        """Does the target's record hold this very reading — the same code, time, device and value, received
+        under the corrected number or filed there already (D14's `seen`, asked of the target)? A store that cannot
+        answer fails OPEN, as the door's does: the reading is linked."""
+        try:
+            return store.seen(hospital, patient_id, row.code, row.observed_at, row.source, row.value)
+        except Exception as exc:
+            log.error("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s, %s); ölçüm bağlanır",
+                      hospital, type(exc).__name__)
+            return False
+
+    def _filer(hospital: str, patient_id: str, admission: str | None, row: Reading,
+               linked: list[int]) -> Callable[[object], None]:
+        """What `apply` calls right after it has written the reading's `ingest` row: the table's row is filed
+        under the patient THEN, not at the end of the tail (B6 review) — so a failure later in the tail leaves a
+        row a re-send is recognised by. It never raises: the audit row exists, so a table that cannot be written
+        leaves the reading claimed for `reconcile` to file from that row."""
+        def filed(written) -> None:
+            try:
+                store.finalize(hospital, row.id, patient_key=patient_id, admission_id=admission, entry_id=written.id)
+            except Exception as exc:
+                log.error("vital_readings: bağlanan ölçümün satırı yazılamadı (hastane %s, %s); reconcile tamamlar",
+                          hospital, type(exc).__name__)
+                return
+            linked.append(row.id)
+        return filed
 
     async def _one_set(who: Caller, authorization: str | None, ids: list[int]) -> list[Reading]:
         """The rows named, when every one is waiting, visible to this caller (D11) and of one set — else the
         refusal. A row the caller may not see answers as one that is not there."""
         visible = _once_per_number(await sees(who, authorization))
-        rows = [r for r in store.get(who.hospital, ids)
-                if r.state == STATE_UNMATCHED
-                and (r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key))]
+        rows = [r for r in store.get(who.hospital, ids) if r.state == STATE_UNMATCHED and visible(r.received_key)]
         if len(rows) != len(ids):
             raise reading_refusal(409, READING_NOT_UNMATCHED)
         if len({set_key(r) for r in rows}) != 1:
@@ -443,9 +498,9 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             return
         try:
             store.release(hospital, ids)
-        except Exception:
-            log.exception("vital_readings: %d ölçümün kilidi bırakılamadı (hastane %s); reconcile bırakır",
-                          len(ids), hospital)
+        except Exception as exc:
+            log.error("vital_readings: %d ölçümün kilidi bırakılamadı (hastane %s, %s); reconcile bırakır",
+                      len(ids), hospital, type(exc).__name__)
 
     @router.get("/readings/unmatched")
     async def list_unmatched(authorization: str | None = Header(default=None)):
@@ -453,10 +508,11 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         _person(who)
         visible = _once_per_number(await sees(who, authorization))
         now = clock()
-        rows = [r for r in store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW)
-                if r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key)]
+        fetched = store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW, limit=UNMATCHED_ROWS_MAX + 1)
+        cut = len(fetched) > UNMATCHED_ROWS_MAX          # the database held more than it was asked for
+        rows = [r for r in (fetched[1:] if cut else fetched) if visible(r.received_key)]
         sets = unmatched_sets(rows, now)
-        if len(sets) > LIST_MAX:                         # the newest LIST_MAX; `count` stays the true number
+        if cut or len(sets) > LIST_MAX:                  # the newest LIST_MAX sets; `count` is what was read
             return {"count": len(sets), "sets": sets[:LIST_MAX], "truncated": True}
         return {"count": len(sets), "sets": sets}
 
@@ -493,8 +549,19 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         # two readings of a set must not put the discharged patient back in the engine, publish a card or notify
         # (D4: no alert for a discharged number). The read is synchronous and the check immediately precedes the
         # `apply`, so a discharge can only land between two readings, never inside the decision.
+        #
+        # The target's record may already hold a reading of the set (B6 review): the device sent it again under the
+        # corrected number, or the order was the other way round. Linking it would put it in the engine twice —
+        # two `ingest` rows, both replayed. It is not applied: its row is closed (`rejected`, RESOLVE_ALREADY_HELD,
+        # the value kept) and the link's audit row names it under `already_held`. The check precedes each
+        # `apply` with no await between, as the door's `_resent` does.
+        #
+        # The table's row is filed by `apply` itself the moment the `ingest` row exists (`_filer`), so a failure
+        # later in the tail leaves the reading filed and a re-send recognised. `linked` is what was applied AND
+        # filed.
         waiting = [r.id for r in claimed]
         linked: list[int] = []
+        held: list[int] = []
         alerts: list = []
         discharged = False
         try:
@@ -505,22 +572,25 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                     discharged = True
                     break
                 waiting.remove(row.id)
+                if _already_held(hospital, patient_id, row):
+                    store.reject(hospital, [row.id], reason=RESOLVE_ALREADY_HELD)
+                    held.append(row.id)
+                    continue
                 obs = Observation(patient_id=patient_id, code=SignalCode(row.code), value=row.value, unit=row.unit,
                                   timestamp=row.observed_at, source_device=row.source)
-                alerts, written = await apply(hospital, obs, record, now, reading=row.id)
-                store.finalize(hospital, row.id, patient_key=patient_id, admission_id=admission, entry_id=written.id)
-                linked.append(row.id)
+                alerts, _ = await apply(hospital, obs, record, now, reading=row.id, actor=actor,
+                                        on_written=_filer(hospital, patient_id, admission, row, linked))
         except Exception:
             _release(hospital, waiting)
-            _note_partial(hospital, patient_id, claimed[0], linked, actor)
+            _note_partial(hospital, patient_id, claimed[0], linked, held, actor)
             raise
         if discharged:
             # What was applied stays applied and finalized and is audited as the part of the set that went in; the
             # rest return to the list; nothing more reaches the engine.
             _release(hospital, waiting)
-            _note_partial(hospital, patient_id, claimed[0], linked, actor)
+            _note_partial(hospital, patient_id, claimed[0], linked, held, actor)
             raise reading_refusal(409, READING_TARGET_DISCHARGED)
-        audit.append(_assigned_event(hospital, patient_id, claimed[0], ids, actor))
+        audit.append(_assigned_event(hospital, patient_id, claimed[0], ids, actor, held))
         return {"assigned": ids, "patient_id": patient_id, "alerts": [a.kind for a in alerts]}
 
     @router.post("/readings/unmatched/reject")
