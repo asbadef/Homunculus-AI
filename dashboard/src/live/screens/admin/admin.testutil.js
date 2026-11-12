@@ -96,7 +96,7 @@ export const PERMISSION_TEXTS = Object.freeze({
   "care_team.claim": "Claim a care-team role on a patient",
   "care_team.assign": "Assign others to a patient's care team",
   "handover.sign": "Sign or countersign a handover",
-  "shifts.manage": "Create shift schedules",
+  "shifts.manage": "Assign nurses to beds for this shift or the next, unit by unit (the İş yükü page's assignment form; GET /shift-schedule/nurses, PUT /shift-schedule)",
   "break_glass.use": "Open, extend or close a break-glass session",
   "audit.view": "Read the audit trail",
   "users.manage": "Users: create, edit, activate, reset password or MFA, unlock an AD sign-in, set groups; read a user's unit and bed scope, count the users with none, and assign one (assigning also needs a caller whose own scope is unrestricted by role); search and import AD accounts, read the AD group mapping (changing the mapping needs every permission)",
@@ -123,6 +123,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   "pharmacy.view": "Open the Eczane page: per patient in one's own units — vasopressors, the antibiotic clock, creatinine and the day's fluid balance; read-only",
   // G4-03
   "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators (GET /quality), as counts and times only",
+  // G4-04
+  "workload.view": "Open the İş yükü page and read each unit's workload for the current shift — patients, nurses, unassigned patients, late and remaining tasks, alarms waiting — as counts, and the shift's nurse–bed assignment (GET /shift-schedule)",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 

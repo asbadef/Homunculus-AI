@@ -34,7 +34,7 @@ export default {
       assign: "Başkalarını bir hastanın bakım ekibine atar",
     },
     handover: { sign: "Devri imzalar ya da karşı imzalar" },
-    shifts: { manage: "Nöbet çizelgesi oluşturur" },
+    shifts: { manage: "Nöbet atamasını yapar: bu ve sonraki nöbet için, birim birim, hemşireleri yataklara atar" },
     break_glass: { use: "Acil erişim oturumu açar, uzatır ya da kapatır" },
     audit: { view: "Denetim kaydını okur" },
     users: { manage: "Kullanıcıları yönetir: oluşturma, düzenleme, etkinleştirme, şifre ve 2FA sıfırlama, dizin girişini açma, grup atama; bir kullanıcının birim ve yatak kapsamını okur, hiç ataması olmayanları sayar ve kapsam atar (atamayı yalnız kendi kapsamı rolü gereği sınırsız olan biri yapabilir); AD hesaplarını arayıp aktarır, AD grup eşlemesini okur (eşlemeyi değiştirmek her yetkiyi gerektirir)" },
@@ -59,6 +59,8 @@ export default {
     pharmacy: { view: "“Eczane” sayfasını açar: kendi birimlerindeki hastaların vazopresörlerini, antibiyotik süresini, kreatininini ve günün sıvı dengesini salt okunur görür" },
     // G4-03 — Kalite göstergeleri
     quality: { view: "Kalite göstergelerini görür" },
+    // G4-04 — İş yükü
+    workload: { view: "“İş yükü” sayfasını açar: bu nöbet için birim birim hasta, hemşire, atanmamış hasta, geciken ve kalan iş, yanıt bekleyen alarm sayılarını ve nöbetin hemşire–yatak atamasını görür" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -79,7 +81,7 @@ export default {
       assign: "Başqalarını xəstənin baxım komandasına təyin edir",
     },
     handover: { sign: "Təhvili imzalayır və ya qarşı imzalayır" },
-    shifts: { manage: "Növbə cədvəli yaradır" },
+    shifts: { manage: "Növbə təyinatını edir: bu və növbəti növbə üçün, şöbə-şöbə, tibb bacılarını çarpayılara təyin edir" },
     break_glass: { use: "Təcili giriş sessiyası açır, uzadır və ya bağlayır" },
     audit: { view: "Audit jurnalını oxuyur" },
     users: { manage: "İstifadəçiləri idarə edir: yaratma, redaktə, aktivləşdirmə, şifrə və 2FA sıfırlama, kataloq girişini açma, qrup təyin etmə; istifadəçinin şöbə və çarpayı əhatəsini oxuyur, heç bir təyinatı olmayanları sayır və əhatə təyin edir (təyin edənin öz əhatəsi də roluna görə məhdudiyyətsiz olmalıdır); AD hesablarını axtarıb idxal edir, AD qrup uyğunlaşdırmasını oxuyur (uyğunlaşdırmanı dəyişmək hər səlahiyyəti tələb edir)" },
@@ -104,6 +106,8 @@ export default {
     pharmacy: { view: "“Aptek” səhifəsini açır: öz şöbələrindəki xəstələrin vazopressorlarını, antibiotik müddətini, kreatininini və günün maye balansını yalnız oxumaq üçün görür" },
     // G4-03 — Kalite göstergeleri
     quality: { view: "Keyfiyyət göstəricilərini görür" },
+    // G4-04 — İş yükü
+    workload: { view: "“İş yükü” səhifəsini açır: bu növbə üçün şöbə-şöbə xəstə, tibb bacısı, təyinatsız xəstə, gecikən və qalan iş, cavab gözləyən siqnal saylarını və növbənin tibb bacısı–çarpayı təyinatını görür" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -124,7 +128,7 @@ export default {
       assign: "Назначает других в лечебную команду пациента",
     },
     handover: { sign: "Подписывает или контрподписывает передачу смены" },
-    shifts: { manage: "Составляет графики смен" },
+    shifts: { manage: "Назначает медсестёр на койки на текущую и следующую смену, по отделениям" },
     break_glass: { use: "Открывает, продлевает или закрывает сеанс экстренного доступа" },
     audit: { view: "Читает журнал аудита" },
     users: { manage: "Управляет пользователями: создание, изменение, активация, сброс пароля и 2FA, открытие входа через каталог, назначение групп; читает область отделений и коек пользователя, считает пользователей без назначений и назначает область (назначать может только тот, чья собственная область не ограничена в силу его роли); ищет и импортирует записи AD, читает сопоставление групп AD (изменение сопоставления требует всех прав)" },
@@ -149,6 +153,8 @@ export default {
     pharmacy: { view: "Открывает страницу «Аптека»: видит вазопрессоры, срок для антибиотика, креатинин и суточный баланс жидкости пациентов своих отделений — только чтение" },
     // G4-03 — Kalite göstergeleri
     quality: { view: "Видит показатели качества" },
+    // G4-04 — İş yükü
+    workload: { view: "Открывает страницу «Нагрузка»: видит по отделениям на текущую смену число пациентов, медсестёр, пациентов без медсестры, просроченных и оставшихся задач, тревог без ответа и назначение медсестёр на койки" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -169,7 +175,7 @@ export default {
       assign: "Assign others to a patient's care team",
     },
     handover: { sign: "Sign or countersign a handover" },
-    shifts: { manage: "Create shift schedules" },
+    shifts: { manage: "Assign nurses to beds for this shift or the next, unit by unit" },
     break_glass: { use: "Open, extend or close an emergency-access session" },
     audit: { view: "Read the audit trail" },
     users: { manage: "Manage users: create, edit, activate, reset a password or 2FA, lift a directory sign-in throttle, set groups; read a user's unit and bed scope, count the users with none, and assign one (only someone whose own scope is unrestricted by role may assign it); search and import AD accounts and read the AD group mapping (changing the mapping needs every permission)" },
@@ -194,5 +200,7 @@ export default {
     pharmacy: { view: "Open the “Pharmacy” page: see the vasopressors, the antibiotic window, creatinine and the day's fluid balance of the patients in one's own units, read-only" },
     // G4-03 — Kalite göstergeleri
     quality: { view: "See the quality indicators" },
+    // G4-04 — İş yükü
+    workload: { view: "Open the “Workload” page: see, unit by unit for this shift, the counts of patients, nurses, unassigned patients, late and remaining work and alarms waiting, and the shift's nurse–bed assignment" },
   },
 };

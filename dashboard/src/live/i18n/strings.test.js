@@ -229,6 +229,9 @@ const AZ_SAME_AS_TR = new Set([
   "eczane.col.creatinine", //  Kreatinin — the same word in Azerbaijani (as patient.creatinine's first word)
   "eczane.fluid.balance", //   "{value} mL" — a number and the unit symbol (as sivi.ml)
 
+  // G4-04 (isyuku) · az = tr — «İş yükü»: the prototype's AZ dictionary (birim.js m_workload); iş and yük are Azerbaijani too
+  "isyuku.nav", "isyuku.navShort", "isyuku.title",
+
 ]);
 
 describe("live UI dictionaries", () => {
