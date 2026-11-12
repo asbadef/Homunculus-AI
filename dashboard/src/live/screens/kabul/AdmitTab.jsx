@@ -63,7 +63,7 @@ import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
-import { admissible, indexStructure, normId } from "../../data/structure.js";
+import { admissible, bedLabel, indexStructure, normId } from "../../data/structure.js";
 import { Announce, Box, Button, Field, Icon, Input, Note, Select, Tag, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { doneFor, mayHaveLanded, reasonOf, refusedFor } from "../admin/refusal.js";
@@ -90,6 +90,15 @@ const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.nam
 
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
+
+/** The bed an admit answer is named after: the form's — or, when the answer names another bed, the
+ *  bed she lies in now, by the structure's name ("" when it does not hold it), never the bed she
+ *  left. G2-B1b, final review I-1: the same form sent again after a physician signed it and the
+ *  patient was moved is answered with her stay where it is now (the server's `_stay_now`). */
+function answeredBed(answer, sent, index) {
+  if (!answer?.bed_id || normId(answer.bed_id) === normId(sent.bedId)) return sent.bed;
+  return bedLabel(index, answer.bed_id) ?? "";
+}
 
 /** Is the focus where a press or a return leaves it — <body> (where it falls when the control that
  *  held it goes), «Qəbul et» (`submit`), or a tab of the tab list? News — a hold, the number box —
@@ -149,7 +158,8 @@ function NumberBox({ done, onNext, headingRef }) {
         {whose ? t("kabul.earlierTitle") : t("kabul.doneTitle")}
       </h2>
       {whose ? <Note tone="warn" icon="alert" className="mb-2">{whose}</Note> : null}
-      <p className="m-0 text-13 text-mute">{t("kabul.doneBed", { bed: done.bed })}</p>
+      {/* A bed the screen cannot name is not named (I-1): never the form's, which she may have left. */}
+      {done.bed ? <p className="m-0 text-13 text-mute">{t("kabul.doneBed", { bed: done.bed })}</p> : null}
       {/* G2-B1d: the number is the card's — the protocol of an admission made since 0015 (D7), the
           one the nurse enters or scans; an answer without one keeps B1a's H-number and words. */}
       {protocol ? <p className="m-0 mt-2 text-12 font-semibold uppercase tracking-[.08em] text-mute">{t("protokol.protocolNo")}</p> : null}
@@ -471,7 +481,7 @@ export function AdmitTab() {
       const answer = await store.track(() => store.api.admit(body));
       if (!draft.live) return;
       admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null, admissionId: answer.id ?? null,
-        bed: sent.bed, engine: answer.engine }, sent.name);
+        bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
       if (draft.live) await failed(err, sent);

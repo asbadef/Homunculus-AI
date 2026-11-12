@@ -402,6 +402,23 @@ async def _engine_of(db: AsyncSession, request: Request, hospital: str, admissio
     return engine
 
 
+async def _stay_now(db: AsyncSession, earlier: Admission) -> Admission:
+    """The row a form's admission is answered and named by (A-19): the one the form made — or,
+    when a move has closed that one since (G2-B1b, final review I-1), the stay's row now. A move
+    leaves the form's row TRANSFERRED on the bed she left, its protocol gone to the arriving row
+    (O8), so its key is the H-number, where no card stands: answered with it, the screen showed
+    that number as the one to enter on the device, and readings went to a card nobody shows. The
+    chain is followed forward (`transfer.where_now`: bounded, inside the tenant), to the open row
+    or one discharged since. A chain that breaks off answers the form's row, as before."""
+    if earlier.state != AdmissionState.TRANSFERRED:
+        return earlier
+    end = await transfer.where_now(db, earlier.id, tenant_id=earlier.tenant_id)
+    if end is None:
+        return earlier
+    return (await db.execute(select(Admission).where(
+        Admission.id == end.admission_id, Admission.tenant_id == earlier.tenant_id))).scalar_one()
+
+
 async def _answer_again(db: AsyncSession, request: Request, response: Response, *,
                         hospital: str, tenant_id: uuid.UUID, request_id: uuid.UUID, digest: str,
                         reach: Scope, actor: str) -> AdmitResponse:
@@ -410,20 +427,25 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
     `_engine_of` finds it. Another form under the same id is refused `request_conflict`, the
     earlier admission's number beside the code when the caller's units hold its bed (so the screen
     can name it; never a name). The caller has rolled this send's transaction back: it keeps no
-    lock and gives back any number it took; this one ends its reads before it waits."""
+    lock and gives back any number it took; this one ends its reads before it waits.
+
+    A stay moved since (G2-B1b, final review I-1) is answered and named where it is now
+    (`_stay_now`): the arriving row's body, bed, state and protocol — the key her card stands
+    under. The engine report stays the form's own row's: it says what that send's writes did."""
     earlier = (await db.execute(select(Admission).where(
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one()
     number = (await db.execute(select(Patient.patient_number)
                                .where(Patient.id == earlier.patient_id))).scalar_one()
+    stay = await _stay_now(db, earlier)
     if earlier.request_digest != digest:
         unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
-                                    .where(Bed.id == earlier.bed_id))).scalar_one()
-        known = unitscope.reaches(reach, unit_id=unit_id, bed_id=earlier.bed_id)
-        extra = _numbers(number, earlier.protocol_no) if known else None
+                                    .where(Bed.id == stay.bed_id))).scalar_one()
+        known = unitscope.reaches(reach, unit_id=unit_id, bed_id=stay.bed_id)
+        extra = _numbers(number, stay.protocol_no) if known else None
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
                       "form.", extra=extra).http()
-    first = AdmissionResponse.model_validate(earlier)
-    key = board_key(earlier.protocol_no, number)
+    first = AdmissionResponse.model_validate(stay)
+    key = board_key(stay.protocol_no, number)
     admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
     profile_asked = bool(earlier.comorbidity_codes)
     await db.commit()                  # no transaction, and no pooled connection, while it waits

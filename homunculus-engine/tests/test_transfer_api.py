@@ -900,3 +900,34 @@ async def test_a_handover_in_hand_takes_the_patients_new_unit_and_the_waiting_co
     ((unit_id, named),) = await _fresh(db_session, select(Handover.unit_id, Handover.admission_ids)
                                        .where(Handover.id == uuid.UUID(handover)))
     assert (unit_id, list(named)) == (neo, [answer["id"]])
+
+
+# ---------------------------------------------------------------- the kabul form sent again (final review I-1)
+async def test_the_kabul_form_sent_again_after_a_move_answers_where_she_lies_now(ward):
+    """Final review I-1 (A-19, A-21): the nurse's kabul answer was lost, a physician signed and the
+    patient was moved before the nurse sent the same form again. The resend is answered with the
+    stay where it is now — the arriving row, its bed, the protocol the move carried (O8) — never
+    with the source the move closed, whose key is the H-number: a number entered on the device
+    under it would go to a card nobody shows."""
+    w, client, _ = ward
+    two = str(w.beds["2"].id)
+    body = form(w, "1", request_id=uuid.uuid4())
+    first = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert first.status_code == 201, first.text
+    source = first.json()
+    r = await client.post(f"/admissions/{source['id']}/sign-off", headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    arriving = await moved(w, client, source)
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.status_code == 200, again.text
+    answer = again.json()
+    assert (answer["id"], answer["bed_id"], answer["state"]) == (arriving["id"], two, "ACTIVE")
+    assert (answer["protocol_no"], answer["board_key"]) == (FIRST_PROTOCOL, FIRST_PROTOCOL)
+    assert answer["patient_number"] == source["patient_number"] != answer["board_key"]
+    assert answer["engine"] == source["engine"]             # the first send's report, as recorded
+    # Another form under the same id: the conflict names the number the card stands under now.
+    r = await client.post("/admissions", json=form(w, "3", request_id=uuid.UUID(body["request_id"])),
+                          headers=w.auth["nurse"])
+    detail = r.json()["detail"]
+    assert (r.status_code, detail["code"], detail["board_key"]) == (409, "request_conflict",
+                                                                    FIRST_PROTOCOL)

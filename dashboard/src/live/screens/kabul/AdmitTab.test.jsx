@@ -1122,6 +1122,33 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     }
   });
 
+  // G2-B1b, final review I-1: a form sent again after a physician signed and the patient was moved
+  // is answered with her stay where it is now — the arriving row, on another bed than the form's.
+  const BED5 = "5 · Otaq 2 · Reanimasiya";
+  const movedSince = (bedId) => withProtocol({ id: "a-8", state: "ACTIVE", bed_id: bedId, source_admission_id: "a-1" });
+
+  it("names the bed she lies in now when the answer's bed is not the form's — never the bed she left (I-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(movedSince(BED(5))) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.getByText(`Çarpayı: ${BED5}`)).toBeTruthy();
+    expect(screen.queryByText(`Çarpayı: ${BED1}`)).toBeNull();
+    expect(toasts().getAllByText(`${BED5} · qəbul edildi, protokol nömrəsi 202600000001`).length).toBeGreaterThan(0);
+    expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
+  });
+
+  it("names no bed at all when the answer's bed is not the form's and the beds do not hold it (I-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(movedSince(BED(42))) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText(/^Çarpayı:/)).toBeNull();
+    expect(toasts().getAllByText("qəbul edildi, protokol nömrəsi 202600000001").length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toContain(BED1);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+  });
+
   it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {
     await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(admitted()) });
     fillRequired();

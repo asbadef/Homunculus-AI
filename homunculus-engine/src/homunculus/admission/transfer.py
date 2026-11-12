@@ -6,8 +6,9 @@
                  the name, birth date and sex, and its bed and real unit;
 * `arriving_of`  the admission a transfer from this one opened (the retry's question, T9);
 * `where_now`    the patient's admission now, from a TRANSFERRED one of hers: `source_admission_id`
-                 followed forward (the bed release's question, §5.5), answered as its id, its
-                 state, its board key and its H-number — no name is read, no column decrypted;
+                 followed forward (the bed release's question, §5.5, and the kabul form's resend,
+                 final review I-1), answered as its id, its state, its board key and its H-number —
+                 no name is read, no column decrypted;
 * `move_card`    the card moved to the bed she now lies in, the old place told first
                  (`BoardLink.move`, T8): `ok` or `failed`, never raising.
 
@@ -79,18 +80,22 @@ class ChainEnd(NamedTuple):
     patient_number: str
 
 
-async def where_now(db: AsyncSession, admission_id: uuid.UUID) -> ChainEnd | None:
+async def where_now(db: AsyncSession, admission_id: uuid.UUID, *,
+                    tenant_id: uuid.UUID | None = None) -> ChainEnd | None:
     """The patient's admission now, from a TRANSFERRED one of hers: `source_admission_id` followed
     forward to the first row that is not TRANSFERRED — open, or DISCHARGED since. None when the
     chain breaks off (a transfer the closed routes left half done). Reads the id, the state, the
     protocol and the H-number only: the name, birth date and sex (encrypted) are `card_of`'s, read
-    for a card that is going to be moved."""
+    for a card that is going to be moved. With `tenant_id`, every step stays inside that tenant
+    (the kabul form's resend, final review I-1): a row written wrong by hand that names another
+    tenant's admission ends the chain there."""
     current = admission_id
+    inside = () if tenant_id is None else (Admission.tenant_id == tenant_id,)
     for _ in range(_MOST_MOVES):
         found = (await db.execute(
             select(Admission.id, Admission.state, Admission.protocol_no, Patient.patient_number)
             .join(Patient, Patient.id == Admission.patient_id)
-            .where(Admission.source_admission_id == current)
+            .where(Admission.source_admission_id == current, *inside)
             .order_by(Admission.created_at.desc()).limit(1))).first()
         if found is None:
             return None
