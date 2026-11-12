@@ -430,6 +430,10 @@ class ShiftScheduleSaved(ShiftSchedule):
     warnings: list[ShiftWarning] = Field(default_factory=list)
 
 
+#: G4-04 code review (§5 A14 M5): the most pairs PUT /shift-schedule takes in `items`, and in `expected`.
+SHIFT_PAIRS_MAX = 500
+
+
 class ShiftPair(BaseModel):
     """A bed and its nurse, as the PUT names them."""
     model_config = ConfigDict(extra="forbid")
@@ -440,12 +444,13 @@ class ShiftPair(BaseModel):
 class ShiftSchedulePut(BaseModel):
     """PUT /shift-schedule (D4, §5 A1, A7): replace one unit's assignment for the window starting at `shift_start` (the
     GET answer's `shift.start`). `expected`, required: the active rows the form read for that unit and window (a set;
-    an empty list means none); an empty `items` clears the window."""
+    an empty list means none); an empty `items` clears the window. Each list holds at most `SHIFT_PAIRS_MAX` pairs
+    (§5 A14 M5: a unit has far fewer beds, and a longer list could pass asyncpg's bind limit)."""
     model_config = ConfigDict(extra="forbid")
     unit_id: uuid.UUID
     shift_start: AwareDatetime
-    items: list[ShiftPair]
-    expected: list[ShiftPair]
+    items: list[ShiftPair] = Field(max_length=SHIFT_PAIRS_MAX)
+    expected: list[ShiftPair] = Field(max_length=SHIFT_PAIRS_MAX)
 
 
 class ShiftNurse(BaseModel):

@@ -17,6 +17,7 @@ Postgres. Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -31,7 +32,7 @@ from homunculus.api.tasks import InMemoryTaskStore, TaskSettings
 from homunculus.auth.groups import ensure_default_groups
 from homunculus.auth.models import Group, GroupPermission, TenantMembership, User
 from homunculus.scope.models import StaffScope
-from homunculus.tenant.models import Bed, Tenant
+from homunculus.tenant.models import Bed, Room, Tenant, Unit
 from tests.conftest import requires_db
 from tests.kabul_world import SLUG, build_ward, ward_client
 from tests.signed_in import add_user, bearer
@@ -471,3 +472,156 @@ async def test_the_retired_post_is_gone(ward):
     w, client, _ = ward
     r = await client.post("/shift-schedule", json={}, headers=w.auth["charge"])
     assert r.status_code == 405
+
+
+# ---------------------------------------------------------------- the code review (spec §5 A14)
+async def test_a_save_of_the_next_window_never_ends_the_current_windows_rows(ward):
+    """Review I1: at 10:00 the hospital ends shift B an hour earlier (08/20 → 08/19). The day shift's rows keep the
+    current window's key, and «Sonraki nöbet» [19:00, 08:00) overlaps their stored end (20:00): they are a LIVE
+    window's rows, not another window's — neither counted for the next window nor ended by its save."""
+    w, client, app = ward
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse"), ("2", "nurse")]), headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    app.state.tasks.save_settings(SLUG, TaskSettings(shift_start_a=8, shift_start_b=19), by="admin", now=NOW)
+    following = (await client.get("/shift-schedule?shift=next", headers=w.auth["charge"])).json()
+    assert (following["shift"]["start"], following["units"][0]["other_rows"]) == ("2026-11-12T19:00:00Z", 0)
+    r = await client.put("/shift-schedule", json=_put(w, items=[("3", "nurse")], start=following["shift"]["start"]),
+                         headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert audited(app, "shift.assign")[-1].payload["other"] == []
+    current = (await client.get("/shift-schedule", headers=w.auth["charge"])).json()
+    assert _shown(w, current) == {"Reanimasiya": [("1", "nurse"), ("2", "nurse")]}
+
+
+async def test_a_finished_windows_rows_are_neither_counted_nor_ended(ward, db_session):
+    """Review M1: last night's row [20:00, 08:00) is still active — a row never ends on its own — and after the hours
+    move to 06/18 it overlaps the new day window [06:00, 18:00). Its shift has ended: history, neither counted nor
+    rewritten by a save of the day window."""
+    w, client, app = ward
+    night = datetime(2026, 11, 11, 20, tzinfo=timezone.utc)
+    db_session.add(NurseBedAssignment(unit_id=w.units["rea"].id, bed_id=w.beds["3"].id, nurse_id=w.users["nurse"].id,
+                                      shift_start=night, shift_end=A_START))
+    await db_session.commit()
+    app.state.tasks.save_settings(SLUG, TaskSettings(shift_start_a=6, shift_start_b=18), by="admin", now=NOW)
+    current = (await client.get("/shift-schedule", headers=w.auth["charge"])).json()
+    assert (current["shift"]["start"], current["units"][0]["other_rows"]) == ("2026-11-12T06:00:00Z", 0)
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")], start=current["shift"]["start"]),
+                         headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert audited(app, "shift.assign")[-1].payload["other"] == []
+    row = (await db_session.execute(select(NurseBedAssignment.is_active, NurseBedAssignment.closed_at)
+                                    .where(NurseBedAssignment.shift_start == night))).one()
+    assert tuple(row) == (True, None)
+
+
+async def test_the_window_is_decided_under_the_units_lock(ward, db_session, monkeypatch):
+    """Review M2: a save naming «Bu nöbet» (08:00) at 19:59:59 that waits on the unit's lock until after 20:00 is a 409
+    `shift_changed` — the clock is read after the lock, never before it; nothing written, nothing audited."""
+    w, client, app = ward
+    clock = {"now": datetime(2026, 11, 12, 19, 59, 59, tzinfo=timezone.utc)}
+    monkeypatch.setattr(shifts, "_now", lambda: clock["now"])
+    async with db_session.bind.connect() as blocker:             # another writer of the unit holds its row
+        await blocker.execute(text("SELECT id FROM units WHERE id = :u FOR UPDATE"), {"u": w.units["rea"].id})
+        save = asyncio.create_task(client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")]),
+                                              headers=w.auth["charge"]))
+        try:
+            await _waits_on_the_unit(db_session)
+            clock["now"] = datetime(2026, 11, 12, 20, 0, 30, tzinfo=timezone.utc)
+        finally:
+            await blocker.rollback()
+        r = await save
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "shift_changed")
+    assert await _rows(db_session, w) == [] and audited(app, "shift.assign") == []
+
+
+async def test_the_warnings_are_read_after_the_commit_with_the_lock_released(ward, db_session, monkeypatch):
+    """Review M3: the nurses' scopes (a few statements each) are read once the save is committed, not under the unit's
+    lock: while they are read, another writer takes the unit's row without waiting."""
+    w, client, _ = ward
+    real, free = shifts._unreached, []
+
+    async def unreached(*args, **kwargs):
+        async with db_session.bind.connect() as other:
+            await other.execute(text("SELECT id FROM units WHERE id = :u FOR UPDATE NOWAIT"), {"u": w.units["rea"].id})
+            free.append(True)
+            await other.rollback()
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(shifts, "_unreached", unreached)
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse_b")]), headers=w.auth["charge"])
+    assert (r.status_code, free) == (200, [True]), r.text
+    assert r.json()["warnings"] == [{"code": "unit_not_reached", "nurse_id": str(w.users["nurse_b"].id)}]
+
+
+@pytest.mark.parametrize("field", ["items", "expected"])
+async def test_a_list_of_more_than_five_hundred_pairs_is_refused(ward, field):
+    """Review M5: `items` and `expected` hold at most 500 pairs each (a unit has far fewer beds; a longer list could
+    pass asyncpg's bind limit and be a 500) — FastAPI's own 422, nothing read."""
+    w, client, _ = ward
+    body = _put(w)
+    body[field] = [{"bed_id": str(uuid.uuid4()), "nurse_id": str(uuid.uuid4())} for _ in range(501)]
+    assert (await client.put("/shift-schedule", json=body, headers=w.auth["charge"])).status_code == 422
+
+
+async def test_the_warning_is_per_bed_so_bed_grants_that_cover_her_beds_warn_nothing(ward, db_session):
+    """Review M6: a nurse granted beds 1 and 2 (no unit) sees both on her board — given those two, no warning; given bed
+    3 as well, which she is not granted, the warning (its shape unchanged). The picker's `reaches_unit` stays the unit's."""
+    w, client, _ = ward
+    beds_only = await _nurse(db_session, w, "yataklar@kabul.example.com")
+    w.users["beds_only"] = beds_only
+    for bed in ("1", "2"):
+        db_session.add(StaffScope(tenant_id=w.tenant.id, user_id=beds_only.id, unit_id="", bed_id=str(w.beds[bed].id)))
+    await db_session.commit()
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "beds_only"), ("2", "beds_only")]),
+                         headers=w.auth["charge"])
+    assert (r.status_code, r.json()["warnings"]) == (200, []), r.text
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "beds_only"), ("2", "beds_only"), ("3", "beds_only")],
+                                                      expected=[("1", "beds_only"), ("2", "beds_only")]),
+                         headers=w.auth["charge"])
+    assert r.json()["warnings"] == [{"code": "unit_not_reached", "nurse_id": str(beds_only.id)}]
+    people = (await client.get(f"/shift-schedule/nurses?unit_id={w.units['rea'].id}", headers=w.auth["charge"])).json()
+    assert [p["reaches_unit"] for p in people if p["id"] == str(beds_only.id)] == [False]
+
+
+async def test_a_shift_start_with_another_offset_is_the_same_window(ward):
+    """Review M7: the key is an instant — 12:00+04:00 is 08:00Z."""
+    w, client, _ = ward
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")], start="2026-11-12T12:00:00+04:00"),
+                         headers=w.auth["charge"])
+    assert (r.status_code, r.json()["shift"]) == (200, CURRENT), r.text
+
+
+async def test_a_kept_pair_on_a_bed_closed_since_stays_and_a_closed_room_takes_no_new_pair(ward, db_session):
+    """Review M7 (§5 A10): a pair already held is kept whatever happened to its bed; a new pair needs an open bed in an
+    open room — bed 3 is open, its room Otaq 2 is closed: 422, nothing written."""
+    w, client, _ = ward
+    assert (await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")]),
+                             headers=w.auth["charge"])).status_code == 200
+    await db_session.execute(update(Bed).where(Bed.id == w.beds["1"].id).values(is_active=False))
+    await db_session.commit()
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse"), ("2", "nurse")], expected=[("1", "nurse")]),
+                         headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    await db_session.execute(update(Room).where(Room.id == w.rooms["o2"].id).values(is_active=False))
+    await db_session.commit()
+    before = await _rows(db_session, w)
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse"), ("2", "nurse"), ("3", "nurse")],
+                                                      expected=[("1", "nurse"), ("2", "nurse")]),
+                         headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "field_invalid:items"), r.text
+    assert await _rows(db_session, w) == before == [("1", "nurse", True, A_START), ("2", "nurse", True, A_START)]
+
+
+async def test_a_closed_unit_takes_no_new_pair_but_can_be_cleared(ward, db_session):
+    """Review M7: a closed unit has no open bed — a new pair is a 422; an empty list ends what it holds."""
+    w, client, _ = ward
+    assert (await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse")]),
+                             headers=w.auth["charge"])).status_code == 200
+    await db_session.execute(update(Unit).where(Unit.id == w.units["rea"].id).values(is_active=False))
+    await db_session.commit()
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "nurse"), ("2", "nurse")], expected=[("1", "nurse")]),
+                         headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "field_invalid:items"), r.text
+    r = await client.put("/shift-schedule", json=_put(w, items=[], expected=[("1", "nurse")]), headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    assert await _rows(db_session, w) == [("1", "nurse", False, A_START)]

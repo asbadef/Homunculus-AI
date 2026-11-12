@@ -11,8 +11,10 @@ Görevlerim's two starts and the tenant's zone read as GET /tasks reads them: «
 row belongs to the window whose start is its `shift_start` (the window's key). The PUT names its window by that key
 (`shift_start`, from the GET the form read) and takes it only while it is still the current or the next window: a form
 read at 19:50 and saved at 20:00:30 is a 409 `shift_changed`, never a write into the window after the one it showed
-(§5 A1). A row of another window that overlaps the one read (the hours were changed meanwhile) is counted
-(`other_rows`), and the next save of the window ends it (A3).
+(§5 A1); the check is made under the unit's lock, so a save that waited on it past the change is refused too (A14). A
+row of another window that overlaps the one read (the hours were changed meanwhile) is counted (`other_rows`), and the
+next save of the window ends it (A3) — but never a row of one of the two live windows, and never one whose shift has
+ended (A14: shortened hours must not let one live window end the other's rows, nor a save rewrite a finished night).
 
 THE UNIT. A row is the unit of its BED (bed → room → unit), and is read so: the retired POST let a row name a bed of
 another unit (A8). The caller's reach is her UNIT grants (`unitscope.unit_clause`): a bed grant names one bed, not the
@@ -29,14 +31,14 @@ never a 500. Audited `shift.assign` after the commit, ids only, the unit its sub
 
 WHO. The offered people are `service.nurse_ids` (the default nurse and charge-nurse groups, A10). A new pair names an
 offered person; a person no longer offered (her account or membership ended mid-shift) keeps a pair she already holds.
-One whose own scope does not reach the unit is saved with a soft warning (`unit_not_reached`). No beds-per-nurse
-warning (A12).
+One whose own scope does not reach every bed she is given (her unit, or the bed itself) is saved with a soft warning
+(`unit_not_reached`, read after the commit, A14). No beds-per-nurse warning (A12).
 
 No patient anywhere: beds, units and staff names."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -64,6 +66,9 @@ from homunculus.tenant.models import Bed, Room, Site, Unit
 
 SHIFTS_MANAGE, WORKLOAD_VIEW = validate_permissions(("shifts.manage", "workload.view"))
 SHIFT_ASSIGN = "shift.assign"
+#: How far before a window another window's row may start and still be looked at (`_others`, §5 A14 M1): no window
+#: is longer than a day (25 hours the night a clock goes back), so two days holds every row that can overlap it.
+OTHERS_LOOKBACK = timedelta(days=2)
 UNIT_NOT_FOUND = "Unit not found."
 BED_NOT_FOUND = "Bed not found."
 
@@ -112,29 +117,36 @@ def _rows(unit_ids: list[uuid.UUID], start: datetime):
             .where(NurseBedAssignment.shift_start == start))
 
 
-def _others(columns, unit_ids: list[uuid.UUID], window: Shift):
-    """The active rows of ANOTHER window that overlap `window` (A3: the shift hours changed meanwhile)."""
-    return _on_beds(columns, unit_ids).where(NurseBedAssignment.shift_start != window.start,
+def _others(columns, unit_ids: list[uuid.UUID], window: Shift, live: tuple[Shift, Shift], now: datetime):
+    """The active rows of ANOTHER window that overlap `window` (A3: the shift hours changed meanwhile), as the code
+    review bounded them (§5 A14): never a row of one of the two LIVE windows — the current or the next one, `window`
+    itself included — whatever its stored end says (I1: shortened hours must not let one live window end the other's
+    rows), and never a row whose shift has ended (M1: a finished night is history, not rewritten by a later save). The
+    lower bound keeps the search to the days around the window: no window is longer than a day."""
+    return _on_beds(columns, unit_ids).where(NurseBedAssignment.shift_start.notin_([w.start for w in live]),
+                                             NurseBedAssignment.shift_start >= window.start - OTHERS_LOOKBACK,
                                              NurseBedAssignment.shift_start < window.end,
-                                             NurseBedAssignment.shift_end > window.start)
+                                             NurseBedAssignment.shift_end > window.start,
+                                             NurseBedAssignment.shift_end > now)
 
 
-async def _held(db: AsyncSession, unit_id: uuid.UUID, window: Shift) -> tuple[list, list]:
+async def _held(db: AsyncSession, unit_id: uuid.UUID, window: Shift, live: tuple[Shift, Shift],
+                now: datetime) -> tuple[list, list]:
     """The unit's active rows of the window and of the windows overlapping it, read under its lock: the PUT's `before`,
     what `expected` must equal, and the rows it ends."""
     rows = list((await db.execute(_rows([unit_id], window.start))).all())
     others = list((await db.execute(_others((NurseBedAssignment.id, NurseBedAssignment.bed_id,
-                                             NurseBedAssignment.nurse_id), [unit_id], window))).all())
+                                             NurseBedAssignment.nurse_id), [unit_id], window, live, now))).all())
     return rows, others
 
 
 async def _schedule(db: AsyncSession, units: list[tuple[uuid.UUID, str]], window: Shift,
-                    now: datetime) -> ShiftSchedule:
+                    live: tuple[Shift, Shift], now: datetime) -> ShiftSchedule:
     """The answer for `units` (id, name), in that order, each with its active rows of the window by bed id and the count
-    of the overlapping rows of another window."""
+    of the overlapping rows of another window (`_others`)."""
     ids = [uid for uid, _ in units]
     rows = (await db.execute(_rows(ids, window.start))).all() if ids else []
-    others = dict((await db.execute(_others((Room.unit_id, func.count(NurseBedAssignment.id)), ids, window)
+    others = dict((await db.execute(_others((Room.unit_id, func.count(NurseBedAssignment.id)), ids, window, live, now)
                                     .group_by(Room.unit_id))).all()) if ids else {}
     items: dict[uuid.UUID, list[ShiftItem]] = {}
     for _, bed_id, nurse_id, unit_id, full_name, username in rows:
@@ -150,9 +162,28 @@ async def _schedule(db: AsyncSession, units: list[tuple[uuid.UUID, str]], window
 
 async def _reaching(db: AsyncSession, people: set[uuid.UUID], caller_tenant: uuid.UUID,
                     unit_id: uuid.UUID) -> dict[uuid.UUID, bool]:
-    """Whether each person's own scope reaches the unit (A10), read as the board's resolver reads it."""
+    """Whether each person's own scope reaches the unit (A10), read as the board's resolver reads it: the picker's
+    mark (`reaches_unit`)."""
     return {person: unitscope.reaches(await unitscope.caller_scope(db, person, caller_tenant), unit_id=unit_id,
                                       bed_id=None) for person in people}
+
+
+async def _unreached(db: AsyncSession, asked: list[tuple[uuid.UUID, uuid.UUID]], caller_tenant: uuid.UUID,
+                     unit_id: uuid.UUID) -> list[ShiftWarning]:
+    """The PUT's soft warnings (A10; per bed since the code review, §5 A14 M6): one `unit_not_reached` for each nurse of
+    the saved pairs whose own scope does not reach EVERY bed she is given — neither her unit nor the bed itself — so
+    her board will not show that bed's patient. A nurse whose bed grants cover her beds is not warned. By id. One scope
+    read per person (`unitscope.caller_scope`, the board's resolver's own reading): read after the commit, never under
+    the unit's lock (M3)."""
+    beds_of: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for bed, nurse in asked:
+        beds_of.setdefault(nurse, []).append(bed)
+    warnings = []
+    for nurse in sorted(beds_of, key=str):
+        reach = await unitscope.caller_scope(db, nurse, caller_tenant)
+        if not all(unitscope.reaches(reach, unit_id=unit_id, bed_id=bed) for bed in beds_of[nurse]):
+            warnings.append(ShiftWarning(code="unit_not_reached", nurse_id=nurse))
+    return warnings
 
 
 def _pairs(pairs) -> list[list[str]]:
@@ -187,8 +218,8 @@ async def read_shift_schedule(
         stmt = stmt.where(Unit.id == unit_id)
     units = [(uid, name) for uid, name in (await db.execute(stmt)).all()]
     now = _now()
-    current, following = _windows(request, await trail.hospital_of(db, caller_tenant), now)
-    return await _schedule(db, units, current if shift == "current" else following, now)
+    live = _windows(request, await trail.hospital_of(db, caller_tenant), now)
+    return await _schedule(db, units, live[0] if shift == "current" else live[1], live, now)
 
 
 @router.get("/nurses", response_model=list[ShiftNurse])
@@ -218,12 +249,13 @@ async def put_shift_schedule(
     user: User = Depends(require_permission(SHIFTS_MANAGE)),
     caller_tenant: uuid.UUID = _tenant,
 ) -> ShiftScheduleSaved:
-    """D4, §5 A1, A7, A10, M3: replace one unit's assignment for one window (the module's docstring). Every check before
-    anything is written, in this order: the unit and the beds are the caller's tenant's (404); the unit is one of her
-    units (403); a bed is named once, and a person in a new pair is an active member of the tenant (422); the window is
-    still the current or the next one (409 `shift_changed`); then, under the unit's lock, `expected` is what holds (409),
-    and every NEW pair's bed is an open bed of that unit (the bed, its room and the unit open) and its person an offered
-    one (422 `field_invalid:items`). An empty `items` clears the window."""
+    """D4, §5 A1, A7, A10, M3, A14: replace one unit's assignment for one window (the module's docstring). Every check
+    before anything is written, in this order: the unit and the beds are the caller's tenant's (404); the unit is one of
+    her units (403); a bed is named once, and a person in a new pair is an active member of the tenant (422); then,
+    under the unit's lock, the window is still the current or the next one (409 `shift_changed` — decided after the
+    lock, A14 M2, so a save that waited on it past a shift change is refused), `expected` is what holds (409), and every
+    NEW pair's bed is an open bed of that unit (the bed, its room and the unit open) and its person an offered one (422
+    `field_invalid:items`). An empty `items` clears the window. The warnings are read after the commit (A14 M3)."""
     beds = [item.bed_id for item in body.items]
     expected = {(pair.bed_id, pair.nurse_id) for pair in body.expected}
     asked = [(item.bed_id, item.nurse_id) for item in body.items]
@@ -233,15 +265,19 @@ async def put_shift_schedule(
     if len(set(beds)) != len(beds):
         raise field_invalid("items", "A bed is named once.").http()
     await scope.ensure_members(db, caller_tenant, (nurse for bed, nurse in asked if (bed, nurse) not in expected))
-    hospital, actor, user_id, now = await trail.hospital_of(db, caller_tenant), user.username, user.id, _now()
-    window = next((w for w in _windows(request, hospital, now) if w.start == body.shift_start), None)
-    if window is None:
-        raise Refusal(409, SHIFT_CHANGED, "That shift is no longer the current or the next one.").http()
+    hospital, actor, user_id = await trail.hospital_of(db, caller_tenant), user.username, user.id
     # The unit's row lock (tenant/router.py `_lock_unit`), read afresh: what is read below holds until the commit.
     unit = (await db.execute(select(Unit).where(Unit.id == body.unit_id).with_for_update(key_share=True)
                              .execution_options(populate_existing=True))).scalar_one()
     unit_name, unit_open = unit.name, unit.is_active
-    rows, others = await _held(db, body.unit_id, window)
+    # The clock is read under the lock (A14 M2): the window named is checked as of the write, not of the request.
+    now = _now()
+    live = _windows(request, hospital, now)
+    window = next((w for w in live if w.start == body.shift_start), None)
+    if window is None:
+        await db.rollback()                       # nothing written; the lock goes with it
+        raise Refusal(409, SHIFT_CHANGED, "That shift is no longer the current or the next one.").http()
+    rows, others = await _held(db, body.unit_id, window, live, now)
     held = {(row.bed_id, row.nurse_id) for row in rows}
     if expected != held:
         await db.rollback()                       # nothing written; the lock goes with it
@@ -252,10 +288,12 @@ async def put_shift_schedule(
         .where(Room.unit_id == body.unit_id, Bed.is_active.is_(True), Room.is_active.is_(True)))).scalars()
     ) if unit_open else set()
     if any(bed not in open_beds for bed, _ in new):
+        await db.rollback()                       # nothing written; the lock goes with it
         raise field_invalid("items", "A bed is not an open bed of this unit.").http()
     people = {nurse for _, nurse in new}
     if people and people - set((await db.execute(service.nurse_ids(caller_tenant).where(User.id.in_(people))))
                                .scalars()):
+        await db.rollback()                       # nothing written; the lock goes with it
         raise field_invalid("items", "A person is not one of this hospital's nurses.").http()
     ended = [row.id for row in rows if (row.bed_id, row.nurse_id) not in set(asked)] + [row.id for row in others]
     if ended:                                     # flushed before the inserts: the index cannot be deferred
@@ -270,13 +308,11 @@ async def put_shift_schedule(
         if _broken_constraint(exc) == NURSE_BED_ACTIVE_INDEX:     # told apart by name, as the care team's two
             raise Refusal(409, ASSIGNMENT_CONFLICT, "Another save of this window came first.").http() from None
         raise                                     # anything else is not a lost race: raised as it is
-    reaching = await _reaching(db, {nurse for _, nurse in asked}, caller_tenant, body.unit_id)
-    warnings = [ShiftWarning(code="unit_not_reached", nurse_id=nurse)
-                for nurse in sorted((n for n, ok in reaching.items() if not ok), key=str)]
     await db.commit()
     trail.record(request, hospital, SHIFT_ASSIGN, subject=str(body.unit_id), payload={
         "unit_id": str(body.unit_id), "shift_start": window.start.isoformat(), "shift_end": window.end.isoformat(),
         "before": _pairs(held), "after": _pairs(asked),
         "other": _pairs((row.bed_id, row.nurse_id) for row in others), "actor": actor})
-    saved = await _schedule(db, [(body.unit_id, unit_name)], window, now)
+    warnings = await _unreached(db, asked, caller_tenant, body.unit_id)
+    saved = await _schedule(db, [(body.unit_id, unit_name)], window, live, now)
     return ShiftScheduleSaved(**saved.model_dump(), warnings=warnings)
