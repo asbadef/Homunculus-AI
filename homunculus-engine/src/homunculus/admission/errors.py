@@ -74,6 +74,11 @@ CARE_TEAM_NOT_PHYSICIAN = "care_team_not_physician"    # the member, claimer or 
 CARE_TEAM_ATTENDING_REQUIRED = "care_team_attending_required"   # the ATTENDING row never ends alone (T5)
 CODES = CODES | frozenset({CARE_TEAM_CONFLICT, CARE_TEAM_NOT_PHYSICIAN, CARE_TEAM_ATTENDING_REQUIRED})
 
+# G4-04 — İş yükü (spec §5 A1, A7, M3): the shift assignment's two. Its own block after B1c's, which it widens the same way.
+SHIFT_CHANGED = "shift_changed"                        # the window the form named is no longer current or next (A1)
+ASSIGNMENT_CONFLICT = "assignment_conflict"            # another save of the window won at the unique index (A7)
+CODES = CODES | frozenset({SHIFT_CHANGED, ASSIGNMENT_CONFLICT})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen

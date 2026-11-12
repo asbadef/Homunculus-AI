@@ -12,7 +12,6 @@ Permission guards (see auth/permissions.py):
   * admissions.discharge.confirm  confirm a discharge, release the bed
   * care_team.claim / .assign  claim or assign a care-team role; an assigner ends a row, and a
                                member ends her own with `admissions.view` alone (G2-B1c)
-  * shifts.manage              shift schedules
   * handover.sign              open, sign, countersign a handover; read my handovers and the
                                colleagues I can hand over to (G2-B3b)
 
@@ -69,8 +68,7 @@ from homunculus.admission.schemas import (
     DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
-    LabelResponse, LabelSettings, NurseBedAssignmentResponse, PatientResponse, PendingHandovers,
-    PendingUnit, ShiftScheduleCreate, ShiftScheduleResponse, TransferInitiate,
+    LabelResponse, LabelSettings, PatientResponse, PendingHandovers, PendingUnit, TransferInitiate,
 )
 from homunculus.admission.errors import (
     BED_CLOSED, BED_RESERVED, CARE_TEAM_ATTENDING_REQUIRED, CARE_TEAM_CONFLICT,
@@ -1374,42 +1372,6 @@ async def discharge_confirm(
                           "actor": actor})
     board, alerts = await _off_the_board(request, hospital, key)
     return DischargeConfirmResponse(**written.model_dump(), board=board, alerts=alerts)
-
-
-# ---------------------------------------------------------------------------
-# Shift scheduling (§4.4)
-# ---------------------------------------------------------------------------
-sched_router = APIRouter(prefix="/shift-schedule", tags=["shift-schedule"])
-
-
-@sched_router.post("", response_model=ShiftScheduleResponse, status_code=201)
-async def create_shift_schedule(
-    payload: ShiftScheduleCreate,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_permission("shifts.manage")),
-    caller_tenant: uuid.UUID = _tenant,
-):
-    # The unit and every assigned bed belong to the caller's tenant, and every nurse is a member
-    # of it. The charge nurse is the caller, whose membership `caller_tenant_id` established.
-    scope.ensure_owned(await scope.tenant_of_unit(db, payload.unit_id), caller_tenant,
-                       UNIT_NOT_FOUND)
-    await scope.ensure_beds(db, caller_tenant, (a.bed_id for a in payload.assignments),
-                            BED_NOT_FOUND)
-    await scope.ensure_members(db, caller_tenant, (a.nurse_id for a in payload.assignments))
-    assignments = [a.model_dump() for a in payload.assignments]
-    try:
-        created, warnings = await service.create_shift_schedule(
-            db, unit_id=payload.unit_id, charge_nurse_id=user.id, assignments=assignments,
-        )
-    except WorkflowError as exc:
-        raise _wf(exc)
-    await db.commit()
-    for row in created:
-        await db.refresh(row)
-    return ShiftScheduleResponse(
-        assignments=[NurseBedAssignmentResponse.model_validate(r) for r in created],
-        warnings=warnings,
-    )
 
 
 # ---------------------------------------------------------------------------

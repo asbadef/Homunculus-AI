@@ -9,7 +9,7 @@ they can be unit-tested without HTTP:
   * DRAFT 2-hour review timeout reminder (S-26)
   * transfer receiving-attending 1-hour confirmation deadline (S-27)
   * care-team assignment rules (§4.2–4.3), incl. ONCALL time-box (§3.3)
-  * nurse–bed shift assignment with soft over-capacity warning (§4.4, S-25)
+  * who the shift form offers (G4-04: `nurse_ids`, beside the physicians')
   * handover dual-signature + 30-min bridge (S-24) + CRITICAL-alert block (S-07)
 """
 from __future__ import annotations
@@ -23,11 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from homunculus.admission import errors
 from homunculus.admission.models import (
     Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
-    HandoverStatus, NurseBedAssignment, OPEN_ADMISSION_STATES, Patient,
+    HandoverStatus, OPEN_ADMISSION_STATES, Patient,
 )
 from homunculus.auth.models import Group, TenantMembership, User, UserGroup
 from homunculus.scope.service import _window_open
-from homunculus.tenant.models import Bed, BedState, Unit
+from homunculus.tenant.models import Bed, BedState
 
 # --- Settled timing decisions ---
 DRAFT_REVIEW_TIMEOUT = timedelta(hours=2)        # S-26
@@ -255,6 +255,26 @@ def physician_ids(tenant_id: uuid.UUID):
     )
 
 
+#: G4-04 (spec §5 A10): the default groups whose members the shift form offers. Not `rapid_response`, which
+#: Görevlerim's NURSE_SLUGS holds: the rapid-response team is not assigned to ward beds.
+NURSE_GROUPS = ("nurse", "charge_nurse")
+
+
+def nurse_ids(tenant_id: uuid.UUID):
+    """SELECT the ids of the people the shift form offers (G4-04, A10): as `physician_ids`, with `NURSE_GROUPS`. One
+    statement for the picker (GET /shift-schedule/nurses) and the PUT's check."""
+    return (
+        select(User.id)
+        .join(TenantMembership, TenantMembership.user_id == User.id)
+        .join(UserGroup, UserGroup.user_id == User.id)
+        .join(Group, Group.id == UserGroup.group_id)
+        .where(User.is_active.is_(True), TenantMembership.tenant_id == tenant_id,
+               TenantMembership.is_active.is_(True), Group.tenant_id == tenant_id,
+               Group.slug.in_(NURSE_GROUPS))
+        .distinct()
+    )
+
+
 async def is_physician(db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID) -> bool:
     """T1: whether `user_id` is a physician of this tenant. The routes refuse a member, a claimer
     or an attending a sign-off would make who is not: 409 `care_team_not_physician`."""
@@ -326,52 +346,6 @@ async def set_attending(
     db.add(member)
     await db.flush()
     return member, ended
-
-
-# ---------------------------------------------------------------------------
-# Nurse–bed shift assignment — §4.4, S-25
-# ---------------------------------------------------------------------------
-async def create_shift_schedule(
-    db: AsyncSession, *, unit_id: uuid.UUID, charge_nurse_id: uuid.UUID,
-    assignments: list[dict],
-) -> tuple[list[NurseBedAssignment], list[str]]:
-    """
-    Create bed–nurse assignments for a shift.
-
-    S-25: exceeding the unit's max_beds_per_nurse is a SOFT warning (not a hard
-    block); the over-capacity condition is surfaced and audit-logged by the caller.
-    """
-    unit = await db.get(Unit, unit_id)
-    if unit is None:
-        raise WorkflowError("Unit not found.")
-
-    warnings: list[str] = []
-    beds_per_nurse: dict[uuid.UUID, int] = {}
-    for a in assignments:
-        beds_per_nurse[a["nurse_id"]] = beds_per_nurse.get(a["nurse_id"], 0) + 1
-
-    for nurse_id, count in beds_per_nurse.items():
-        if count > unit.max_beds_per_nurse:
-            warnings.append(
-                f"Nurse {nurse_id} is assigned {count} beds, exceeding the unit "
-                f"maximum of {unit.max_beds_per_nurse} (soft limit, S-25)."
-            )
-
-    created: list[NurseBedAssignment] = []
-    for a in assignments:
-        row = NurseBedAssignment(
-            unit_id=unit_id,
-            bed_id=a["bed_id"],
-            nurse_id=a["nurse_id"],
-            charge_nurse_id=charge_nurse_id,
-            shift_start=a["shift_start"],
-            shift_end=a["shift_end"],
-        )
-        db.add(row)
-        created.append(row)
-
-    await db.flush()
-    return created, warnings
 
 
 # ---------------------------------------------------------------------------

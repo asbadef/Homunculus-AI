@@ -826,9 +826,10 @@ def create_app(
     from homunculus.tenant.router import router as tenant_router
     from homunculus.admission.router import (
         router as admission_router,
-        sched_router as shift_schedule_router,
         handover_router,
     )
+    # G4-04: the nurse–bed assignment per shift — GET/PUT /shift-schedule, GET /shift-schedule/nurses.
+    from homunculus.admission.shifts import router as shift_schedule_router
     from homunculus.escalation.router import (
         router as alerts_router,
         break_glass_router,
