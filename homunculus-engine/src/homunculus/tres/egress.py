@@ -26,7 +26,10 @@ say — while `LIVE_OPEN` is False. The legal basis of sending and a patient who
 `UNCONSCIOUS_LATER` (spec O5), and the cut-over where another system already reports (O11), are
 the owner's open questions. Opening it is a code change, reviewed, made with the owner's word; the
 connection test (no patient data) is not held by it. `live_closed` is asked by the rounds (the
-tenant is passed over), the hand routes (409) and the settings form (422)."""
+tenant is passed over), the hand routes (409) and the settings form (422) — and, closed by default,
+by `open_client` itself (review M10): a client for patient data is not built for the live host
+(`TresLiveClosed`), whatever path asked for it; only the connection test says `patient_data=False`.
+The lock FAILS CLOSED: an address that cannot be read counts as the live platform (review M1)."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -74,33 +77,63 @@ def address_allowed(base_url: str, hosts: frozenset[str]) -> bool:
 
 def live_closed(environment: str, base_url: str | None) -> bool:
     """Would a package to this account reach the live platform while it is closed? True for the
-    live environment, and for an account of either environment whose address is on a live host."""
+    live environment, and for an account of either environment whose address is on a live host.
+
+    FAIL CLOSED (review M1): this lock must hold whatever the install says, so an address that
+    cannot be read — httpx refuses it, or it parses to no host (no scheme, `https://`) — counts as
+    closed, and the host is judged as DNS reads it: lower-cased, without a trailing dot
+    (`ehr.e-health.gov.az.` is the live host). No address at all (None, empty) is not an unreadable
+    one: there is nothing to reach (the account is incomplete; `address_allowed` refuses it)."""
     if LIVE_OPEN:
         return False
     if environment == "live":
         return True
-    try:
-        host = httpx.URL(base_url or "").raw_host.decode("ascii").lower()
-    except (httpx.InvalidURL, ValueError, UnicodeDecodeError):
+    address = (base_url or "").strip()
+    if not address:
         return False
-    return host in LIVE_HOSTS
+    try:
+        host = httpx.URL(address).raw_host.decode("ascii").lower().rstrip(".")
+    except (httpx.InvalidURL, ValueError, UnicodeDecodeError):
+        return True
+    return not host or host in LIVE_HOSTS
 
 
 class TresEgressRefused(Exception):
     """`open_client` would not build a client: `code` is `egress_off` (the install's lock is
-    closed) or `tres_host_not_allowed` (the account points where the install does not allow)."""
+    closed), `tres_host_not_allowed` (the account points where the install does not allow) or
+    `tres_live_closed` (`TresLiveClosed`: it points at the live platform, closed in this version)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
 
 
+class TresLiveClosed(TresEgressRefused):
+    """`open_client` would not build a client for patient data: the account's address is on the
+    live platform, closed in this version (`live_closed`). A constant message, never the address
+    or the account. Its code is the settings and hand routes' `tres_live_closed`; errors.py gains
+    that constant with its dashboard words in plan F1's Task 10 (one commit), and this literal
+    becomes an import of it there."""
+
+    def __init__(self) -> None:
+        super().__init__("tres_live_closed")
+
+
 def open_client(account: TresAccount, *, egress: bool, hosts: frozenset[str],
-                transport: httpx.AsyncBaseTransport | None = None) -> TresClient:
-    """The one way production code builds a client: refused while the lock is closed, and for an
-    address that is not on an allowed host and port. Nothing is connected here."""
+                transport: httpx.AsyncBaseTransport | None = None,
+                patient_data: bool = True) -> TresClient:
+    """The one way production code builds a client: refused while the lock is closed, for an
+    address that is not on an allowed host and port, and — CLOSED BY DEFAULT (review M10) — for
+    an address on the live platform while it is closed (`live_closed`; the account carries no
+    environment, so its address is what is judged — the rounds and the hand routes judge the
+    environment as well, before they get here). `patient_data=False` is the connection test's
+    alone: it sends no patient data, so the live lock does not hold it (the other two do). The
+    point of the default: a sending path added later (F2–F6, deletes among them) that forgets its
+    own `live_closed` check still cannot reach the live host. Nothing is connected here."""
     if not egress:
         raise TresEgressRefused(EGRESS_OFF)
     if not address_allowed(account.base_url, hosts):
         raise TresEgressRefused(TRES_HOST_NOT_ALLOWED)
+    if patient_data and live_closed("test", account.base_url):
+        raise TresLiveClosed()
     return TresClient(account, transport=transport)

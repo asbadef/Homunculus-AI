@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
 from homunculus.tres.client import TresClient
-from homunculus.tres.egress import DEFAULT_HOSTS
+from homunculus.tres.egress import DEFAULT_HOSTS, open_client
 from homunculus.tres.errors import CODES, WORDS
 from homunculus.tres.models import RESOURCE_TYPES, TresSettings
 from homunculus.tres.schemas import TresSettingsIn, base_url_ok, settings_refusal
@@ -313,7 +313,7 @@ async def test_the_settings_are_the_callers_tenants_alone(ward, db_session):
 async def _stand_in(app, client, w, **account) -> FakeTres:
     """The stand-in behind the app's client factory, and its account saved as the tenant's sandbox."""
     fake = FakeTres()
-    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=fake.transport)
+    app.state.tres_client_factory = lambda acc, **_: TresClient(acc, transport=fake.transport)
     saved = {"base_url": fake.account.base_url, "username": fake.account.username,
              "password": fake.account.password, "provider_id": fake.account.provider_id, **account}
     r = await client.put(URL, json=body(test={**EMPTY, **saved}), headers=w.auth["admin"])
@@ -325,7 +325,7 @@ async def _stand_in(app, client, w, **account) -> FakeTres:
 async def test_with_the_lock_closed_the_test_is_refused_and_no_client_is_built(ward):
     w, client, app = ward
     built = []
-    app.state.tres_client_factory = lambda account: built.append(account)
+    app.state.tres_client_factory = lambda account, **_: built.append(account)
     await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()["detail"]["code"]) == (409, "egress_off"), r.text
@@ -379,6 +379,30 @@ async def test_the_test_opens_one_session_and_never_tells_its_id(ward):
 
 
 @requires_db
+async def test_the_test_asks_for_no_patient_data_and_so_still_reaches_an_account_on_the_live_host(ward, db_session):
+    """Review M10: the live lock sits inside the client factory and is closed by default; the
+    connection test alone says `patient_data=False` (it sends no patient data). Here the REAL
+    `open_client` is the factory, on the stand-in's transport — nothing leaves the process."""
+    w, client, app = ward
+    app.state.tres_egress = True
+    fake = FakeTres()
+    asked = []
+
+    def factory(account, **kw):
+        asked.append(kw)
+        return open_client(account, egress=True, hosts=DEFAULT_HOSTS, transport=fake.transport, **kw)
+
+    app.state.tres_client_factory = factory
+    db_session.add(TresSettings(tenant_id=w.tenant.id, mode="off", environment="test",
+                                test_base_url="https://ehr.e-health.gov.az", test_username=fake.account.username,
+                                test_password=fake.account.password, test_provider_id=fake.account.provider_id))
+    await db_session.commit()
+    r = await client.post(TEST_URL, headers=w.auth["admin"])
+    assert (r.status_code, r.json()) == (200, {"ok": True, "message": None}), r.text
+    assert asked == [{"patient_data": False}] and fake.requests == [("POST", "/auth/token")]
+
+
+@requires_db
 async def test_the_test_ends_its_database_transaction_before_it_asks_the_platform(ward, db_session):
     """No transaction (and no pooled connection) is held while the platform takes its time."""
     w, client, app = ward
@@ -399,7 +423,7 @@ async def test_the_test_ends_its_database_transaction_before_it_asks_the_platfor
         held.append(sessions[-1].in_transaction())
         return fake.transport.handler(request)
 
-    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=httpx.MockTransport(platform))
+    app.state.tres_client_factory = lambda acc, **_: TresClient(acc, transport=httpx.MockTransport(platform))
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()) == (200, {"ok": True, "message": None}), r.text
     assert held == [False]
@@ -424,7 +448,7 @@ async def test_a_dead_line_is_an_answer_too_never_a_500(ward):
     def refuse(request):
         raise httpx.ConnectError("connection refused", request=request)
 
-    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=httpx.MockTransport(refuse))
+    app.state.tres_client_factory = lambda acc, **_: TresClient(acc, transport=httpx.MockTransport(refuse))
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()) == (200, {"ok": False, "message": "ConnectError"})
 
@@ -470,7 +494,7 @@ async def test_a_successful_connection_test_lets_a_parked_tenant_try_again_and_a
     await _stand_in(app, client, w)
     await _park(db_session)
     wrong = FakeTres(password="baska-parola")
-    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=wrong.transport)
+    app.state.tres_client_factory = lambda acc, **_: TresClient(acc, transport=wrong.transport)
     assert (await client.post(TEST_URL, headers=w.auth["admin"])).json()["ok"] is False
     assert await _parked_at(db_session) == PARKED                                 # still parked
     await _stand_in(app, client, w, provider_id="PRV-0001")                       # the same account: no change

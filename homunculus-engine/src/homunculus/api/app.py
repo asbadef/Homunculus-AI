@@ -911,8 +911,11 @@ def create_app(
     # `open_client`, bound to this app's lock and hosts — a caller that forgets to ask whether the
     # lock is open still gets no client (a test may stand a stand-in's in).
 
-    def _tres_client(account: TresAccount) -> TresClient:
-        return open_client(account, egress=app.state.tres_egress, hosts=app.state.tres_hosts)
+    def _tres_client(account: TresAccount, *, patient_data: bool = True) -> TresClient:
+        # `patient_data` defaults to True: the live platform is closed to it (egress.open_client,
+        # review M10); only the connection test says False.
+        return open_client(account, egress=app.state.tres_egress, hosts=app.state.tres_hosts,
+                           patient_data=patient_data)
 
     app.state.tres_source = StaySource(audit)
     app.state.tres_client_factory = _tres_client

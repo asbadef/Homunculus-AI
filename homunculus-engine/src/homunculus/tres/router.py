@@ -24,7 +24,9 @@ session id. 409 `egress_off` while the install's lock is closed — the route th
 at all; 409 `tres_host_not_allowed` for a stored address the install does not allow (a row saved
 before `TRES_HOSTS` was narrowed); 409 `tres_account_incomplete` while the account lacks a part.
 The client comes from `app.state.tres_client_factory` (egress.open_client, the lock and the hosts
-bound in), so the refusals hold even for a caller that forgot to ask. It is allowed in the mode
+bound in), so the refusals hold even for a caller that forgot to ask. This route alone asks it for
+`patient_data=False` (no patient data goes here): the live platform's lock, which the factory
+applies to every other caller by default, does not hold the test. It is allowed in the mode
 `off`: an administrator tests before turning the feed on. Not audited; it writes one thing only: a
 success clears `session_refused_at` (the account opens a session again: the rounds go on). A
 failed test parks nothing. It ends its database transaction before it asks the platform.
@@ -200,7 +202,9 @@ async def test_connection(
     factory = getattr(request.app.state, "tres_client_factory", None) or partial(
         open_client, egress=_egress(request), hosts=_hosts(request))
     try:
-        client = factory(account)
+        # The one caller that sends no patient data: the live platform's lock (egress.live_closed)
+        # does not hold it. Every other caller of the factory keeps the default, closed (review M10).
+        client = factory(account, patient_data=False)
     except TresEgressRefused as exc:    # the lock, or an address the install does not allow
         raise refusal(409, exc.code).http() from None
     except ValueError:
