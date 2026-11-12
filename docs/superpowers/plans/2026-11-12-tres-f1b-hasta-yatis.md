@@ -1624,7 +1624,7 @@ Encounter, vital signs. Where a line above and a line here disagree, this sectio
 ### 14.1 Decisions F1 took
 
 - **O20 — closed: a local id ends with its only dot.** `hmn-p-{phi_digest(FİN)[:32]}.`, `hmn-pr-{user id}.`,
-  `hmn-e-{root admission id}.`, `hmn-v-{root admission id}-{LOINC}-{first|last}.`; F2–F5's follow (`hmn-c-{row}.`,
+  `hmn-e-{root admission id}.`, `hmn-v-{root admission id}-{signal key}-{first|last}.` (the key is the signal's stable `id_key`, never its LOINC code); F2–F5's follow (`hmn-c-{row}.`,
   `hmn-l-{audit id}.`…). No id is then a proper prefix of another, in any case. Every id is a FHIR id of at most 64
   characters (`tres/ids.py` `is_local_id`). Whether the platform takes the dot is O24.
 - **O14 — closed: a validate round and references.** A resource whose reference has no platform id in the ledger is

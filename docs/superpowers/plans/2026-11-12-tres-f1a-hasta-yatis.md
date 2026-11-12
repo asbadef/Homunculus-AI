@@ -11,7 +11,7 @@
 **This plan is half of phase F1.** Whole, the phase passed 7000 lines, so it is split: **F1a, this document, the engine** (source, mappers, routes, retry), and **F1b** (`docs/superpowers/plans/2026-11-12-tres-f1b-hasta-yatis.md`), **the dashboard's panels**, written against the routes as this plan writes them. F1b starts after this plan's Task 13; F1b's last tasks carry the documents (spec §14, the guide, the gates' record) and the final review of the whole phase.
 
 **Spec amendments this phase makes (recorded by F1b, Task 21, in spec §14):**
-1. **O20 — a local id ends with its only dot.** Every D5 id is `hmn-…` followed by a single `.` at its end and nowhere else: `hmn-p-{phi_digest(FİN)[:32]}.`, `hmn-pr-{user id}.`, `hmn-e-{root admission id}.`, `hmn-v-{root admission id}-{LOINC}-{first|last}.`; F2–F5's ids follow (`hmn-c-{row}.`, `hmn-l-{audit id}.`…). With one end mark, no id is a proper prefix of another, in any case, so the platform's prefix search answers one entry. The dot rather than another `-`: `-` is inside every UUID and LOINC code; `.` is in none and is in FHIR's `id` alphabet `[A-Za-z0-9\-\.]{1,64}` (a POST carries the local id as its placeholder `id`, §4.2). Every id here is at most 64 characters (`ids.is_local_id` holds the tests to it). Decided before the first mapper: a sent local id never changes.
+1. **O20 — a local id ends with its only dot.** Every D5 id is `hmn-…` followed by a single `.` at its end and nowhere else: `hmn-p-{phi_digest(FİN)[:32]}.`, `hmn-pr-{user id}.`, `hmn-e-{root admission id}.`, `hmn-v-{root admission id}-{signal key}-{first|last}.`; F2–F5's ids follow (`hmn-c-{row}.`, `hmn-l-{audit id}.`…). With one end mark, no id is a proper prefix of another, in any case, so the platform's prefix search answers one entry. The dot rather than another `-`: `-` is inside every UUID and every signal key (`heart-rate`); `.` is in none and is in FHIR's `id` alphabet `[A-Za-z0-9\-\.]{1,64}` (a POST carries the local id as its placeholder `id`, §4.2). Every id here is at most 64 characters (`ids.is_local_id` holds the tests to it). The vital sign's key is the signal's stable `id_key` in `codes.py` (`heart-rate`, `resp-rate`, `spo2`, `temperature`, `sbp`, `map`, `weight`, `height`), never its LOINC code: a code may change (SpO2, O7) and then it is a PUT of the same resource (amendment 23). Decided before the first mapper: a sent local id never changes.
 2. **O14 — a validate round and references.** In `validate` a resource that refers to another is checked only when the ledger holds that other's platform id (from an earlier `send` in the same environment). Otherwise its row reads `skipped` with the reason `no_reference` — the Encounter when the Patient has no platform id, every vital sign when the Encounter has none — and nothing pointing at nothing is sent. A tenant that never sent validates its Patients and Practitioners, the profiles with the most rules. F6 checks on the sandbox what `$validate` does with an unknown reference and may relax this. Why: a reference to a made-up id proves nothing, and the stand-in, like the platform's own `$validate` as far as anything is known, refuses it.
 3. **N2 — one stay, one trail read.** A transfer keeps the visit's protocol number: `admission/service.py` `confirm_transfer_arrival` moves it to the arriving row (O8 of 2026-11-02 — on this branch and on `origin/main`, where transfers are still closed by `_transfer_closed`) and copies `patient_id`. So the stay's chart rows are all under the board key of the chain's LAST row: the source reads them once (`iter_records_of(…, patient_id=<that key>)`).
 4. **N3 — the person from the root's row.** The Patient's id is `phi_digest` of the decrypted, normalised FİN of the root admission's patient row (one row for the whole chain). A Patient that cannot be built for want of a usable FİN (`fin_missing`, `fin_format`) is recorded under the stay's placeholder `hmn-p-s-{root}.`; once a FİN keys the person, the package removes that placeholder's skip.
@@ -33,6 +33,7 @@
 20. **§6 — one more route and the refusal codes.** `GET /admin/tres/admissions?key=` finds a stay by its board key (what «Şimdi gönder» and the preview are asked for). New codes in `tres/errors.py`: `tres_live_closed` (422, 409), `tres_unit_unknown`, `tres_department_code`, `tres_department_display`, `tres_fin_format`, `tres_name` (422), `tres_user_unknown` (404), `tres_filter`, `tres_cursor` (422), `tres_stay_unknown` (404), `tres_off`, `tres_busy`, `tres_login_refused` (409), `tres_platform_unavailable` (503).
 21. **§9, N6 — the stand-in checks each profile** by `meta.profile[0]`, not by FHIR type (a vital sign and a laboratory result are both Observations): the elements spec §5, D16, D17, D20 and FHIR R4 itself require, and the values a profile fixes. F0's tests of §4 now send `fake_tres.UNCHECKED_PROFILE`, a profile the stand-in holds no rules for.
 22. **§7 — nginx's access log.** The routes with a path parameter (`/admin/tres/practitioners/{user_id}`, `/admin/tres/admissions/{admission_id}/preview|send`, `/admin/tres/deliveries/{delivery_id}/retry`) join `deploy/local/web/nginx.conf`'s `map $uri $homunculus_log_uri` (G2-B1d O10's drift guard, `tests/test_access_log_redaction.py`), and their prefixes the map's catch-all: an id never reaches the log. `GET /admin/tres/admissions?key=` carries the protocol number in the query string, which that log format never writes.
+23. **Batch-1 review (2026-11-12) — the pure layer (Tasks 1–3) after an independent review; the files and the code blocks of Tasks 1–3 below carry it.** (1) `az.normal_fin` refuses a value that is not ASCII BEFORE `upper()`: `ß`→`SS`, `ﬀ`→`FF`, `ſ`→`S`, `ı`→`I` are transliteration, which D20 forbids. (2) `az.phone` takes ASCII digits only (`\d` let Arabic-Indic and full-width digits into the value sent). (3) `stay.readings_of` counts a `chart_retract`'s `entry` only as an `int` that is not a `bool` (the engine's own guard, `api/rehydrate.py` `retracted_entries`): `True` and `1.0` had withdrawn row 1, `[1]` had raised; drift tests hold `stay.RETRACT` to `api/clinical.py` and run the real `/clinical` door so a renamed `chart` row cannot silently empty the readings. (5) A `chart` row whose `charted_by` is `stay.DEVICE_CHARTER` (`tenant-token`, what `api/app.py` writes when the bridge's token charts) is skipped: D10 sends hand-charted values, and a device's sample is unverified (a test reads `app.py`'s literal). (6) A vital sign's local id is keyed by the signal's stable `id_key`, not by its LOINC code — `hmn-v-{root admission id}-{key}-{first|last}.` with `heart-rate`, `resp-rate`, `spo2`, `temperature`, `sbp`, `map`, `weight`, `height` — because a sent local id never changes (amendment 1) and SpO2's code is the ministry's open question (O7: `2708-6` now, maybe `59408-5`): a code change must become a PUT of the same resource, not a second record; `ids.vital` validates the key. (7) `ids.patient` normalises the FİN through `az.normal_fin` itself (`ab12c3d` and `AB12C3D` are one id) and raises a `ValueError` with a constant message, never the FİN, when it is unusable. (8) `mapping.common.instant` raises on a time with no zone instead of reading it as the server's local time. (9) A weight or height must be finite as well as positive (`inf` never reaches `valueQuantity`). (10) A `finished` stay without a `discharge_at` is skipped with the new catalogue reason `discharge_missing` (`mapping/common.py`, beside `timezone_unknown`) rather than sent as a `finished` Encounter without `period.end`; its dashboard words come with F1b. (11) `Person`'s and `Clinician`'s identity fields are `repr=False`. NOT changed, on purpose: a reading timed before the stay's `admitted_at` or after its `discharged_at` is sent as charted, with no clamping or filtering (O27).
 
 **The codes, checked (D12).** Source: the HL7 terminology server, `https://tx.fhir.org/r4` `CodeSystem/$lookup` (LOINC 2.83, UCUM 2.2 as served there). Checked 2026-11-12. Every LOINC code's STATUS is ACTIVE; its display is LOINC's LONG_COMMON_NAME.
 
@@ -55,10 +56,12 @@ Also checked there the same day: `http://terminology.hl7.org/CodeSystem/observat
 - O24 Whether the platform takes a placeholder `id` (and a `local-system-unique-id`) ending in `.` — FHIR allows it; F6's first POST shows it. If not, O20's end mark becomes another character before any live send.
 - O25 A `last` vital sign withdrawn after it was sent while the patient was still admitted (a hand send) stays on the platform until F6's deletes (D19).
 - O26 REACH (7 days) bounds how late a correction reaches the platform without a hand. F2–F5 write records after the discharge (diagnoses, procedures, the summary): F2 decides whether a change to them brings an older stay back within reach.
+- O27 A reading timed outside the Encounter's period (charting allows up to 24 h back; `discharge_at` can be entered before the last reading) is sent as charted. Whether the platform refuses an Observation outside its Encounter's period is for F6's sandbox; a refusal would leave that row `stuck`.
+- O28 At the merge with G3-05 (Welch Allyn ward device readings): decide whether its rows reach `readings_of` and whether they count as hand-charted for TRƏS (they must not arrive as `chart` rows under the device token unnoticed: `stay.DEVICE_CHARTER` would drop them).
 
 **Gates (measured when the plan is carried out — every `…` replaced by the number seen):**
 - Baseline (Task 0, head `485dcf4f` = `f74b474a` + this plan): engine 4199 passed / 1428 skipped (no-DB); dashboard 166 files / 4481 tests.
-- After F1a (Task 13): engine … passed / … skipped (no-DB; expected baseline +79 passed / +36 skipped); Postgres per file (Task 13, Step 3) …; dashboard … files / … tests (expected the baseline's file count, the test count unchanged — F1a changes assertions, not tests); head `<sha>`.
+- After F1a (Task 13): engine … passed / … skipped (no-DB; expected baseline +125 passed / +36 skipped: +79 as first planned, +46 from amendment 23's tests of Tasks 1–3); Postgres per file (Task 13, Step 3) …; dashboard … files / … tests (expected the baseline's file count, the test count unchanged — F1a changes assertions, not tests); head `<sha>`.
 
 ---
 
@@ -146,6 +149,7 @@ of another (O20) — and a person's id from the FİN, never the row. No database
 from __future__ import annotations
 
 import itertools
+import re
 import uuid
 
 import pytest
@@ -168,7 +172,8 @@ def test_the_signals_are_the_six_bedside_ones_with_their_checked_codes():
     }
     assert (codes.WEIGHT.loinc.code, codes.WEIGHT.loinc.display, codes.WEIGHT.ucum) == ("29463-7", "Body weight", "kg")
     assert (codes.HEIGHT.loinc.code, codes.HEIGHT.loinc.display, codes.HEIGHT.ucum) == ("8302-2", "Body height", "cm")
-    assert all(s.loinc.system == codes.LOINC == "http://loinc.org" for s in (*codes.SIGNALS.values(), codes.WEIGHT))
+    assert all(s.loinc.system == codes.LOINC == "http://loinc.org"
+               for s in (*codes.SIGNALS.values(), codes.WEIGHT, codes.HEIGHT))
     assert codes.UCUM == "http://unitsofmeasure.org"
 
 
@@ -189,15 +194,30 @@ def test_the_two_hl7_codings_and_every_check_is_recorded():
     assert "tx.fhir.org" in codes.CHECKED_WITH
 
 
+def test_each_vital_sign_has_its_stable_key_and_the_key_is_not_its_loinc_code():
+    """A local id never changes once sent (amendment 1). SpO2's LOINC code is an open question to the
+    ministry (O7: `2708-6` now, maybe `59408-5`): a code change must become a PUT of the SAME resource,
+    so the id is keyed by the signal, never by the code. FHIR ids allow no `_`: hyphenated words."""
+    assert {slug: s.id_key for slug, s in codes.SIGNALS.items()} == {
+        "heart_rate": "heart-rate", "resp_rate": "resp-rate", "spo2": "spo2", "temperature": "temperature",
+        "sbp": "sbp", "map": "map"}
+    assert (codes.WEIGHT.id_key, codes.HEIGHT.id_key) == ("weight", "height")
+    every = (*codes.SIGNALS.values(), codes.WEIGHT, codes.HEIGHT)
+    assert len({s.id_key for s in every}) == len(every)                      # no two share an id
+    for s in every:
+        assert s.loinc.code not in s.id_key and re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", s.id_key)
+
+
 def test_every_local_id_is_hmn_a_fhir_id_and_ends_with_its_only_dot():
     made = [ids.patient("AB12C3D"), ids.patient_placeholder(ROOT), ids.practitioner(USER), ids.encounter(ROOT),
-            *(ids.vital(ROOT, s.loinc.code, which) for s in (*codes.SIGNALS.values(), codes.WEIGHT, codes.HEIGHT)
+            *(ids.vital(ROOT, s.id_key, which) for s in (*codes.SIGNALS.values(), codes.WEIGHT, codes.HEIGHT)
               for which in (ids.FIRST, ids.LAST))]
     for local_id in made:
         assert ids.is_local_id(local_id), local_id
         assert len(local_id) <= 64
     assert ids.encounter(ROOT) == f"hmn-e-{ROOT}."
-    assert ids.vital(ROOT, "8867-4", "last") == f"hmn-v-{ROOT}-8867-4-last."
+    assert ids.vital(ROOT, "heart-rate", "last") == f"hmn-v-{ROOT}-heart-rate-last."
+    assert ids.vital(ROOT, codes.SIGNALS["spo2"].id_key, "first") == f"hmn-v-{ROOT}-spo2-first."
     assert ids.practitioner(USER) == f"hmn-pr-{USER}."
     for bad in ("hmn-l-12", "hmn-l-12.x.", "xmn-l-12.", "hmn-l 12.", "hmn-" + "x" * 64 + "."):
         assert not ids.is_local_id(bad), bad
@@ -207,8 +227,8 @@ def test_no_local_id_is_a_proper_prefix_of_another_in_any_case():
     """O20: the platform's search is by prefix and in any case. With one dot, at the end, none can be."""
     made = [ids.patient(fin) for fin in ("AB12C3D", "AB12C3E", "0000001")] + [
         ids.encounter(root) for root in (ROOT, OTHER)] + [
-        ids.vital(root, s.loinc.code, which) for root in (ROOT, OTHER) for s in codes.SIGNALS.values()
-        for which in (ids.FIRST, ids.LAST)]
+        ids.vital(root, s.id_key, which) for root in (ROOT, OTHER)
+        for s in (*codes.SIGNALS.values(), codes.WEIGHT, codes.HEIGHT) for which in (ids.FIRST, ids.LAST)]
     for a, b in itertools.permutations(made, 2):
         assert not b.lower().startswith(a.lower()), (a, b)
 
@@ -217,7 +237,29 @@ def test_a_person_is_keyed_by_the_fin_digest_never_by_the_fin():
     assert ids.patient("AB12C3D") == ids.patient("AB12C3D") != ids.patient("AB12C3E")
     assert "AB12C3D" not in ids.patient("AB12C3D") and len(ids.patient("AB12C3D")) == len("hmn-p-") + 32 + 1
     with pytest.raises(ValueError):
-        ids.vital(ROOT, "8867-4", "middle")
+        ids.vital(ROOT, "heart-rate", "middle")
+
+
+def test_a_patient_id_is_made_from_the_normalised_fin_or_not_at_all():
+    """`ids.patient` normalises through `az.normal_fin` itself: one person, one id however the FİN was
+    typed — and a FİN the platform would not accept never gets an id (the message is a constant: a
+    FİN is PHI and must not travel in an exception)."""
+    assert ids.patient("ab12c3d") == ids.patient("AB12C3D") == ids.patient("  Ab12C3d ")
+    for unusable in ("AB12C3", "ƏB12C3D", "ß12345", "", "   ", None):
+        with pytest.raises(ValueError) as refused:
+            ids.patient(unusable)
+        assert str(refused.value) == ids.FIN_UNUSABLE
+    with pytest.raises(ValueError) as refused:
+        ids.patient("AB12C3")
+    assert "AB12C3" not in str(refused.value) and "AB12C3" not in repr(refused.value)
+
+
+@pytest.mark.parametrize("key", ["heart_rate", "Heart-Rate", "", "-heart", "heart-", "heart--rate", "heart.rate",
+                                 "8867-4 ", "ürək", "x" * 20])
+def test_a_vital_key_that_is_not_hyphenated_lower_case_words_is_refused(key):
+    with pytest.raises(ValueError) as refused:
+        ids.vital(ROOT, key, ids.FIRST)
+    assert str(refused.value) == ids.VITAL_KEY_INVALID
 ```
 
 - [ ] **Step 2: Run it to see it fail**
@@ -284,10 +326,17 @@ class Coded:
 
 @dataclass(frozen=True)
 class Signal:
-    """A vital sign as it is sent: its LOINC coding, the unit the engine charts it in, and its UCUM code."""
+    """A vital sign as it is sent: its LOINC coding, the unit the engine charts it in, its UCUM code and
+    the key its local id carries.
+
+    `id_key` is what `ids.vital` puts in the id (`hmn-v-{root}-{id_key}-{first|last}.`), NEVER the LOINC
+    code: a sent local id never changes (plan F1, amendment 1) and a code may (SpO2 — O7: `2708-6` now,
+    perhaps `59408-5`), and then the same resource must be PUT again under the same id. The key is
+    lower-case words joined by single hyphens (a FHIR id allows no `_`), and no two signals share one."""
     loinc: Coded
     charted_unit: str | None          # the chart row's `unit`; None: not a chart row (weight, height)
     ucum: str
+    id_key: str
 
 
 #: observation-category `vital-signs` — checked 2026-11-12, display «Vital Signs».
@@ -298,18 +347,18 @@ INPATIENT = Coded(ACT_CODE, "IMP", "inpatient encounter")
 #: The bedside signals (D10) by the engine's slug, in the order they are sent. Each checked
 #: 2026-11-12 (CHECKED_WITH); the UCUM codes `/min`, `%`, `Cel`, `mm[Hg]` likewise.
 SIGNALS: dict[str, Signal] = {
-    "heart_rate": Signal(Coded(LOINC, "8867-4", "Heart rate"), "/min", "/min"),
-    "resp_rate": Signal(Coded(LOINC, "9279-1", "Respiratory rate"), "/min", "/min"),
-    "spo2": Signal(Coded(LOINC, "2708-6", "Oxygen saturation in Arterial blood"), "%", "%"),   # O7
-    "temperature": Signal(Coded(LOINC, "8310-5", "Body temperature"), "°C", "Cel"),
-    "sbp": Signal(Coded(LOINC, "8480-6", "Systolic blood pressure"), "mmHg", "mm[Hg]"),
-    "map": Signal(Coded(LOINC, "8478-0", "Mean blood pressure"), "mmHg", "mm[Hg]"),
+    "heart_rate": Signal(Coded(LOINC, "8867-4", "Heart rate"), "/min", "/min", "heart-rate"),
+    "resp_rate": Signal(Coded(LOINC, "9279-1", "Respiratory rate"), "/min", "/min", "resp-rate"),
+    "spo2": Signal(Coded(LOINC, "2708-6", "Oxygen saturation in Arterial blood"), "%", "%", "spo2"),   # O7
+    "temperature": Signal(Coded(LOINC, "8310-5", "Body temperature"), "°C", "Cel", "temperature"),
+    "sbp": Signal(Coded(LOINC, "8480-6", "Systolic blood pressure"), "mmHg", "mm[Hg]", "sbp"),
+    "map": Signal(Coded(LOINC, "8478-0", "Mean blood pressure"), "mmHg", "mm[Hg]", "map"),
 }
 
 #: The admission's measurements (D10): one value each, at the admission. Checked 2026-11-12; UCUM
 #: `kg`, `cm`.
-WEIGHT = Signal(Coded(LOINC, "29463-7", "Body weight"), None, "kg")
-HEIGHT = Signal(Coded(LOINC, "8302-2", "Body height"), None, "cm")
+WEIGHT = Signal(Coded(LOINC, "29463-7", "Body weight"), None, "kg", "weight")
+HEIGHT = Signal(Coded(LOINC, "8302-2", "Body height"), None, "cm", "height")
 
 #: The record of each check, per code, as the plan and the guide print it.
 CHECKS: tuple[tuple[str, str, str, str], ...] = tuple(
@@ -340,7 +389,10 @@ placeholder `id` (spec §4.2). `is_local_id` checks both rules; the tests hold e
     Patient        hmn-p-{phi_digest(FİN)[:32]}.        the person, not the admission row (D5)
     Practitioner   hmn-pr-{user id}.
     Encounter      hmn-e-{root admission id}.           one stay across beds (D5)
-    vital sign     hmn-v-{root admission id}-{LOINC}-{first|last}.
+    vital sign     hmn-v-{root admission id}-{signal key}-{first|last}.
+                   the key is `codes.Signal.id_key` (`heart-rate`, `resp-rate`, `spo2`, `temperature`,
+                   `sbp`, `map`, `weight`, `height`) — NEVER the LOINC code: a sent id never changes,
+                   a code may (SpO2, O7), and then it is the same resource PUT again
 
 A Patient that cannot be built for want of a usable FİN has no digest to be keyed by; its skip is
 recorded under `hmn-p-s-{root admission id}.` (the stay's placeholder), which the package removes
@@ -351,12 +403,18 @@ import re
 import uuid
 
 from homunculus.crypto import phi_digest
+from homunculus.tres import az
 
 PREFIX = "hmn-"
 END = "."
 #: FHIR's `id`: letters, digits, '-' and '.', 1 to 64 of them.
 _FHIR_ID = re.compile(r"[A-Za-z0-9\-.]{1,64}")
 FIRST, LAST = "first", "last"
+#: A vital sign's id key: lower-case ASCII words joined by single hyphens (FHIR ids allow no `_`).
+_VITAL_KEY = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+#: Constant messages: an exception raised here never carries the FİN or the key it was given.
+FIN_UNUSABLE = "a patient's id needs a usable FİN (seven Latin capitals or digits)"
+VITAL_KEY_INVALID = "a vital sign's id key is lower-case words joined by single hyphens, and its id fits 64 characters"
 
 
 def is_local_id(value: str) -> bool:
@@ -365,9 +423,14 @@ def is_local_id(value: str) -> bool:
             and value.endswith(END) and value.count(END) == 1)
 
 
-def patient(fin: str) -> str:
-    """The person's id, from the NORMALISED FİN (az.normal_fin): one person, one national Patient."""
-    return f"{PREFIX}p-{phi_digest(fin)[:32]}{END}"
+def patient(fin: str | None) -> str:
+    """The person's id: the digest of the FİN as `az.normal_fin` normalises it, so one person is one
+    national Patient however the FİN was typed (`ab12c3d` and `AB12C3D` are the same id). A FİN the
+    platform would not accept has no id: ValueError, whose message never holds the FİN."""
+    normal, _ = az.normal_fin(fin)
+    if normal is None:
+        raise ValueError(FIN_UNUSABLE)
+    return f"{PREFIX}p-{phi_digest(normal)[:32]}{END}"
 
 
 def patient_placeholder(root: uuid.UUID) -> str:
@@ -383,16 +446,24 @@ def encounter(root: uuid.UUID) -> str:
     return f"{PREFIX}e-{root}{END}"
 
 
-def vital(root: uuid.UUID, loinc: str, which: str) -> str:
+def vital(root: uuid.UUID, key: str, which: str) -> str:
+    """A vital sign's id: the stay's root, the signal's key (`codes.Signal.id_key`, never its LOINC
+    code) and `first` or `last`. Raises ValueError for a key that is not hyphenated lower-case words
+    or that would make the id longer than FHIR allows."""
     if which not in (FIRST, LAST):
         raise ValueError("a vital sign's id is its first or its last value")
-    return f"{PREFIX}v-{root}-{loinc}-{which}{END}"
+    if not isinstance(key, str) or not _VITAL_KEY.fullmatch(key):
+        raise ValueError(VITAL_KEY_INVALID)
+    local_id = f"{PREFIX}v-{root}-{key}-{which}{END}"
+    if not is_local_id(local_id):
+        raise ValueError(VITAL_KEY_INVALID)
+    return local_id
 ```
 
 - [ ] **Step 5: Run it to see it pass**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_codes.py 2>&1 | tail -3`
-Expected: `6 passed`.
+Expected: `18 passed`.
 
 - [ ] **Step 6: Commit**
 
@@ -437,6 +508,20 @@ def test_the_fin_is_seven_latin_capitals_or_digits(typed, expected):
     assert az.normal_fin(typed) == expected
 
 
+@pytest.mark.parametrize("typed", [
+    "ß123456",      # str.upper() would make it «SS123456»-shaped: ß → SS
+    "ß12345",       # …and «SS12345», seven characters: an invented FİN
+    "ﬀ12345",       # the ff ligature → FF
+    "ſ123456",      # the long s → S
+    "ı123456",      # the dotless i → I
+    "AB12C3Ｄ",  # a full-width D
+])
+def test_a_fin_that_is_not_ascii_is_refused_before_it_is_upper_cased(typed):
+    """D20 forbids transliteration: `str.upper()` maps ß to SS, ﬀ to FF, ſ to S and ı to I, which is
+    one — so the value is judged as typed, and any character outside ASCII is `fin_format`."""
+    assert az.normal_fin(typed) == (None, "fin_format")
+
+
 @pytest.mark.parametrize("typed, expected", [
     ("Sentetik Ayşe", (("Sentetik", ["Ayşe"]), None)),
     ("  Sentetikova   Leyla  Nur ", (("Sentetikova", ["Leyla", "Nur"]), None)),
@@ -458,6 +543,9 @@ def test_sex_has_the_platforms_two_codes_only(sex, expected):
     ("+994501234567", "+994501234567"), ("994501234567", "+994501234567"),
     ("050 123 45 67", "+994501234567"), ("(050) 123-45-67", "+994501234567"), ("501234567", "+994501234567"),
     ("+90 532 123 45 67", None), ("12345", None), ("", None), (None, None), ("05012345678", None),
+    # only ASCII digits: Arabic-Indic, Persian and full-width digits are `\d` to Python, not to the platform
+    ("+٩٩٤٥٠١٢٣٤٥٦٧", None), ("٠٥٠١٢٣٤٥٦٧", None), ("۰۵۰۱۲۳۴۵۶۷", None), ("+994５０１２３４５６７", None),
+    ("+99450123456٧", None),
 ])
 def test_a_phone_is_plus_994_and_nine_digits_or_not_sent(typed, expected):
     assert az.phone(typed) == expected
@@ -486,12 +574,13 @@ name and the sex — is either here in the platform's form, or the reason it is 
 code the tab shows so the ward can complete the record. Nothing here guesses: a value that does
 not fit is a skip, never a correction.
 
-* FİN: trimmed and upper-cased, then exactly seven Latin capitals or digits. Never transliterated
-  (an `Ə` typed in it is `fin_format`, not an `E`).
+* FİN: trimmed, refused when any character is outside ASCII, then upper-cased and exactly seven
+  Latin capitals or digits. Never transliterated (an `Ə` typed in it is `fin_format`, not an `E`;
+  nor does `ß` become `SS`, which `str.upper()` would do).
 * Name: the admission form writes «Soyad Ad» (family first), so the first word is the family name
   and the rest the given names; a single word cannot be split (`name_single`).
 * Sex: `male` → `K`, `female` → `Q` (the platform's own codes); `other` and `unknown` have none.
-* Phone: `+994` and the nine digits of the national number, from `+994…`, `994…`, the domestic
+* Phone: `+994` and the nine (ASCII) digits of the national number, from `+994…`, `994…`, the domestic
   form with its leading `0`, or the nine digits alone — spaces, dashes, dots and brackets dropped.
   Anything else is not sent (a phone is not required: no skip)."""
 from __future__ import annotations
@@ -509,15 +598,23 @@ BIRTH_DATE_INVALID = "birth_date_invalid"
 _FIN = re.compile(r"[A-Z0-9]{7}")
 SEX_CODES = {"male": "K", "female": "Q"}
 _PHONE_PUNCTUATION = re.compile(r"[\s\-.()]")
-_PHONE_FORMS = (re.compile(r"\+994(\d{9})"), re.compile(r"994(\d{9})"), re.compile(r"0(\d{9})"),
-                re.compile(r"(\d{9})"))
+# ASCII digits only: `\d` alone takes Arabic-Indic, Persian and full-width digits too, and they would
+# go into the value sent (D20: nothing is transliterated, so nothing is passed off as ASCII either).
+_PHONE_FORMS = (re.compile(r"\+994([0-9]{9})"), re.compile(r"994([0-9]{9})"), re.compile(r"0([0-9]{9})"),
+                re.compile(r"([0-9]{9})"))
 
 
 def normal_fin(value: str | None) -> tuple[str | None, str | None]:
     """(the FİN in the platform's form, None) or (None, the skip reason)."""
-    fin = (value or "").strip().upper()
+    fin = (value or "").strip()
     if not fin:
         return None, FIN_MISSING
+    # Judged as typed, BEFORE any case-folding: `str.upper()` maps ß to SS, ﬀ to FF, ſ to S and ı to I,
+    # which is transliteration (D20) — a FİN with a character outside ASCII is a `fin_format`, never
+    # a corrected one.
+    if not fin.isascii():
+        return None, FIN_FORMAT
+    fin = fin.upper()
     if not _FIN.fullmatch(fin):
         return None, FIN_FORMAT
     return fin, None
@@ -557,7 +654,7 @@ def birth_date(value: str | None) -> tuple[str | None, str | None]:
 - [ ] **Step 4: Run it to see it pass**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_az.py 2>&1 | tail -3`
-Expected: `33 passed`.
+Expected: `44 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -584,19 +681,28 @@ Create `homunculus-engine/tests/test_tres_mapping.py`:
 """TRƏS-01 (spec §5, D5, D8, D10, D16, D17, D20, D22): the four mappers of phase F1 as golden tests —
 each resource exactly as spec §5 shapes it, every time in the tenant's zone with its offset, every
 skip with its catalogue reason — and the stay's bedside readings: the withdrawn ones left out, the
-first and last by measurement time. Pure functions: no database, no network. A synthetic stay of
-a synthetic person; the zone is a fixed +04:00 (Asia/Baku has had no DST since 2016), so the test
-needs no time zone database."""
+first and last by measurement time. Pure functions: no database, no network (the drift guards
+against the engine's `/clinical` door run it in memory: `create_app` with an `InMemoryAuditLog`).
+A synthetic stay of a synthetic person; the zone is a fixed +04:00 (Asia/Baku has had no DST since
+2016), so the test needs no time zone database."""
 from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from datetime import datetime, timedelta, timezone, tzinfo
 
-from homunculus.api.audit import AuditRecord
-from homunculus.tres import ids
+import pytest
+from fastapi.testclient import TestClient
+
+from homunculus.api import clinical
+from homunculus.api.app import create_app
+from homunculus.api.audit import AuditRecord, InMemoryAuditLog
+from homunculus.api.identity import Caller
+from homunculus.api.rehydrate import retracted_entries
+from homunculus.tres import codes, ids, stay as stay_module
 from homunculus.tres.client import LOCAL_ID_EXTENSION
-from homunculus.tres.mapping.common import Built, Skip
+from homunculus.tres.mapping.common import DISCHARGE_MISSING, INSTANT_NAIVE, Built, Skip, instant
 from homunculus.tres.mapping.encounter import encounter
 from homunculus.tres.mapping.patient import patient
 from homunculus.tres.mapping.practitioner import practitioner
@@ -695,6 +801,9 @@ def test_a_practitioner_without_a_whole_identity_is_skipped():
     assert practitioner(Clinician(DOCTOR, None, "S", "E", known=True)) == Skip("practitioner", local_id, "fin_missing")
     assert practitioner(Clinician(DOCTOR, "ZZ99", "S", "E", known=True)) == Skip("practitioner", local_id, "fin_format")
     assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "", "E", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "S", "", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "S", "   ", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", None, None, known=True)) == Skip("practitioner", local_id, "name_missing")
 
 
 # ---------------------------------------------------------------- Encounter (D8, D17, D22)
@@ -725,6 +834,42 @@ def test_a_stay_still_open_is_in_progress_with_no_end_and_no_participant_when_no
     assert "participant" not in built.resource
 
 
+def test_a_utc_tenant_gets_a_plus_zero_offset_never_a_z():
+    """D22: a time carries its offset; `Z` is never written — a tenant left on `UTC` reads `+00:00`."""
+    built = encounter(stay(zone=timezone.utc), patient_id="7001", practitioner_ids=[], organization_id="ORG-0001")
+    assert built.resource["period"] == {"start": "2026-11-02T06:30:00+00:00", "end": "2026-11-06T11:00:00+00:00"}
+    observation = vitals(stay(zone=timezone.utc), patient_id="7001", encounter_id="7003")[0].resource
+    assert observation["effectiveDateTime"] == "2026-11-02T07:30:00+00:00"
+    assert instant(ADMITTED, timezone.utc) == "2026-11-02T06:30:00+00:00"
+    assert "Z" not in str(built.resource["period"]) + observation["effectiveDateTime"]
+
+
+class _NoOffset(tzinfo):
+    """A tzinfo that is attached but knows no offset: as naive as no tzinfo at all (Python's own rule)."""
+
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
+
+
+def test_a_time_with_no_zone_is_refused_not_read_as_the_servers_local_time():
+    for naive in (datetime(2026, 11, 2, 10, 30), datetime(2026, 11, 2, 10, 30, tzinfo=_NoOffset())):
+        with pytest.raises(ValueError) as refused:
+            instant(naive, BAKU)
+        assert str(refused.value) == INSTANT_NAIVE and "2026" not in str(refused.value)
+    assert instant(datetime(2026, 11, 2, 6, 30, tzinfo=timezone.utc), BAKU) == "2026-11-02T10:30:00+04:00"
+
+
+def test_a_stay_finished_with_no_discharge_time_is_skipped_not_sent_open_ended():
+    """A `finished` Encounter without `period.end` is a record that contradicts itself."""
+    skipped = encounter(stay(finished=True, discharged_at=None), patient_id="7001", practitioner_ids=[],
+                        organization_id="ORG-0001")
+    assert skipped == Skip("encounter", f"hmn-e-{ROOT}.", "discharge_missing")
+    assert skipped.reason == DISCHARGE_MISSING == "discharge_missing"
+
+
 def test_an_encounter_without_its_department_organization_or_zone_is_skipped():
     local_id = f"hmn-e-{ROOT}."
     assert encounter(stay(department=None), patient_id="1", practitioner_ids=[], organization_id="O") == Skip(
@@ -740,13 +885,14 @@ def test_each_signal_goes_as_its_first_and_last_then_weight_and_height():
     built = vitals(stay(), patient_id="7001", encounter_id="7003")
     assert [(b.resource_type, b.fhir_type) for b in built] == [("vital", "Observation")] * 6
     assert [b.local_id for b in built] == [
-        f"hmn-v-{ROOT}-8867-4-first.", f"hmn-v-{ROOT}-8867-4-last.", f"hmn-v-{ROOT}-2708-6-first.",
-        f"hmn-v-{ROOT}-8310-5-first.", f"hmn-v-{ROOT}-29463-7-first.", f"hmn-v-{ROOT}-8302-2-first."]
+        f"hmn-v-{ROOT}-heart-rate-first.", f"hmn-v-{ROOT}-heart-rate-last.", f"hmn-v-{ROOT}-spo2-first.",
+        f"hmn-v-{ROOT}-temperature-first.", f"hmn-v-{ROOT}-weight-first.", f"hmn-v-{ROOT}-height-first."]
+    assert all(ids.is_local_id(b.local_id) and len(b.local_id) <= 64 for b in built)
     first_hr = built[0].resource
     assert first_hr == {
         "resourceType": "Observation",
         "meta": {"profile": ["http://fhir.az/StructureDefinition/az-observation"]},
-        "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": f"hmn-v-{ROOT}-8867-4-first."}],
+        "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": f"hmn-v-{ROOT}-heart-rate-first."}],
         "status": "final",
         "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
                                   "code": "vital-signs", "display": "Vital Signs"}]}],
@@ -768,9 +914,33 @@ def test_each_signal_goes_as_its_first_and_last_then_weight_and_height():
                                                   "code": "cm"}
 
 
+def test_a_changed_loinc_code_is_the_same_resource_under_the_same_local_id(monkeypatch):
+    """O7: SpO2 may move from `2708-6` to `59408-5` (the ministry's answer). A sent local id never
+    changes (amendment 1), so the code is not in it: the next round PUTs the same resource."""
+    before = {b.local_id: b.resource for b in vitals(stay(), patient_id="7001", encounter_id="7003")}
+    other = replace(codes.SIGNALS["spo2"], loinc=codes.Coded(
+        codes.LOINC, "59408-5", "Oxygen saturation in Arterial blood by Pulse oximetry"))
+    monkeypatch.setitem(codes.SIGNALS, "spo2", other)
+    after = {b.local_id: b.resource for b in vitals(stay(), patient_id="7001", encounter_id="7003")}
+    assert list(after) == list(before)
+    spo2 = f"hmn-v-{ROOT}-spo2-first."
+    assert before[spo2]["code"]["coding"][0]["code"] == "2708-6"
+    assert after[spo2]["code"]["coding"][0]["code"] == "59408-5"
+
+
 def test_no_readings_and_no_measurements_send_no_vitals():
     assert vitals(stay(readings=(), weight_kg=None, height_cm=None), patient_id="1", encounter_id="2") == []
     assert vitals(stay(zone=None), patient_id="1", encounter_id="2") == []
+
+
+@pytest.mark.parametrize("bad", [0, 0.0, -1.0, -72.5, float("inf"), float("-inf"), float("nan")])
+def test_a_weight_or_height_that_is_not_a_positive_finite_number_is_not_sent(bad):
+    """`inf` must never reach `valueQuantity`; zero and negative values are not measurements."""
+    assert vitals(stay(readings=(), weight_kg=bad, height_cm=bad), patient_id="1", encounter_id="2") == []
+    only_height = vitals(stay(readings=(), weight_kg=bad), patient_id="1", encounter_id="2")
+    assert [b.local_id for b in only_height] == [f"hmn-v-{ROOT}-height-first."]
+    only_weight = vitals(stay(readings=(), height_cm=bad), patient_id="1", encounter_id="2")
+    assert [b.local_id for b in only_weight] == [f"hmn-v-{ROOT}-weight-first."]
 
 
 def test_first_and_last_are_by_measurement_time_and_one_value_is_first_only():
@@ -800,6 +970,102 @@ def test_the_readings_are_the_charted_ones_less_the_withdrawn_and_the_unreadable
         _record(9, "chart", "map", {"value": 70.0, "unit": "mmHg", "obs_ts": obs}),
     ]
     assert readings_of(records) == (Reading("heart_rate", 88.0, at(1), 1), Reading("map", 70.0, at(1), 9))
+
+
+def _chart_row(id_, slug, value, hours, **payload) -> AuditRecord:
+    return _record(id_, "chart", slug, {"value": value, "unit": "/min", "obs_ts": at(hours).isoformat(), **payload})
+
+
+def _retract_row(id_, entry) -> AuditRecord:
+    return _record(id_, "chart_retract", "heart_rate", {"entry": entry, "reason": "yanlış hasta seçilmiş"})
+
+
+@pytest.mark.parametrize("entry", [True, 1.0, [1], "1", None, {"id": 1}, 1.5])
+def test_a_malformed_retract_withdraws_nothing_and_raises_nothing(entry):
+    """The engine's own guard (api/rehydrate.py `retracted_entries`): only an `int` that is not a `bool`
+    names a row. `True` and `1.0` equal 1 and would have withdrawn row 1; `[1]` is unhashable and
+    would have raised."""
+    records = [_chart_row(1, "heart_rate", 88.0, 1), _retract_row(2, entry)]
+    assert retracted_entries(records) == frozenset()
+    assert readings_of(records) == (Reading("heart_rate", 88.0, at(1), 1),)
+
+
+def test_withdrawing_the_earliest_or_the_latest_reading_promotes_the_next():
+    rows = [_chart_row(1, "heart_rate", 80.0, 1), _chart_row(2, "heart_rate", 82.0, 5),
+            _chart_row(3, "heart_rate", 84.0, 9)]
+
+    def ends(*withdrawn):
+        chosen = first_and_last(readings_of([*rows, *(_retract_row(10 + n, n) for n in withdrawn)]))
+        first, last = chosen["heart_rate"]
+        return first.entry, last.entry if last else None
+
+    assert ends() == (1, 3)
+    assert ends(1) == (2, 3)             # the earliest withdrawn: the next is the first
+    assert ends(3) == (1, 2)             # the latest withdrawn: the one before is the last
+    assert ends(1, 3) == (2, None)       # both: one value left, first only
+    assert "heart_rate" not in first_and_last(                    # all three: no reading, no vital sign
+        readings_of([*rows, *(_retract_row(10 + n, n) for n in (1, 2, 3))]))
+
+
+def test_a_row_the_device_token_charted_is_not_hand_charted_but_every_other_charter_is():
+    """D10 sends hand-charted values only. `/clinical` also takes the tenant (device) token and then
+    writes `charted_by` «tenant-token» (api/app.py): a machine's sample is unverified, so it is left out."""
+    records = [_chart_row(1, "heart_rate", 88.0, 1, charted_by=stay_module.DEVICE_CHARTER),
+               _chart_row(2, "heart_rate", 90.0, 2, charted_by="hem.ayse"),
+               _chart_row(3, "heart_rate", 92.0, 3)]
+    assert [r.entry for r in readings_of(records)] == [2, 3]
+    assert stay_module.DEVICE_CHARTER == "tenant-token"
+
+
+# ---------------------------------------------------------------- drift guards against the engine's doors
+def test_the_trail_names_the_stay_reads_are_the_engines_own():
+    """`chart_retract` is a constant of api/clinical.py; the `chart` row's type is a literal there, so the
+    guard runs the real door: a hand entry and a device entry in, the withdrawal out, through
+    `create_app` with an in-memory trail — a rename would leave `readings_of` silently empty."""
+    assert stay_module.RETRACT == clinical.RETRACT
+
+    async def resolve(credential):
+        return {"nurse": Caller(hospital="h1", actor="hem.ayse", groups=("nurse",),
+                                perms=frozenset({"board.view", "clinical.chart"}))}.get(credential)
+
+    audit = InMemoryAuditLog()
+    app = create_app({"tok": "h1"}, run_escalation_loop=False, resolve_jwt=resolve, audit=audit)
+    when = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    nurse = {"Authorization": "Bearer nurse"}
+
+    def chart(headers, value):
+        answer = client.post("/clinical/bed-3", headers=headers, json={
+            "entries": [{"code": "heart_rate", "value": value}], "recorded_at": when})
+        assert answer.status_code == 200, answer.text
+        return answer.json()["entries"][0]["entry"]
+
+    with TestClient(app) as client:
+        chart({"Authorization": "Bearer tok"}, 70)                    # the bridge's token: a device row
+        hand, wrong = chart(nurse, 80), chart(nurse, 160)
+        withdrawn = client.post(f"/clinical/bed-3/entries/{wrong}/retract", headers=nurse,
+                                json={"reason": "yazım hatası — 160 değil 60"})
+        assert withdrawn.status_code == 200, withdrawn.text
+    records = audit.records(tenant="h1", limit=1000)
+    assert {r.event_type for r in records} >= {stay_module.CHART, stay_module.RETRACT}
+    assert [r.payload["charted_by"] for r in records if r.event_type == stay_module.CHART] == [
+        stay_module.DEVICE_CHARTER, "hem.ayse", "hem.ayse"]
+    assert [r.entry for r in readings_of(records)] == [hand]          # not the device's, not the withdrawn
+
+
+def test_the_device_branch_of_charted_by_still_writes_the_literal_the_stay_skips():
+    """api/app.py `_charted_by` records the token path as exactly the string `stay.DEVICE_CHARTER`; the
+    engine's source is read, as the dashboard's tests read it, so a changed literal fails here."""
+    source = (Path(clinical.__file__).parent / "app.py").read_text(encoding="utf-8")
+    assert f'return "{stay_module.DEVICE_CHARTER}" if caller.is_device else caller.actor' in source
+
+
+# ---------------------------------------------------------------- no identity in a repr
+def test_a_persons_and_a_clinicians_repr_hold_none_of_their_identity():
+    """A `Stay` ends up in a log line or a pytest diff: its repr must not carry a FİN, a name, a birth date…"""
+    shown = repr(PERSON) + repr(stay().clinicians[0]) + repr(stay())
+    for value in ("ab12c3d", "AB12C3D", "zz99yy8", "ZZ99YY8", "Sentetikova", "Leyla", "Nur", "Sentetik", "Sentetikov",
+                  "Elçin", "female", "1980", "050 123 45 67"):
+        assert value not in shown, value
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -827,7 +1093,12 @@ last row's board key is the key of every chart row of the stay: one read (plan F
 `readings_of` reads the hand-charted bedside values (D10) from the trail's `chart` rows, less the
 ones a `chart_retract` withdrew; `first_and_last` picks each signal's first and last by the time it
 was measured (the audit id breaks a tie). A row the trail cannot read — not a finite number, a time
-with no zone, another unit than the door records — is left out, never sent as a guess."""
+with no zone, another unit than the door records — is left out, never sent as a guess. So is a row
+the device token charted: `/clinical` takes the bridge's tenant token as well as a clinician's, and
+records it as `DEVICE_CHARTER` — a machine's sample is unverified, and D10 sends what a person charted.
+
+Nothing here carries an identity into a repr: the person's and the clinician's fields are
+`repr=False`, so a stay in a log line, an assertion message or a debugger shows no FİN or name."""
 from __future__ import annotations
 
 import math
@@ -838,29 +1109,32 @@ from datetime import datetime, tzinfo
 
 from homunculus.tres.codes import SIGNALS
 
-CHART = "chart"
+CHART = "chart"                    # the audit event type api/clinical.py writes (a literal there; a test runs the door)
 RETRACT = "chart_retract"          # api/clinical.py RETRACT: the withdrawal of one `chart` row
+#: `charted_by` of a `chart` row the static tenant token wrote (api/app.py `_charted_by`): a device's.
+DEVICE_CHARTER = "tenant-token"
 
 
 @dataclass(frozen=True)
 class Person:
-    """The patient row's identity, decrypted (spec D20). `fin` is `Patient.national_id`."""
-    fin: str | None
-    display_name: str | None
-    father_name: str | None
-    sex: str | None
-    date_of_birth: str | None
-    phone: str | None
+    """The patient row's identity, decrypted (spec D20). `fin` is `Patient.national_id`. Every field
+    is `repr=False`: this is PHI, and a repr reaches logs and assertion messages."""
+    fin: str | None = field(repr=False)
+    display_name: str | None = field(repr=False)
+    father_name: str | None = field(repr=False)
+    sex: str | None = field(repr=False)
+    date_of_birth: str | None = field(repr=False)
+    phone: str | None = field(repr=False)
 
 
 @dataclass(frozen=True)
 class Clinician:
     """An attending of the stay and the identity the tab holds for them (D16); the identity's three
-    fields are None when the tab has no row for this user."""
+    fields are None when the tab has no row for this user. The identity is `repr=False`."""
     user_id: uuid.UUID
-    fin: str | None = None
-    family_name: str | None = None
-    given_name: str | None = None
+    fin: str | None = field(default=None, repr=False)
+    family_name: str | None = field(default=None, repr=False)
+    given_name: str | None = field(default=None, repr=False)
     known: bool = False                # a `tres_practitioner_identity` row exists
 
 
@@ -905,6 +1179,13 @@ def _instant(text) -> datetime | None:
     return at if at.tzinfo is not None and at.utcoffset() is not None else None
 
 
+def _row_id(value) -> bool:
+    """A `chart_retract`'s `entry` names a row only as an `int` that is not a `bool` — as
+    api/rehydrate.py `retracted_entries` holds it: `True` and `1.0` equal 1 and would withdraw row 1,
+    and a list is unhashable. (Copied, not imported: this module stays free of the engine's `api`.)"""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _finite(value) -> bool:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
@@ -917,13 +1198,18 @@ def _finite(value) -> bool:
 def readings_of(records: Iterable) -> tuple[Reading, ...]:
     """The bedside values of `records` (audit records of one stay's board key, `chart` and
     `chart_retract`): every `chart` row of the six signals that no `chart_retract` withdrew, in the
-    door's unit, with a finite value and a zone-aware time."""
+    door's unit, with a finite value and a zone-aware time, that a person charted (not the device token)."""
     records = list(records)
-    withdrawn = {rec.payload.get("entry") for rec in records if rec.event_type == RETRACT}
+    withdrawn = set()
+    for rec in records:
+        if rec.event_type == RETRACT and _row_id(entry := rec.payload.get("entry")):
+            withdrawn.add(entry)
     out = []
     for rec in records:
         signal = SIGNALS.get(rec.subject)
         if rec.event_type != CHART or signal is None or rec.id in withdrawn:
+            continue
+        if rec.payload.get("charted_by") == DEVICE_CHARTER:
             continue
         value, at = rec.payload.get("value"), _instant(rec.payload.get("obs_ts"))
         if rec.payload.get("unit") != signal.charted_unit or not _finite(value) or at is None:
@@ -977,6 +1263,11 @@ AZ = "http://fhir.az/"
 STRUCTURE = AZ + "StructureDefinition/"
 CODE_SYSTEM = AZ + "CodeSystem/"
 TIMEZONE_UNKNOWN = "timezone_unknown"
+#: A stay whose last admission is DISCHARGED but holds no discharge time (the Encounter cannot say when it ended).
+DISCHARGE_MISSING = "discharge_missing"
+#: `instant` is given a time with no zone: refused, never read as the server's local time (D22). Constant,
+#: and without the value, so the exception holds nothing of the record.
+INSTANT_NAIVE = "a time sent to the platform needs a zone: refusing to read it as the server's local time"
 
 
 @dataclass(frozen=True)
@@ -1006,7 +1297,11 @@ def reference(fhir_type: str, remote_id: str) -> dict:
 
 
 def instant(at: datetime, zone: tzinfo) -> str:
-    """`at` in the tenant's zone with its offset, to the second (D22)."""
+    """`at` in the tenant's zone with its offset, to the second (D22). A time with no zone (naive, or a
+    tzinfo that gives no offset) is a ValueError: `astimezone` would read it as the SERVER's local
+    time, and a wrong hour would go into the national record unseen."""
+    if at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError(INSTANT_NAIVE)
     return at.astimezone(zone).isoformat(timespec="seconds")
 
 
@@ -1128,7 +1423,8 @@ Create `homunculus-engine/src/homunculus/tres/mapping/encounter.py`:
 One stay, keyed by its chain's ROOT admission (ids.encounter): one Encounter across beds.
 
 * `status` `finished` once the chain's last admission is DISCHARGED, else `in-progress` (a stay
-  sent by hand while admitted, D9);
+  sent by hand while admitted, D9); a finished stay with no discharge time is skipped
+  `discharge_missing` — never a `finished` Encounter with no `period.end`;
 * `class` v3-ActCode `IMP` (codes.INPATIENT, checked); `type` `az:CodeSystem/encounter-type` `1`,
   without a display — none is in any source in hand (plan F1, O23);
 * `subject` the Patient's platform id; `period` from the root's admission to the last's
@@ -1143,7 +1439,9 @@ from __future__ import annotations
 
 from homunculus.tres import ids
 from homunculus.tres.codes import INPATIENT
-from homunculus.tres.mapping.common import CODE_SYSTEM, TIMEZONE_UNKNOWN, Built, Skip, base, instant, reference
+from homunculus.tres.mapping.common import (
+    CODE_SYSTEM, DISCHARGE_MISSING, TIMEZONE_UNKNOWN, Built, Skip, base, instant, reference,
+)
 from homunculus.tres.stay import Stay
 
 PROFILE = "az-encounter"
@@ -1159,13 +1457,15 @@ def encounter(stay: Stay, *, patient_id: str, practitioner_ids: list[str],
     local_id = ids.encounter(stay.root_id)
     if stay.zone is None:
         return Skip("encounter", local_id, TIMEZONE_UNKNOWN)
+    if stay.finished and stay.discharged_at is None:
+        return Skip("encounter", local_id, DISCHARGE_MISSING)
     if stay.department is None:
         return Skip("encounter", local_id, UNIT_UNMAPPED)
     organization = (organization_id or "").strip()
     if not organization:
         return Skip("encounter", local_id, ORGANIZATION_MISSING)
     period = {"start": instant(stay.admitted_at, stay.zone)}
-    if stay.finished and stay.discharged_at is not None:
+    if stay.finished:
         period["end"] = instant(stay.discharged_at, stay.zone)
     resource = base("Encounter", PROFILE, local_id)
     resource.update({
@@ -1190,7 +1490,8 @@ Create `homunculus-engine/src/homunculus/tres/mapping/vitals.py`:
 """Observation · `az-observation`, vital signs (TRƏS-01, spec §5, D5, D10, D12).
 
 Per signal of the stay, its FIRST and its LAST hand-charted value (stay.first_and_last) — one value
-only → only `first` — then the admission's weight and height, each once, at the admission. Monitor
+only → only `first` — then the admission's weight and height, each once, at the admission (a value
+that is not a positive, finite number is not sent). Monitor
 samples are never sent (D10). Every code, display and unit is codes.py's, checked (D12); the
 systolic pressure goes alone under its own code, not as a panel: the diastolic is not charted.
 
@@ -1200,6 +1501,7 @@ display (plan F1: no reviewed local label exists); `subject` and `encounter` the
 `code` and `unit`."""
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from homunculus.tres import ids
@@ -1212,7 +1514,7 @@ PROFILE = "az-observation"
 
 def _observation(stay: Stay, signal: Signal, which: str, value: float, at: datetime, *,
                  patient_id: str, encounter_id: str) -> Built:
-    local_id = ids.vital(stay.root_id, signal.loinc.code, which)
+    local_id = ids.vital(stay.root_id, signal.id_key, which)
     resource = base("Observation", PROFILE, local_id)
     resource.update({
         "status": "final",
@@ -1243,7 +1545,7 @@ def vitals(stay: Stay, *, patient_id: str, encounter_id: str) -> list[Built]:
             out.append(_observation(stay, signal, ids.LAST, last.value, last.at,
                                     patient_id=patient_id, encounter_id=encounter_id))
     for signal, value in ((WEIGHT, stay.weight_kg), (HEIGHT, stay.height_cm)):
-        if value is not None and value > 0:
+        if value is not None and math.isfinite(value) and value > 0:
             out.append(_observation(stay, signal, ids.FIRST, value, stay.admitted_at,
                                     patient_id=patient_id, encounter_id=encounter_id))
     return out
@@ -1252,7 +1554,7 @@ def vitals(stay: Stay, *, patient_id: str, encounter_id: str) -> list[Built]:
 - [ ] **Step 7: Run them to see them pass**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_mapping.py tests/test_tres_codes.py tests/test_tres_az.py 2>&1 | tail -3`
-Expected: `51 passed`.
+Expected: `97 passed`.
 
 - [ ] **Step 8: Commit**
 
@@ -2892,8 +3194,8 @@ from tests.test_tres_mapping import DOCTOR, PATIENT_ID, PERSON, ROOT, stay
 from tests.tres_world import add_stay
 
 ENCOUNTER_ID = f"hmn-e-{ROOT}."
-VITALS = [f"hmn-v-{ROOT}-8867-4-first.", f"hmn-v-{ROOT}-8867-4-last.", f"hmn-v-{ROOT}-2708-6-first.",
-          f"hmn-v-{ROOT}-8310-5-first.", f"hmn-v-{ROOT}-29463-7-first.", f"hmn-v-{ROOT}-8302-2-first."]
+VITALS = [f"hmn-v-{ROOT}-heart-rate-first.", f"hmn-v-{ROOT}-heart-rate-last.", f"hmn-v-{ROOT}-spo2-first.",
+          f"hmn-v-{ROOT}-temperature-first.", f"hmn-v-{ROOT}-weight-first.", f"hmn-v-{ROOT}-height-first."]
 PRACTITIONER_ID = f"hmn-pr-{DOCTOR}."
 
 
