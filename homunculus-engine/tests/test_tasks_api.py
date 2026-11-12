@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from homunculus.api import tasks
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.identity import Caller
@@ -447,6 +448,22 @@ class TestADeviceReadingCountsForTheVitalTask:
         vital = _card(client, "S-001")["vital"]
         assert (vital["state"], vital["anchor_at"], vital["partial"]) == ("plan", at.isoformat(), True)
 
+    def test_a_round_of_four_codes_is_one_entry(self, client):
+        """B9 review: the four rows of a device round share one instant, and the dashboard keys its past entries by
+        it — each instant is listed once, sorted. A second round is a second entry. (An explicit window, so the
+        shift's edge cannot move the answer.)"""
+        at = datetime.now(timezone.utc) - timedelta(minutes=30)
+        later = at + timedelta(minutes=20)
+        for when in (later, at):                                         # written newest first: the answer is sorted
+            for code, value in (("spo2", 97), ("sbp", 122), ("heart_rate", 78), ("temperature", 36.8)):
+                _ingest(client, "S-001", code, value, when)
+        window = {"from": (at - timedelta(hours=1)).isoformat(), "to": (later + timedelta(hours=1)).isoformat()}
+        r = _tasks(client, **window)
+        assert r.status_code == 200, r.text
+        card = next(p for p in r.json()["patients"] if p["patient_id"] == "S-001")
+        assert card["vital"]["entries"] == [at.isoformat(), later.isoformat()]
+        assert card["vital"]["anchor_at"] == later.isoformat()
+
     def test_a_device_reading_ends_a_skip_as_a_hand_entry_does(self, client, store):
         store.save_settings("h1", DEFAULT_SETTINGS, by="admin", now=NOW)
         _ingest(client, "S-002", "map", 80, datetime.now(timezone.utc) - timedelta(minutes=30))   # on the board, late
@@ -498,7 +515,8 @@ class TestAWithdrawalNamesTheReadingNotOnlyOneRow:
         app, at, ids = self._world([97, 97])
         with TestClient(app) as c:
             vital = _card(c, "S-001")["vital"]
-            assert vital["anchor_at"] == at.isoformat() and len(vital["entries"]) in (0, 2)   # both copies, before
+            assert vital["anchor_at"] == at.isoformat()
+            assert vital["entries"] in ([at.isoformat()], [])            # two copies, one instant: listed once
             self._withdraw(c, ids[chosen])
             vital = _card(c, "S-001")["vital"]
             assert vital["anchor_at"] is None and vital["state"] == "unknown" and vital["entries"] == []
@@ -508,10 +526,8 @@ class TestAWithdrawalNamesTheReadingNotOnlyOneRow:
         with TestClient(app) as c:
             self._withdraw(c, ids[0])
             vital = _card(c, "S-001")["vital"]
+            # the key holds the value: a key that left it out would take the 96 with the 97s and anchor nothing
             assert vital["anchor_at"] == at.isoformat() and vital["state"] == "plan"
-            # one stamp, the 96's — neither copy of the 97 is left to count
-            in_shift = at >= datetime.fromisoformat(_tasks(c).json()["shift"]["start"])
-            assert vital["entries"] == ([at.isoformat()] if in_shift else [])
 
     def test_the_same_reading_of_another_patient_is_not_withdrawn(self):
         """The key names the patient: a withdrawal under S-001 takes nothing from S-002's identical reading."""
@@ -532,6 +548,104 @@ class TestAWithdrawalNamesTheReadingNotOnlyOneRow:
         r = client.post(f"/clinical/S-001/entries/{first}/retract", json={"reason": "yanlış hasta"}, headers=NURSE)
         assert r.status_code == 200, r.text
         assert _card(client, "S-001")["vital"]["anchor_at"] == at.isoformat()
+
+
+class _Spy:
+    """An audit log that records which patient each read was for (None: the tenant-wide read)."""
+
+    def __init__(self, log):
+        self.log, self.reads = log, []
+
+    def records(self, **kw):
+        self.reads.append(kw.get("patient_id"))
+        return self.log.records(**kw)
+
+
+class TestABusyTenantCutsTheAnchorRead:
+    """G3-05 (B9 review): the tenant-wide anchor read keeps the newest `limit` rows. A continuous feeder (a
+    ventilator posting several codes every two seconds) can fill it, and a quiet patient's last measurement is then
+    not in it: the board reads that patient on its own, so the task is anchored on the measurement, not on the
+    admission. A patient the read gave a stamp already has the true latest, and is not read again."""
+
+    @staticmethod
+    def _trail(feed=8):
+        """S-001: one measurement 3 h ago, the OLDEST row. S-002: a feed of `feed` readings in the last minute."""
+        audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
+        old = now - timedelta(hours=3)
+
+        def row(patient, code, value, at):
+            audit.append(AuditEvent("h1", "ingest", patient, code,
+                                    {"value": value, "unit": "", "obs_ts": at.isoformat(), "device": "CONNEX-3A"}))
+
+        row("S-001", "spo2", 97, old)
+        feed_at = [now - timedelta(seconds=90 - i) for i in range(feed)]
+        for i, at in enumerate(feed_at):
+            row("S-002", "heart_rate", 70 + i, at)
+        return audit, old, feed_at
+
+    def _read(self, audit, **kw):
+        from homunculus.api.tasks import hand_entries_by_patient
+        now = datetime.now(timezone.utc)
+        spy = _Spy(audit)
+        found = hand_entries_by_patient(spy, "h1", since=now - timedelta(hours=48), until=now + timedelta(minutes=2),
+                                        patient_ids={"S-001", "S-002", "S-003"}, **kw)
+        return found, spy.reads
+
+    def test_a_cut_read_reads_the_patients_it_dropped_on_their_own(self):
+        audit, old, feed_at = self._trail()
+        found, reads = self._read(audit, limit=8)                        # the 8 newest rows: all of S-002's
+        assert found == {"S-001": [old], "S-002": feed_at}
+        assert reads == [None, "S-001", "S-003"]                         # S-002 had its stamps: not read again
+                                                                         # S-003 has none: asked, and has none
+
+    def test_a_read_that_is_exactly_full_counts_as_cut(self):
+        audit, old, feed_at = self._trail()
+        found, reads = self._read(audit, limit=9)                        # all nine rows, no more: cannot tell
+        assert found == {"S-001": [old], "S-002": feed_at}
+        assert reads == [None, "S-003"]
+
+    def test_a_read_that_is_not_full_is_one_read(self):
+        audit, old, feed_at = self._trail()
+        found, reads = self._read(audit, limit=10)
+        assert found == {"S-001": [old], "S-002": feed_at}
+        assert reads == [None]
+
+    def test_a_withdrawn_measurement_stays_withdrawn_in_the_read_on_its_own(self):
+        """The patient read alone is judged by the same rows: a measurement the nurse struck through is not the
+        anchor of a patient the cut dropped."""
+        audit, old, feed_at = self._trail()
+        entry = audit.records(tenant="h1", patient_id="S-001", event_type="ingest", limit=1)[0]
+        audit.append(AuditEvent("h1", "chart_retract", "S-001", "spo2",
+                                {"entry": entry.id, "code": "spo2", "value": 97, "obs_ts": old.isoformat(),
+                                 "reason": "yanlış hasta", "retracted_by": "hem.ayse", "origin": "device",
+                                 "device": "CONNEX-3A"}))
+        found, reads = self._read(audit, limit=9)                        # the newest 9 rows: S-002's feed and the withdrawal
+        assert reads[:2] == [None, "S-001"] and "S-001" not in found and found["S-002"] == feed_at
+
+    def test_the_task_of_a_patient_a_busy_feed_pushed_out_is_anchored_on_the_measurement(self, monkeypatch):
+        monkeypatch.setattr(tasks, "HAND_LIMIT", 3)                      # the tenant-wide read keeps 12 rows
+        audit, old, _ = self._trail(feed=14)
+        store = InMemoryTaskStore(zones={"h1": "UTC"}, admitted={("h1", "S-001"): old - timedelta(hours=17)})
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, audit=audit, tasks=store)
+        with TestClient(app) as c:
+            vital = _card(c, "S-001")["vital"]
+            assert vital["anchor_at"] == old.isoformat() and vital["state"] == "plan"   # not the admission: «late»
+            assert _card(c, "S-002")["vital"]["anchor_at"] is not None
+
+    def test_the_cut_is_logged_once_with_counts_only(self, monkeypatch, caplog):
+        import logging
+        monkeypatch.setattr(tasks, "_cut_reads", set())
+        audit, _, _ = self._trail()
+        with caplog.at_level(logging.WARNING, logger="homunculus.api.tasks"):
+            self._read(audit, limit=8)
+            self._read(audit, limit=8)                                   # still cut: no second line
+            assert len(caplog.records) == 1
+            message = caplog.records[0].getMessage()
+            assert "8 rows" in message and "2 board patients" in message
+            assert "S-00" not in message and "h1" not in message         # no patient, no hospital
+            self._read(audit, limit=100)                                 # the cut ended …
+            self._read(audit, limit=8)                                   # … and began again: a new line
+            assert len(caplog.records) == 2
 
 
 def test_an_unmatched_reading_resets_nothing_until_it_is_linked():

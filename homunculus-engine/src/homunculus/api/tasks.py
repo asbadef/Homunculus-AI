@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
@@ -28,7 +28,7 @@ from fastapi import APIRouter, Body, Header, HTTPException, Query
 from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.api.clinical import BEDSIDE_SKEW, RETRACT
 from homunculus.api.identity import Caller
-from homunculus.api.rehydrate import device_key_of, retracted_device_readings
+from homunculus.api.rehydrate import device_key_of, withdrawal_key
 from homunculus.auth.permissions import validate_permissions
 from homunculus.canonical import SignalCode
 
@@ -64,7 +64,8 @@ DUE_AHEAD = timedelta(days=7)
 ANCHOR_WINDOW = timedelta(hours=48)
 #: The most measurement rows one patient's anchor read keeps (newest first), as trends keeps (G3-01 X1);
 #: the board's one tenant-wide read keeps HAND_LIMIT * 4 — 20 000 rows, the newest: enough for spot-check
-#: devices on every floor (four rows a round), not for a continuous monitor feed in the real engine (G3-05 O3).
+#: devices on every floor (four rows a round). A continuous feed (a ventilator's, in the real engine, G3-05 O3)
+#: can fill it: `hand_entries_by_patient` then reads, one by one, the patients the cut read left without a stamp.
 HAND_LIMIT = 5000
 VITAL_SKIPPED = "vital_skipped"
 #: How far back the board reads `vital_skipped`. A skip lasts until the first due point after the moment
@@ -203,8 +204,8 @@ def vital_task(*, now: datetime, anchor: datetime | None, admitted_at: datetime 
                interval_min: int | None, grace_min: int, skipped_until: datetime | None,
                skipped_at: datetime | None = None) -> dict | None:
     """The derived vital task (spec D2, D4), or None when the band has no interval. `skipped_at` is
-    when the skip was made: a hand entry measured after it is the answer to the task, and the skip
-    no longer hides anything."""
+    when the skip was made: a measurement taken after it, by hand or by device, is the answer to the task,
+    and the skip no longer hides anything."""
     if interval_min is None:
         return None
     anchor_at = anchor if anchor is not None else admitted_at
@@ -333,7 +334,7 @@ class InMemoryTaskStore:
     def close(self) -> None:
         return None
 
-# ----------------------------------------------------------------------------- the anchor: hand entries
+# ----------------------------------------------------------------------------- the anchor: measurements (hand or device)
 
 def _stamps_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, list[datetime]]:
     """Each patient's measurement instants in [since, until], oldest first: the `chart` and `ingest` rows of
@@ -344,13 +345,26 @@ def _stamps_by_patient(rows, *, since: datetime, until: datetime) -> dict[str, l
     `device_key`: patient, code, instant, device, value): a withdrawal that names one `ingest` row withdraws every
     row of that reading — the rare twin a `seen` that failed open left — as the engine's replay does, or the anchor
     would count a value the nurse saw struck through."""
-    withdrawn = {(rec.patient_id, rec.payload.get("entry")) for rec in rows if rec.event_type == RETRACT}
-    withdrawn_device = retracted_device_readings(rows)
+    withdrawn: set[tuple] = set()
+    withdrawn_device: set[tuple] = set()
+    # The (patient, code) of every withdrawn device reading: the cheap test before `device_key_of`, which parses an
+    # instant and a number. A device key starts with its row's patient and code (`device_key_of`), so a row of
+    # another pair cannot be in the set — the answer is the same, without the parse for the rows that cannot be in it.
+    withdrawn_pairs: set[tuple[str, str]] = set()
+    for rec in rows:
+        if rec.event_type != RETRACT:
+            continue
+        withdrawn.add((rec.patient_id, rec.payload.get("entry")))
+        key = withdrawal_key(rec)
+        if key is not None:
+            withdrawn_device.add(key)
+            withdrawn_pairs.add((rec.patient_id, rec.subject))
     stamps: dict[str, list[datetime]] = {}
     for rec in rows:
         if (rec.event_type not in MEASUREMENT_EVENTS or rec.subject not in NEWS2_INPUT_CODES
                 or (rec.patient_id, rec.id) in withdrawn
-                or (rec.event_type == "ingest" and withdrawn_device and device_key_of(rec) in withdrawn_device)):
+                or (rec.event_type == "ingest" and (rec.patient_id, rec.subject) in withdrawn_pairs
+                    and device_key_of(rec) in withdrawn_device)):
             continue
         at = _instant(rec.payload.get("obs_ts"))
         if at is not None and since <= at <= until:
@@ -368,12 +382,39 @@ def hand_entries(audit: AuditLog, hospital: str, patient_id: str, *, since: date
     return _stamps_by_patient(rows, since=since, until=until).get(patient_id, [])
 
 
-def hand_entries_by_patient(audit: AuditLog, hospital: str, *, since: datetime,
-                            until: datetime) -> dict[str, list[datetime]]:
-    """`hand_entries` for every patient of the tenant in ONE read — what the board's poll needs."""
+#: The hospitals whose tenant-wide anchor read is cut right now: the warning is written when a read BEGINS to be
+#: cut, not at every poll of the board. Hospital names are kept here, never written to the log.
+_cut_reads: set[str] = set()
+
+
+def hand_entries_by_patient(audit: AuditLog, hospital: str, *, since: datetime, until: datetime,
+                            patient_ids: Iterable[str] = (), limit: int | None = None) -> dict[str, list[datetime]]:
+    """`hand_entries` for every patient of the tenant in ONE read — what the board's poll needs.
+
+    The read keeps the newest `limit` rows (default HAND_LIMIT * 4). A busy feeder — a ventilator posting several
+    codes every two seconds — can push a quiet patient's last measurement out of it, and without it the task would
+    fall back to the admission (or to «unknown»). A read that comes back FULL was cut, so then each of
+    `patient_ids` (the board's patients) it gave no stamp is read again on its own, with `hand_entries`: a patient
+    it did give one already has the true latest, since the rows it keeps are the newest. The cut costs a few small
+    reads and never an anchor."""
+    cap = HAND_LIMIT * 4 if limit is None else limit
     rows = audit.records(tenant=hospital, event_types=MEASUREMENT_EVENTS | {RETRACT}, since=since - BEDSIDE_SKEW,
-                         limit=HAND_LIMIT * 4, newest=True)
-    return _stamps_by_patient(rows, since=since, until=until)
+                         limit=cap, newest=True)
+    stamps = _stamps_by_patient(rows, since=since, until=until)
+    if len(rows) < cap:
+        _cut_reads.discard(hospital)
+        return stamps
+    reread = 0
+    for patient_id in sorted(set(patient_ids) - stamps.keys()):
+        found = hand_entries(audit, hospital, patient_id, since=since, until=until)
+        reread += 1
+        if found:
+            stamps[patient_id] = found
+    if hospital not in _cut_reads:
+        _cut_reads.add(hospital)
+        log.warning("the tenant-wide anchor read is cut at %d rows: %d board patients with no measurement in it "
+                    "were read one by one", cap, reread)
+    return stamps
 
 
 @dataclass(frozen=True)
@@ -465,7 +506,10 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                              skipped_until=skip.until if skip else None, skipped_at=skip.at if skip else None)
         return {**derived, "anchor_at": _iso(derived["anchor_at"]), "due_at": _iso(derived["due_at"]),
                 "skipped_until": _iso(derived["skipped_until"]), "band": band, "interval_min": interval,
-                "partial": bool(news2.get("partial")), "entries": [_iso(s) for s in stamps if since <= s < until]}
+                "partial": bool(news2.get("partial")),
+                # Each instant once: a round of four codes, or a reading the trail holds twice, is one entry — the
+                # dashboard keys its past entries by the instant.
+                "entries": [_iso(s) for s in sorted({s for s in stamps if since <= s < until})]}
 
     @router.get("/tasks")
     async def list_tasks(authorization: str | None = Header(default=None),
@@ -481,10 +525,11 @@ def tasks_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         by_patient: dict[str, list[dict]] = {pid: [] for pid in ids}
         for row in rows:
             by_patient[row.patient_id].append(row.as_dict(grace_min=settings.grace_min, now=now))
-        # One read of the tenant's hand entries and one of its skips for the whole board, not one per
-        # patient. The upper bound takes a bedside time stamped up to BEDSIDE_SKEW ahead at once.
-        stamps = hand_entries_by_patient(audit, hospital, since=now - ANCHOR_WINDOW,
-                                         until=now + BEDSIDE_SKEW) if cards else {}
+        # One read of the tenant's measurements (hand or device) and one of its skips for the whole board, not one
+        # per patient — but for a patient the first read was cut short of (a busy feeder filled it), which is read
+        # on its own. The upper bound takes a bedside time stamped up to BEDSIDE_SKEW ahead at once.
+        stamps = hand_entries_by_patient(audit, hospital, since=now - ANCHOR_WINDOW, until=now + BEDSIDE_SKEW,
+                                         patient_ids=ids) if cards else {}
         skips = vital_skips(audit, hospital, since=now - SKIP_WINDOW) if cards else {}
         return {"from": _iso(since), "to": _iso(until), "shift": {"start": _iso(start), "end": _iso(end)},
                 "now": _iso(now),
