@@ -868,6 +868,9 @@ UNSCOPED_BY_DESIGN = NOT_THE_BOARD | CALLER_ELSEWHERE | DEVICE_ONLY | TASK_QUEUE
     ("GET", "/patients/{patient_id}/trends"),
     # G3-03's fluid ledger (api/fluids.py): as the trends read — the board's Caller, board.view and _require_patient.
     ("GET", "/patients/{patient_id}/fluids"),
+    # G3-05's measurement record (api/readings.py): as the trends read — the board's Caller, board.view and
+    # _require_patient; the store is read by the caller's own hospital.
+    ("GET", "/patients/{patient_id}/readings"),
     # G3-04's Eczane page (api/pharmacy.py): the board's Caller and `_board_for`, pharmacy.view — the caller's own
     # hospital and scoped cards, as /patients.
     ("GET", "/pharmacy"),

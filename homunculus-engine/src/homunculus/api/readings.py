@@ -80,6 +80,13 @@ UNMATCHED_WINDOW = timedelta(days=7)
 LINK_MAX_AGE = timedelta(hours=24)
 #: The most readings one link or rejection names: a set is one round's values of one patient.
 SET_MAX = 50
+#: The windows GET /patients/{id}/readings accepts (spec D16): 24 hours, 72 hours, 7 days. Any other is refused
+#: with the code READING_HOURS (below, with the list's codes; the dashboard maps it, apiErrors.js).
+READINGS_HOURS = (24, 72, 168)
+#: D16: a set whose arrival is later than its measurement by more than this says «alındı» with the arrival time
+#: — a buffered device round, a reading linked from the list. A display rule, decided here so that the browser
+#: compares no two times itself.
+RECEIVED_LATE = timedelta(minutes=5)
 #: The most sets the list answers: the newest arrivals; `count` still says how many there are, and `truncated`
 #: that the answer is short of them (B6 review). A monitor left on a discharged number lists a set per round,
 #: and the list is polled every minute by every nurse.
@@ -104,6 +111,7 @@ READING_SET_MIXED = "reading_set_mixed"
 READING_TOO_OLD = "reading_too_old"
 READING_TARGET_DISCHARGED = "reading_target_discharged"
 READING_REASON_LENGTH = "reading_reason_length"
+READING_HOURS = "reading_hours"
 #: The server's words. The dashboard maps each code in `apiErrors.js` (Task W1).
 WORDS = {
     READING_NOT_UNMATCHED: "The reading is no longer waiting: it was linked or rejected already.",
@@ -111,6 +119,7 @@ WORDS = {
     READING_TOO_OLD: "A reading older than 24 hours cannot be linked; it can only be rejected.",
     READING_TARGET_DISCHARGED: "The patient is discharged: a reading cannot be linked to a closed stay.",
     READING_REASON_LENGTH: "The reason is 10–200 characters.",
+    READING_HOURS: "The window is 24, 72 or 168 hours.",
 }
 READING_NEEDS_PERSON = "a person links or rejects a reading: this credential names no actor"
 READING_BODY = "`readings` is a list of 1–50 reading ids"
@@ -380,6 +389,65 @@ def unmatched_sets(rows: Iterable[Reading], now: datetime) -> list[dict]:
         })
     sets.sort(key=lambda s: (s["received_at"], s["received_key"], s["source"]), reverse=True)
     return sets
+
+
+def device_identity(row: Reading) -> tuple:
+    """One device reading as the table holds it: the patient it is filed under, the code, the instant, the device
+    as kept and the value — `rehydrate.device_key` of the `ingest` row it came from (that function cannot be
+    imported here: the replay imports this module for `SOURCE_MAX`). The table's `source` is already cut to the
+    column and its `value` already a float, which is all the trail's key normalises, so equal readings give
+    equal tuples. tests/test_readings_patient.py holds the two to each other."""
+    return (row.patient_key, row.code, row.observed_at, row.source, row.value)
+
+
+def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, now: datetime) -> dict:
+    """One patient's record as GET /patients/{id}/readings answers it (spec §4, D16): the rows as measurement
+    sets — one time, one origin, one source, one person — the newest first; within a set the values by code.
+    Each value carries what «Düzelt» needs (`entry`: the engine row a withdrawal names, None for a row the
+    engine never took) and its withdrawal, `voided`, when there is one. `received_late`: RECEIVED_LATE.
+
+    A withdrawn DEVICE reading is withdrawn as a whole (D13): the engine skips every copy of it, so every row of
+    the table with the same `device_identity` shows the withdrawal — the earliest mark among them — whichever
+    row the nurse named or the mark reached (a race can leave a direct row and a linked one for one reading). A
+    hand entry is withdrawn by its own row alone: two equal entries are two entries."""
+    if hours not in READINGS_HOURS:
+        raise ValueError(f"hours must be one of {READINGS_HOURS}, not {hours!r}")
+    rows = list(rows)
+    marked: dict[tuple, Reading] = {}
+    for row in sorted((r for r in rows if r.origin == ORIGIN_DEVICE and r.voided_at is not None),
+                      key=lambda r: r.voided_at):
+        marked.setdefault(device_identity(row), row)
+
+    def voided(row: Reading) -> dict | None:
+        mark = row if row.voided_at is not None else (
+            marked.get(device_identity(row)) if row.origin == ORIGIN_DEVICE else None)
+        if mark is None:
+            return None
+        return {"reason": mark.void_reason or "", "by": mark.voided_by or "", "at": _iso(mark.voided_at)}
+
+    grouped: dict[tuple, list[Reading]] = {}
+    for row in rows:
+        grouped.setdefault((row.observed_at, row.origin, row.source, row.recorded_by or ""), []).append(row)
+    sets = []
+    for (observed_at, origin, source, _), members in grouped.items():
+        members.sort(key=lambda r: (r.code, r.id))
+        received_at = max(r.received_at for r in members)
+        sets.append({
+            "observed_at": _iso(observed_at), "received_at": _iso(received_at),
+            "received_late": received_at - observed_at > RECEIVED_LATE,
+            "origin": origin, "source": source, "recorded_by": members[0].recorded_by,
+            "readings": [{
+                "id": r.id, "code": r.code, "value": r.value, "unit": r.unit, "origin": r.origin, "source": r.source,
+                "recorded_by": r.recorded_by, "entry": r.entry_id,
+                "voided": voided(r),
+            } for r in members],
+        })
+    # Newest measurement first; at one instant the device's sets before the hand entries, then by source and person.
+    sets.sort(key=lambda s: (s["origin"], s["source"], s["recorded_by"] or ""))
+    sets.sort(key=lambda s: s["observed_at"], reverse=True)
+    now = now.astimezone(timezone.utc)
+    return {"patient_id": patient_id, "hours": hours, "since": _iso(now - timedelta(hours=hours)),
+            "until": _iso(now), "sets": sets}
 
 
 # ----------------------------------------------------------------------------- the router

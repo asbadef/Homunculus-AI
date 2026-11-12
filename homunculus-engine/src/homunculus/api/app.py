@@ -46,7 +46,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
+    BEDSIDE_SKEW, GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
     RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
     RETRACT_UNKNOWN, RETRACTABLE_CODES, ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
@@ -69,9 +69,9 @@ from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
-    MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_TARGET_DISCHARGED, READING_UNMATCHED, REASON_DISCHARGED,
-    REASON_UNKNOWN, UNKNOWN_POLICIES, InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source,
-    manual_reading, reading_refusal, readings_router,
+    MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_HOURS, READING_TARGET_DISCHARGED, READING_UNMATCHED,
+    READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, UNKNOWN_POLICIES, InMemoryReadingStore, Reading,
+    ReadingStore, device_reading, device_source, manual_reading, patient_readings, reading_refusal, readings_router,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -118,6 +118,8 @@ RRT_REASON_MIN, RRT_REASON_MAX = 3, 500
 #: The windows GET /patients/{id}/trends accepts, as the text the query string carries. The route
 #: reads `hours` as text so that any other value is its own 400 rather than FastAPI's 422.
 TREND_WINDOWS_TEXT = frozenset(str(h) for h in TRENDS_HOURS)
+#: The windows GET /patients/{id}/readings accepts (G3-05: 24, 72, 168 hours), as text for the same reason.
+READINGS_WINDOWS_TEXT = frozenset(str(h) for h in READINGS_HOURS)
 #: The windows GET /infinity-shadow/findings accepts (`days`, 1–7), as text for the same reason.
 SHADOW_FINDINGS_DAYS_TEXT = frozenset(str(d) for d in range(1, 8))
 
@@ -2129,6 +2131,30 @@ def create_app(
         return patient_trends(_engine(caller.hospital), audit, hospital=caller.hospital,
                               patient_id=patient_id, hours=int(hours),
                               now=datetime.now(timezone.utc))
+
+    @app.get("/patients/{patient_id}/readings")
+    async def patient_record(patient_id: str, hours: str = "24",
+                             authorization: str | None = Header(default=None)):
+        """G3-05 «Ölçüm kaydı» (spec D16): what was measured in this stay and by what — the patient's rows of
+        the readings record (`api/readings.py`), as sets, newest first: «cihaz · {device}» or «elle · {user}»,
+        a withdrawn value with its reason. Read from the table only (D6): a withdrawn device reading shows
+        withdrawn in every row of the table that is a copy of it (`patient_readings`), as the trends list marks
+        every `ingest` row of it. Read-only and not audited, as the trends and fluids reads; the scope is
+        resolved once and handed on, as they do. `hours` is read as text so that anything but 24, 72 or 168 is
+        this route's own 400 (`reading_hours`, a code beside its words, as the list's refusals) rather than
+        FastAPI's 422. Out of scope and unknown are one 404."""
+        caller = await _caller(authorization)
+        _require(caller, BOARD_VIEW)
+        if hours not in READINGS_WINDOWS_TEXT:
+            raise reading_refusal(400, READING_HOURS)
+        scope = await _scope(authorization)
+        await _require_patient(caller, authorization, patient_id, scope=scope)
+        _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
+        now = datetime.now(timezone.utc)
+        # Up to the door's own skew ahead: a bedside value stamped a minute fast is in the record at once.
+        rows = readings.for_patient(caller.hospital, patient_id, since=now - timedelta(hours=int(hours)),
+                                    until=now + BEDSIDE_SKEW)
+        return patient_readings(rows, patient_id=patient_id, hours=int(hours), now=now)
 
     @app.get("/patients/{patient_id}/fluids")
     async def fluids(patient_id: str, authorization: str | None = Header(default=None)):
