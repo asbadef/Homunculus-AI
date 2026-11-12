@@ -57,6 +57,7 @@ export default {
     admit: "Kabul et", admitting: "Kabul kaydediliyor…", admitted: "kabul edildi, hasta no {number}",
     doneTitle: "Kabul edildi", doneBed: "Yatak: {bed}", enterOnDevice: "Başucu cihazına bu numarayı girin.",
     seeOnBoard: "Panoda gör", next: "Yeni kabul",
+    movedOut: "Hasta birimlerinizin dışına taşındı. Bu numarayı bu yatağın cihazına girmeyin.",
     engineFailed: {
       board: "Kart panoda görünmüyorsa sistem yöneticisine bildirin — kabul kaydedildi.",
       weight: "Kilo motora iletilemedi — kabul kaydedildi; sistem yöneticisine bildirin.",
@@ -258,6 +259,7 @@ export default {
     admit: "Qəbul et", admitting: "Qəbul qeyd olunur…", admitted: "qəbul edildi, xəstə nömrəsi {number}",
     doneTitle: "Qəbul edildi", doneBed: "Çarpayı: {bed}", enterOnDevice: "Çarpayı yanındakı cihaza bu nömrəni daxil edin.",
     seeOnBoard: "Paneldə bax", next: "Yeni qəbul",
+    movedOut: "Xəstə sizin bölmələrinizdən kənara köçürülüb. Bu nömrəni bu çarpayının cihazına daxil etməyin.",
     engineFailed: {
       board: "Kart paneldə görünmürsə, sistem administratoruna bildirin — qəbul yazılıb.",
       weight: "Çəki mühərrikə çatmadı — qəbul yazılıb; sistem administratoruna bildirin.",
@@ -445,6 +447,7 @@ export default {
     admit: "Принять", admitting: "Сохранение приёма…", admitted: "приём оформлен, номер пациента {number}",
     doneTitle: "Приём оформлен", doneBed: "Койка: {bed}", enterOnDevice: "Введите этот номер на прикроватном мониторе.",
     seeOnBoard: "Открыть на панели", next: "Новый приём",
+    movedOut: "Пациент переведён за пределы ваших отделений. Не вводите этот номер на приборе этой койки.",
     engineFailed: {
       board: "Если карточки нет на панели, сообщите администратору системы — приём оформлен.",
       weight: "Вес не передан системе — приём оформлен; сообщите администратору системы.",
@@ -632,6 +635,7 @@ export default {
     admit: "Admit", admitting: "Saving the admission…", admitted: "admitted, patient number {number}",
     doneTitle: "Admitted", doneBed: "Bed: {bed}", enterOnDevice: "Enter this number on the bedside device.",
     seeOnBoard: "See on the board", next: "New admission",
+    movedOut: "The patient was moved outside your units. Do not enter this number on this bed's device.",
     engineFailed: {
       board: "If the card is not on the board, tell the system administrator — the admission is recorded.",
       weight: "The weight did not reach the engine — the admission is recorded; tell the system administrator.",

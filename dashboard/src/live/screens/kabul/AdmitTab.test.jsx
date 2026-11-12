@@ -53,6 +53,7 @@ const HELD = `${BED1} üçün göndərilən qəbula cavab gəlmədi; yazılıb-y
 const GO_ON = "Yoxladım, qəbul yoxdur — davam et";
 const EARLIER = `Bu nömrə formadakı xəstəyə aid deyil: Sentetik Hasta (${BED1}) üçün əvvəl göndərilən, cavabı gəlməyən qəbul yazılıb. Formadakı qəbul hələ göndərilməyib.`;
 const EARLIER_TITLE = "Başqa xəstənin qəbulu yazılıb";
+const MOVED_OUT = "Xəstə sizin bölmələrinizdən kənara köçürülüb. Bu nömrəni bu çarpayının cihazına daxil etməyin.";
 const EARLIER_TOAST = `${BED1} · əvvəl göndərilən qəbul yazılıb, xəstə nömrəsi H2600042 — formadakı xəstənin deyil`;
 const BACK = "Formaya qayıt";
 const TAKEN = `${BED1}: Bu çarpayı artıq boş deyil; başqa çarpayı seçin.`;
@@ -1187,8 +1188,9 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
   });
 
-  // Re-read R-7: the label is the open admission's; a TRANSFERRED row has none to print (its protocol
-  // moved, O8), and the stay out of her units answers 403 — no «Etiketi çap et» for that answer.
+  // Re-read R-7: the label is the open admission's; a TRANSFERRED row has none to print — the move
+  // cleared its protocol (O8), so the label route answers 409 no_protocol for it (the row is on her
+  // bed, reach passes) — no «Etiketi çap et» for that answer.
   it("offers no label for an answer still TRANSFERRED (R-7)", async () => {
     const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
     fillRequired();
@@ -1196,6 +1198,47 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     expect(screen.getByText("202600000001")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Etiketi çap et" })).toBeNull();
     expect(api.admissionLabel).not.toHaveBeenCalled();
+  });
+
+  // Re-read minor 2: the stay is out of her units and the device beside her is at an empty bed in
+  // cleaning — entering the number there would tie that device's readings to the patient. The box
+  // says so: no device instruction, no link to a card outside her units; the number stays (the
+  // stay's protocol, still right for the record) and so does the heading.
+  const ENTER_OR_SCAN = "Bu nömrəni cihaza daxil edin və ya barkodu oxudun";
+  const ENTER_ON_DEVICE = "Çarpayı yanındakı cihaza bu nömrəni daxil edin.";
+
+  it("says the stay moved out of her units — no device instruction, no board link — for an answer still TRANSFERRED (re-read minor 2)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByRole("heading", { level: 2, name: "Qəbul edildi" })).toBeTruthy();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.getByText(MOVED_OUT).closest("[data-tone]").getAttribute("data-tone")).toBe("warn");
+    expect(screen.queryByText(ENTER_OR_SCAN)).toBeNull();
+    expect(screen.queryByText(ENTER_ON_DEVICE)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Paneldə bax" })).toBeNull();
+    expect(await said()).toContain(MOVED_OUT);
+  });
+
+  it("says it too for a TRANSFERRED answer without a protocol: the H-number stays, B1a's device line does not (re-read minor 2)", async () => {
+    const answer = { ...transferredHere(), protocol_no: null, board_key: null };
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(answer) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("H2600042")).toBeTruthy();
+    expect(screen.getByText(MOVED_OUT)).toBeTruthy();
+    expect(screen.queryByText(ENTER_OR_SCAN)).toBeNull();
+    expect(screen.queryByText(ENTER_ON_DEVICE)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Paneldə bax" })).toBeNull();
+  });
+
+  it("an answer in her reach (ACTIVE) keeps the device instruction and the board link, and says nothing of a move (re-read minor 2)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(withProtocol({ state: "ACTIVE" })) });
+    fillRequired();
+    await press();
+    expect(screen.getByText(ENTER_OR_SCAN)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Paneldə bax" }).getAttribute("href")).toBe("#/patients/202600000001");
+    expect(screen.queryByText(MOVED_OUT)).toBeNull();
   });
 
   it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {

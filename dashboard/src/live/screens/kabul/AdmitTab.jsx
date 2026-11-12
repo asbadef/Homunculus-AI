@@ -143,13 +143,18 @@ function Choice({ id, name, legend, options, value, onChange, error }) {
  *  `done.earlier` (a name): the admission is an EARLIER send's, of another patient than the form's
  *  — the box says so, and its button goes back to the form, which is kept. Whose number it is
  *  comes BEFORE the number (M-c): the heading says another patient's, and the note under it names
- *  her and her bed, so the number cannot be read as the form's — it is entered on a device. */
+ *  her and her bed, so the number cannot be read as the form's — it is entered on a device.
+ *  `done.movedOut`: the answer is the form's own row, still TRANSFERRED (re-read R-1) — the stay
+ *  was moved out of her units, and the device beside her is at an empty bed now. The number stays
+ *  (the stay's protocol, right for the record), but the box says so instead of telling her to
+ *  enter it on a device, and links no card outside her units (re-read minor 2). */
 function NumberBox({ done, onNext, headingRef }) {
   const { t } = useI18n();
   const failed = PARTS.filter((part) => done.engine?.[part] === "failed");
   const whose = done.earlier ? t("kabul.earlierSend", { name: done.earlier, bed: done.bed }) : null;
   const protocol = Boolean(done.protocolNo);
   const notes = [
+    ...(done.movedOut ? [t("kabul.movedOut")] : []),
     ...(done.recovered ? [t("kabul.recordedNoAnswer")] : []),
     ...failed.map((part) => t(ENGINE_FAILED[part])),
   ];
@@ -167,13 +172,14 @@ function NumberBox({ done, onNext, headingRef }) {
           one the nurse enters or scans; an answer without one keeps B1a's H-number and words. */}
       {protocol ? <p className="m-0 mt-2 text-12 font-semibold uppercase tracking-[.08em] text-mute">{t("protokol.protocolNo")}</p> : null}
       <p className="m-0 my-2 font-data text-34 font-bold tracking-[.06em] text-ink">{done.number}</p>
-      <p className="m-0 text-14 font-semibold">{t(protocol ? "protokol.enterOrScan" : "kabul.enterOnDevice")}</p>
+      {/* Not for a stay moved out of her units: the device at this bed is not the patient's (re-read minor 2). */}
+      {done.movedOut ? null : <p className="m-0 text-14 font-semibold">{t(protocol ? "protokol.enterOrScan" : "kabul.enterOnDevice")}</p>}
       {notes.map((text) => (
         <Note key={text} tone="warn" icon="alert" className="mt-2">{text}</Note>
       ))}
       <div className="mt-3 flex flex-wrap gap-2">
-        {/* A card that did not reach the board is not there to be seen. */}
-        {done.engine?.board === "failed" ? null : (
+        {/* A card that did not reach the board is not there to be seen; one outside her units is not hers to open. */}
+        {done.engine?.board === "failed" || done.movedOut ? null : (
           <a href={`#/patients/${encodeURIComponent(done.number)}`}
             className={`inline-flex items-center gap-1.5 rounded-ctl bg-pri px-[13px] py-2 text-13 font-semibold text-onpri ${FOCUS_RING}`}>
             {t("kabul.seeOnBoard")}
@@ -487,9 +493,12 @@ export function AdmitTab() {
       const answer = await store.track(() => store.api.admit(body));
       if (!draft.live) return;
       // `admissionId` is what the label prints from (re-read R-7): a TRANSFERRED answer has none to
-      // print — its protocol moved with the stay (O8), which lies outside her units (R-1).
+      // print — its protocol moved with the stay (O8), which lies outside her units (R-1). The box
+      // says the stay moved out (`movedOut`, re-read minor 2) rather than tell her to enter its number
+      // on the device at that bed.
+      const movedOut = answer.state === "TRANSFERRED";
       admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null,
-        admissionId: answer.state === "TRANSFERRED" ? null : answer.id ?? null,
+        admissionId: movedOut ? null : answer.id ?? null, movedOut,
         bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
