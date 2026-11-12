@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from "vitest";
 import { CONNECTION } from "../../../liveConnection.js";
 import { WHY, noSource, okSource } from "../ozet/ozet.js";
 import {
-  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, labelled, listedKeysOf, meanOf,
+  ALL, NO_UNITS, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, labelled, listedKeysOf, meanOf,
   readWork,
   remainingOf, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
@@ -227,6 +227,16 @@ describe("the nurse cards (§5 A5, A11, A13)", () => {
     const p = page({ schedule: okSource(schedule({ units: [] })) });
     expect([p.cards, p.cardsWhy, p.unassigned, p.partial]).toEqual([null, WHY.noRight, { why: WHY.noRight }, false]);
     expect(cellsOf(p).Reanimasiya.patients).toEqual({ value: 4 });       // the table still counts what the tree says
+  });
+
+  // Re-review 3: a tree with no open unit — while the answer still lists units — has nothing to draw; the cards and the
+  // unassigned beds say what the table says, not «yetki yok».
+  it("gives the cards and the unassigned beds the table's reason when the tree has no open unit", () => {
+    const closed = tree();
+    closed.sites[0].units = closed.sites[0].units.filter((unit) => unit.is_active === false);
+    const p = page({ tree: closed, occupancy: okSource(closed) });
+    expect(p.rows).toEqual([]);
+    expect([p.cards, p.cardsWhy, p.unassigned]).toEqual([null, NO_UNITS, { why: NO_UNITS }]);
   });
 
   it("says the cards cover only the listed units when «Tüm birimler» leaves some out", () => {

@@ -43,6 +43,9 @@ export const ALL = "*";
 export const SHIFT_CHANGED = "shiftChanged";
 /** This page's own reason for the ratio's «—»: the unit has no nurse this shift, so there is nothing to divide by. */
 export const NO_NURSE = "noNurse";
+/** Why the cards and the unassigned beds are not drawn when the tree has no open unit: the table's own «Açık birim
+ *  yok.», never «yetki yok» (re-review 3). */
+export const NO_UNITS = "noUnits";
 /** The widest range GET /tasks takes (api/tasks.py MAX_WINDOW). */
 export const TASKS_SPAN_MS = 7 * 24 * 60 * 60_000;
 
@@ -192,7 +195,8 @@ function openUnitsOf(tree) {
  *  { shift: {startMs, endMs, which} | null, shiftWhy, rows: [{key, id, name, beds, listed, items, cells}] | null, why,
  *    otherRows, selected, choices: [row], partial, cards: [{key, label, beds, patients, tasks}] | null, cardsWhy,
  *    unassigned: {beds: [name]} | {why} | null }
- *  `cards` null with «yetki yok» when the answer lists none of the open units; `partial`: «Tüm birimler» while the
+ *  `cards` null with NO_UNITS when the tree has no open unit, with «yetki yok» when the answer lists none of the open
+ *  ones; `partial`: «Tüm birimler» while the
  *  answer leaves out an open unit — the cards and the unassigned beds are the listed units' only. */
 export function workloadPage({ tree, occupancy, reach, boardReach = reach, wholeTree = false, schedule, tasks, board },
   { selected = ALL, lang, kept = null } = {}) {
@@ -273,6 +277,8 @@ export function workloadPage({ tree, occupancy, reach, boardReach = reach, whole
   const pick = selected !== ALL && choices.some((row) => row.key === selected) ? selected : ALL;
   const otherRows = [...listed.values()].some((unit) => unit.otherRows > 0);
   const page = { ...head, rows, why: null, otherRows, selected: pick, choices, partial: false };
+  // No open unit: nothing to draw, for the reason the table gives («Açık birim yok.»), whatever the answer lists.
+  if (rows.length === 0) return { ...page, cards: null, cardsWhy: NO_UNITS, unassigned: { why: NO_UNITS } };
   if (!schedule.ok) return { ...page, cards: null, cardsWhy: schedule.why, unassigned: null };
   // An answer that lists none of the open units (a bed-only grant; `structure.manage` without a unit grant) is no
   // answer about any nurse or bed here: «yetki yok», never «none» (§5 A6, review 2).

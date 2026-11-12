@@ -19,7 +19,7 @@ import { WHY, boardReachSource, reachSource, readSource, structureSource } from 
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import { useShiftEnd } from "./useShiftEnd.js";
 import {
-  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, isWorkAnswer,
+  ALL, NO_NURSE, NO_UNITS, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, isWorkAnswer,
   listedKeysOf, meanOf,
   readWorkAlone,
   readWorkAndTasks, saveBody, workSources, workloadPage, workloadRights,
@@ -131,8 +131,11 @@ function Unassigned({ t, unassigned }) {
 function NursesBox({ t, page, onSelect, locked }) {
   const chosen = page.choices.find((row) => row.key === page.selected);
   let body;
-  if (page.cards === null) body = <Note tone="warn">{t("isyuku.nurses.missing", { why: whyText(t, page.cardsWhy) })}</Note>;
-  else {
+  if (page.cards === null && page.cardsWhy === NO_UNITS) {
+    body = <p className="m-0 text-13 text-mute">{t("isyuku.units.none")}</p>;           // the table's own words
+  } else if (page.cards === null) {
+    body = <Note tone="warn">{t("isyuku.nurses.missing", { why: whyText(t, page.cardsWhy) })}</Note>;
+  } else {
     body = (
       <>
         <p className="m-0 text-12 font-semibold">{t("isyuku.nurses.note")}</p>

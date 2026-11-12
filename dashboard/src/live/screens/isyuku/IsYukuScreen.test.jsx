@@ -125,6 +125,17 @@ describe("the workload page", () => {
     act(() => { board.clear(); });
   });
 
+  // Re-review 3: no open unit in the tree: the nurse box says what the table says.
+  it("says «Açıq şöbə yoxdur.» in the nurse box too when the tree has no open unit", async () => {
+    const closed = tree();
+    closed.sites[0].units = closed.sites[0].units.filter((unit) => unit.is_active === false);
+    const { board } = await mountIsYuku({ setup: (api) => api.structure.mockResolvedValue(closed) });
+    expect(document.querySelector("[data-units]")).toHaveTextContent("Açıq şöbə yoxdur.");
+    expect(nursesBox()).toHaveTextContent("Açıq şöbə yoxdur.");
+    expect(nursesBox().textContent).not.toMatch(/yazıla bilmir|səlahiyyət yoxdur/);
+    act(() => { board.clear(); });
+  });
+
   it("says the cards leave out the units she cannot see, under «Bütün şöbələr» only", async () => {
     const onlyRea = schedule({ units: [schedule().units[1]] });
     const { board } = await mountIsYuku({ setup: (api) => api.shiftSchedule.mockImplementation((shift = "current", unitId = null) =>
