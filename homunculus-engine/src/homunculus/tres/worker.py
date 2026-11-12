@@ -47,6 +47,7 @@ not): the ledger commits after every resource, and the settings rows are read af
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import traceback
@@ -191,6 +192,18 @@ async def _park(db: AsyncSession, sender: Sender, status: int | None = None) -> 
                 "settings are saved or a connection test succeeds", sender.tenant_id, status)
 
 
+@contextlib.asynccontextmanager
+async def _closing(packages: AsyncIterator[Package]) -> AsyncIterator[AsyncIterator[Package]]:
+    """`contextlib.aclosing`, for any async iterator: an async generator is closed on the way out;
+    an iterator with no `aclose` is simply left."""
+    try:
+        yield packages
+    finally:
+        close = getattr(packages, "aclose", None)
+        if close is not None:
+            await close()
+
+
 async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: TresSettings,
                 source: PackageSource, report: RoundReport, version: datetime | None = None) -> None:
     """One tenant's packages, until they end, a 429 or a refused session comes, MAX_CONSECUTIVE
@@ -202,44 +215,47 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
         version = current.updated_at if current is not None else None
     if not await _still_on(db, sender, version):
         return
-    async for package in source(db, settings):
-        if not await _still_on(db, sender, version):
-            return
-        try:
-            await package(sender)
-        except TresError as exc:
-            report.failed += 1
-            if exc.status == 429:
-                wait = exc.retry_after if exc.retry_after is not None else THROTTLED_S
-                report.retry_after = max(report.retry_after or 0.0, wait)
-                log.warning("TRƏS: 429 for tenant %s; its round ends, the next waits %.0f s",
-                            sender.tenant_id, report.retry_after)
-                return
-            if isinstance(exc, TresLoginRefused):
-                await _park(db, sender, exc.status)
-                return
-            if isinstance(exc, TresSessionError):
-                log.warning("TRƏS: %s (HTTP %s) for tenant %s; its round ends",
-                            type(exc).__name__, exc.status, sender.tenant_id)
-                return
-            consecutive += 1
-        except Exception as exc:  # noqa: BLE001 — one bad package must not end the round
-            report.failed += 1
-            consecutive += 1
-            log.error("TRƏS: a package failed for tenant %s (%s at %s)", sender.tenant_id,
-                      type(exc).__name__, _where(exc))
-            await db.rollback()
-            # The rollback expired every row this session held, the settings the source reads
-            # among them: read them again before the source runs on.
+    # Closed as soon as the tenant's round ends, early or not (review M11): an F1 source holds a
+    # query open, and an async generator left behind is closed only when it is collected.
+    async with _closing(source(db, settings)) as packages:
+        async for package in packages:
             if not await _still_on(db, sender, version):
                 return
-        else:
-            report.packages += 1
-            consecutive = 0
-        if consecutive >= MAX_CONSECUTIVE:
-            log.warning("TRƏS: %d packages failed in a row for tenant %s; its round ends",
-                        consecutive, sender.tenant_id)
-            return
+            try:
+                await package(sender)
+            except TresError as exc:
+                report.failed += 1
+                if exc.status == 429:
+                    wait = exc.retry_after if exc.retry_after is not None else THROTTLED_S
+                    report.retry_after = max(report.retry_after or 0.0, wait)
+                    log.warning("TRƏS: 429 for tenant %s; its round ends, the next waits %.0f s",
+                                sender.tenant_id, report.retry_after)
+                    return
+                if isinstance(exc, TresLoginRefused):
+                    await _park(db, sender, exc.status)
+                    return
+                if isinstance(exc, TresSessionError):
+                    log.warning("TRƏS: %s (HTTP %s) for tenant %s; its round ends",
+                                type(exc).__name__, exc.status, sender.tenant_id)
+                    return
+                consecutive += 1
+            except Exception as exc:  # noqa: BLE001 — one bad package must not end the round
+                report.failed += 1
+                consecutive += 1
+                log.error("TRƏS: a package failed for tenant %s (%s at %s)", sender.tenant_id,
+                          type(exc).__name__, _where(exc))
+                await db.rollback()
+                # The rollback expired every row this session held, the settings the source reads
+                # among them: read them again before the source runs on.
+                if not await _still_on(db, sender, version):
+                    return
+            else:
+                report.packages += 1
+                consecutive = 0
+            if consecutive >= MAX_CONSECUTIVE:
+                log.warning("TRƏS: %d packages failed in a row for tenant %s; its round ends",
+                            consecutive, sender.tenant_id)
+                return
 
 
 async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool,

@@ -615,3 +615,33 @@ async def test_a_failure_is_logged_with_its_last_frames_and_never_its_words(feed
     assert re.search(r"worker\.py:\d+:_work", package_line)
     assert "RuntimeError" in tenant_line and re.search(r"test_tres_worker\.py:\d+:failing", tenant_line)
     assert "Sentetik" not in caplog.text
+
+
+@requires_db
+async def test_the_source_is_closed_as_soon_as_a_tenants_round_ends_early(feed, db_session):
+    """Review M11: an F1 source holds a query open; a round that stops early (here a 429) closes it
+    at once — before the tenant's client — not whenever the generator is collected."""
+    fake, tenants, _ = feed
+    events = []
+
+    async def source(db, settings):
+        try:
+            yield sends("hmn-p-0001")
+            yield sends("hmn-p-0002")
+        finally:
+            events.append("source closed")
+
+    class Client(TresClient):
+        async def aclose(self) -> None:
+            events.append("client closed")
+            await super().aclose()
+
+    async def quiet(seconds: float) -> None:
+        return None
+
+    fake.throttle(1)
+    report = await run_round(async_sessionmaker(db_session.bind, expire_on_commit=False), egress=True, source=source,
+                             now=T0, client_factory=lambda account: Client(account, transport=fake.transport),
+                             sleep=quiet)
+    assert report.retry_after == THROTTLED_S
+    assert events == ["source closed", "client closed"]
