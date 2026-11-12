@@ -23,7 +23,7 @@ from homunculus.admission.models import Admission, Patient
 from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient, TresError, is_outage
 from homunculus.tres.ledger import (
-    ERROR_MAX_BYTES, ERROR_MAX_CHARS, MAX_ATTEMPTS, RETRY_AFTER, clip_error, deliver, due,
+    ERROR_MAX_BYTES, ERROR_MAX_CHARS, MAX_ATTEMPTS, RETRY_AFTER, _row, clip_error, deliver, due,
     payload_digest, record_skip,
 )
 from homunculus.tres.models import TresDelivery
@@ -470,3 +470,26 @@ async def test_a_server_error_about_the_resource_is_counted_and_raised_for_the_r
     assert (row.status, row.attempts, row.last_error, row.next_attempt_at) == (
         "failed", 1, "HAPI-0000: internal", T0 + RETRY_AFTER)
     await client.aclose()
+
+
+@requires_db
+async def test_the_row_is_read_again_and_never_trusted_from_the_sessions_memory(db_session):
+    """Review M5 — pins `populate_existing` in `_row`. The session already holds the row (it does
+    not expire on commit), another connection changes it: `_row` must answer what is stored now,
+    or the second deliverer of a key would act on what the first had before it."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.commit()
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "patient", "local_id": LOCAL,
+           "admission_id": None}
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as db:
+        held = await _row(db, **key)
+        await db.commit()
+        assert (held.status, held.remote_id) == ("pending", None)
+        async with maker() as other:
+            await other.execute(text("UPDATE tres_deliveries SET status = 'sent', remote_id = '7999'"))
+            await other.commit()
+        again = await _row(db, **key)
+        assert again is held and (again.status, again.remote_id) == ("sent", "7999")
+        await db.commit()
