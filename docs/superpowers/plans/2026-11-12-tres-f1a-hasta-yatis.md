@@ -57,7 +57,7 @@ Also checked there the same day: `http://terminology.hl7.org/CodeSystem/observat
 - O26 REACH (7 days) bounds how late a correction reaches the platform without a hand. F2–F5 write records after the discharge (diagnoses, procedures, the summary): F2 decides whether a change to them brings an older stay back within reach.
 
 **Gates (measured when the plan is carried out — every `…` replaced by the number seen):**
-- Baseline (Task 0, head `f74b474a` or later): engine … passed / … skipped (no-DB); dashboard … files / … tests.
+- Baseline (Task 0, head `485dcf4f` = `f74b474a` + this plan): engine 4199 passed / 1428 skipped (no-DB); dashboard 166 files / 4481 tests.
 - After F1a (Task 13): engine … passed / … skipped (no-DB; expected baseline +79 passed / +36 skipped); Postgres per file (Task 13, Step 3) …; dashboard … files / … tests (expected the baseline's file count, the test count unchanged — F1a changes assertions, not tests); head `<sha>`.
 
 ---
