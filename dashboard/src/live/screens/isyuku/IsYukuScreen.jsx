@@ -18,7 +18,8 @@ import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/in
 import { WHY, boardReachSource, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import {
-  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, meanOf, readWorkAlone,
+  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, listedKeysOf, meanOf,
+  readWorkAlone,
   readWorkAndTasks, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
 
@@ -298,6 +299,12 @@ export function IsYukuScreen() {
   const [selected, setSelected] = useState(ALL);
   const occupancy = structureSource(tree, rights.structure);
   const { schedule, tasks } = workSources(reads.extra, rights, Date.now());
+  // The units the last fresh answer listed, kept while a read fails or its shift ends, so the unit picker and the form
+  // being edited stay (§5 A7, review 1). A text, so the effect runs only when the listing changes.
+  const fresh = schedule.ok ? listedKeysOf(schedule.data) : null;
+  const [keptKeys, setKeptKeys] = useState(null);
+  useEffect(() => { if (fresh !== null) setKeptKeys(fresh); }, [fresh]);
+  const kept = useMemo(() => (keptKeys === null ? null : new Set(keptKeys.split(" ").filter(Boolean))), [keptKeys]);
   const boardSrc = boardWork({ connection: board.connection, patients: board.patients, alerts: board.alerts, nowMs: boardNowMs },
     rights.board);
   const page = workloadPage({
@@ -306,7 +313,7 @@ export function IsYukuScreen() {
     // as its counts (as «Yönetici özeti»).
     boardReach: boardReachSource(board.scope, boardSrc),
     wholeTree: rights.wholeTree, schedule, tasks, board: boardSrc,
-  }, { selected, lang });
+  }, { selected, lang, kept });
   const chosen = page.choices.find((row) => row.key === page.selected) ?? null;
   const formable = rights.manage && page.choices.length > 0;
 

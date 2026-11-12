@@ -251,6 +251,31 @@ describe("«Nöbet ataması»", () => {
     }
   });
 
+  // Review 1 (§5 A7): the form and the picks she made survive a poll that fails and a shift that ends meanwhile.
+  it("keeps the form and its picks when the page's next read fails, and when the shift ends", async () => {
+    const { api, board } = await mountIsYuku();
+    await pick("Reanimasiya");
+    const three = () => within(formBox()).getByLabelText("3 · Otaq 1 · Reanimasiya");
+    fireEvent.change(three(), { target: { value: NURSE.nigar } });
+    api.shiftSchedule.mockImplementation((shift = "current", unitId = null) =>
+      (unitId ? Promise.resolve(unitSchedule(shift, unitId)) : Promise.reject(refusal(503, "down"))));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenilə" })); });
+    await settle();
+    expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — oxunmadı");
+    expect(screen.getByRole("heading", { level: 2, name: "Növbə təyinatı · Reanimasiya" })).toBeInTheDocument();
+    expect(three()).toHaveValue(NURSE.nigar);
+    expect(screen.getByLabelText("Şöbə")).toHaveValue(REA.toLowerCase());
+
+    api.shiftSchedule.mockImplementation((shift = "current", unitId = null) =>
+      Promise.resolve(unitId ? unitSchedule(shift, unitId) : schedule()));
+    vi.setSystemTime(Date.parse("2026-11-12T20:00:30Z"));                 // the answer's shift has ended
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yenilə" })); });
+    await settle();
+    expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — növbə dəyişdi, yenilənir");
+    expect(three()).toHaveValue(NURSE.nigar);
+    act(() => { board.clear(); });
+  });
+
   it("another refusal keeps the choices and says «Yadda saxlanılmadı»", async () => {
     const { board } = await mountIsYuku({ setup: (a) => a.saveShiftSchedule.mockRejectedValue(refusal(503, "down")) });
     await pick("Reanimasiya");

@@ -8,8 +8,8 @@ import { describe, it, expect, vi } from "vitest";
 import { CONNECTION } from "../../../liveConnection.js";
 import { WHY, noSource, okSource } from "../ozet/ozet.js";
 import {
-  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, labelled, meanOf, readWork, remainingOf,
-  saveBody, workSources, workloadPage, workloadRights,
+  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, labelled, listedKeysOf, meanOf, readWork,
+  remainingOf, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
 import { BED, NEO, NOW_MS, NURSE, NURSES, REA, schedule, tasks, tree, unitSchedule } from "./isyuku.testutil.js";
 
@@ -225,6 +225,22 @@ describe("the nurse cards (§5 A5, A11, A13)", () => {
     expect(page({ schedule: s }).partial).toBe(true);
     expect(page({ schedule: s }, { selected: REA.toLowerCase() }).partial).toBe(false);
     expect(page({ schedule: noSource(WHY.failed) }).partial).toBe(false);
+  });
+
+  // Review 1 (§5 A7): a poll that fails, or a shift that ends, must not take the unit picker — and with it the form
+  // being edited — away; only a fresh answer that leaves the unit out falls back to «Tüm birimler».
+  it("keeps the units the last fresh answer listed while the next read is not ok", () => {
+    const kept = new Set([NEO.toLowerCase(), REA.toLowerCase()]);
+    expect(listedKeysOf(schedule())).toBe(`${NEO.toLowerCase()} ${REA.toLowerCase()}`);
+    for (const why of [WHY.failed, SHIFT_CHANGED]) {
+      const p = page({ schedule: noSource(why), tasks: noSource(why) }, { selected: REA.toLowerCase(), kept });
+      expect(p.selected).toBe(REA.toLowerCase());
+      expect(p.choices.map((row) => row.name)).toEqual(["Reanimasiya", "Neonatal"]);
+      expect([p.cards, p.cardsWhy]).toEqual([null, why]);
+    }
+    const withoutRea = okSource(schedule({ units: [schedule().units[0]] }));
+    expect(page({ schedule: withoutRea }, { selected: REA.toLowerCase(), kept }).selected).toBe(ALL);
+    expect(page({ schedule: noSource(WHY.loading) }, { selected: REA.toLowerCase() }).selected).toBe(ALL);   // none kept
   });
 
   it("tells two of one name apart by their user names, and sorts in the reader's language", () => {

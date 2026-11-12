@@ -150,6 +150,10 @@ export function labelled(people) {
 /** One order everywhere (A11): the reader's language's collation of the label, then the key. */
 export const byLabel = (lang) => (a, b) => a.label.localeCompare(b.label, lang) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
+/** The units a fresh answer (GET /shift-schedule) lists, as one text of their keys (normId) in its order — what the
+ *  page keeps (`workloadPage`'s `kept`) while its next read is not ok. A text, so it compares by value (review 1). */
+export const listedKeysOf = (answer) => answer.units.map((unit) => normId(unit.unit_id)).join(" ");
+
 /** The open units of the tree, in its order, each with its open beds: key, id, structure name («1 · Otaq 1 ·
  *  Reanimasiya»), whether a patient is in it (doluluk/occupancy.js WITH_PATIENT). Not ozet.js `unitsOf`, which lists
  *  every unit with its counts. */
@@ -177,7 +181,8 @@ function openUnitsOf(tree) {
  *  `structureSource`); `reach`: the caller's (ozet.js `reachSource`, GET /scope/me); `boardReach`: the live board's own
  *  scope (ozet.js `boardReachSource`), for the alarm column and the cards' «Kalan iş»; `wholeTree`: the tree is the whole
  *  hospital's (`structure.manage`); `schedule`, `tasks` (`workSources`), `board` (`boardWork`): sources. `selected`: ALL
- *  or a listed unit's key — one the rows no longer hold falls back to ALL; `lang`: the cards' collation.
+ *  or a listed unit's key — one the rows no longer hold falls back to ALL; `lang`: the cards' collation; `kept`: the
+ *  keys (a Set) the last fresh answer listed, the choices while `schedule` is not ok (`listedKeysOf`).
  *
  *  { shift: {startMs, endMs, which} | null, shiftWhy, rows: [{key, id, name, beds, listed, items, cells}] | null, why,
  *    otherRows, selected, choices: [row], partial, cards: [{key, label, beds, patients, tasks}] | null, cardsWhy,
@@ -185,7 +190,7 @@ function openUnitsOf(tree) {
  *  `cards` null with «yetki yok» when the answer lists none of the open units; `partial`: «Tüm birimler» while the
  *  answer leaves out an open unit — the cards and the unassigned beds are the listed units' only. */
 export function workloadPage({ tree, occupancy, reach, boardReach = reach, wholeTree = false, schedule, tasks, board },
-  { selected = ALL, lang } = {}) {
+  { selected = ALL, lang, kept = null } = {}) {
   const shift = schedule.ok ? { startMs: msOf(schedule.data.shift.start), endMs: msOf(schedule.data.shift.end),
     which: schedule.data.shift.which } : null;
   const head = { shift, shiftWhy: schedule.ok ? null : schedule.why };
@@ -255,7 +260,11 @@ export function workloadPage({ tree, occupancy, reach, boardReach = reach, whole
     };
   });
 
-  const choices = rows.filter((row) => row.listed);
+  // The units to choose from: the fresh answer's; while the read is not ok (it failed, or its shift ended), those the
+  // last fresh answer listed (`kept`), so a poll does not take away the form being edited (§5 A7, review 1). Only a
+  // fresh answer that leaves the chosen unit out falls back to «Tüm birimler»; the form's own read, by the unit's id,
+  // is refused by the server for a unit out of her reach.
+  const choices = schedule.ok ? rows.filter((row) => row.listed) : rows.filter((row) => kept?.has(row.key) === true);
   const pick = selected !== ALL && choices.some((row) => row.key === selected) ? selected : ALL;
   const otherRows = [...listed.values()].some((unit) => unit.otherRows > 0);
   const page = { ...head, rows, why: null, otherRows, selected: pick, choices, partial: false };
