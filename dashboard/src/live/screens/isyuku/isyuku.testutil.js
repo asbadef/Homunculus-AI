@@ -2,7 +2,7 @@
 // shift's assignment (GET /shift-schedule, also for one unit), the form's people, the task queue (GET /tasks) and the
 // live board (GET /patients), as the API sends them. Synthetic names and ids only; no screen may print a patient's
 // name, a patient id or a UUID.
-import { alarm, board, entry, identity } from "../../data/board.testutil.js";
+import { alarm, board, entry, identity, scopedTo } from "../../data/board.testutil.js";
 import { BED, NEO, REA, SITE, T } from "../kabul/kabul.testutil.js";
 
 export { BED, NEO, REA };
@@ -89,8 +89,11 @@ export function tasks() {
 
 const card = (id, n, unitId, alarms = []) => entry(id, alarms,
   { identity: identity({ patient_id: id, display_name: PATIENT_NAME, unit_id: unitId, bed_id: BED(n) }) });
-/** GET /patients: S-101 on bed 1 with a critical alarm, S-102 on bed 2, S-105 on bed 5 with a high one, S-111 on N1. */
-export const BOARD = board([
+const CARDS = [
   card("S-101", 1, REA, [alarm("septic_shock", "critical")]), card("S-102", 2, REA),
   card("S-105", 5, REA, [alarm("news2", "high")]), card("S-111", 11, NEO),
-]);
+];
+/** GET /patients: S-101 on bed 1 with a critical alarm, S-102 on bed 2, S-105 on bed 5 with a high one, S-111 on N1. */
+export const BOARD = board(CARDS);
+/** The same board for a session whose BOARD scope reaches `unitIds` only (review 3: a grant made since it was read). */
+export const boardScopedTo = (unitIds) => board(CARDS, { scope: scopedTo(unitIds) });

@@ -16,7 +16,7 @@ import { SCOPE_ADMIN } from "../admin/admin.testutil.js";
 import { expectNoUuid } from "../kabul/kabul.testutil.js";
 import { IsYukuScreen } from "./IsYukuScreen.jsx";
 import {
-  BED, BOARD, NEXT, NOW_MS, NURSE, NURSES, PATIENT_NAME, REA, SHIFT, schedule, tasks, tree, unitSchedule,
+  BED, BOARD, NEXT, NOW_MS, NURSE, NURSES, PATIENT_NAME, REA, SHIFT, boardScopedTo, schedule, tasks, tree, unitSchedule,
 } from "./isyuku.testutil.js";
 
 const ADMIN = [...PERMISSION_KEYS];
@@ -152,6 +152,13 @@ describe("Decision 18: a zero only from a fresh answer", () => {
     act(() => { stream.drop(); });
     expect(unitRows().map((row) => row[7])).toEqual(["— lövhə yenilənməyib", "— lövhə yenilənməyib"]);
     expect(nursesBox().querySelectorAll("[data-nurse]")[1]).toHaveTextContent("Qalan iş: — lövhə yenilənməyib");
+    act(() => { board.clear(); });
+  });
+
+  it("keeps the board's own scope for the alarm column: a unit it does not reach yet says «səlahiyyət yoxdur» (review 3)", async () => {
+    const { board } = await mountIsYuku({ setup: (api) => api.boardPatients.mockResolvedValue(boardScopedTo([REA])) });
+    expect(unitRows().map((row) => row[7])).toEqual(["2", "— səlahiyyət yoxdur"]);
+    expect(unitRows()[1][6]).toBe("1");                                   // «Qalan iş»: /tasks, her own reach
     act(() => { board.clear(); });
   });
 

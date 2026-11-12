@@ -15,7 +15,7 @@ import { useStructure } from "../../data/StructureProvider.jsx";
 import { useSnoozeClock } from "../../data/useSnoozeClock.js";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/index.js";
-import { WHY, reachSource, readSource, structureSource } from "../ozet/ozet.js";
+import { WHY, boardReachSource, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import {
   ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, meanOf, readWorkAlone,
@@ -298,11 +298,14 @@ export function IsYukuScreen() {
   const [selected, setSelected] = useState(ALL);
   const occupancy = structureSource(tree, rights.structure);
   const { schedule, tasks } = workSources(reads.extra, rights, Date.now());
+  const boardSrc = boardWork({ connection: board.connection, patients: board.patients, alerts: board.alerts, nowMs: boardNowMs },
+    rights.board);
   const page = workloadPage({
     tree: tree.known ? tree.structure : null, occupancy, reach: reachSource(readSource(reads.scope, true)),
-    wholeTree: rights.wholeTree, schedule, tasks,
-    board: boardWork({ connection: board.connection, patients: board.patients, alerts: board.alerts, nowMs: boardNowMs },
-      rights.board),
+    // The alarm column and the cards' «Kalan iş» keep the scope the engine applied to her board, from the same answer
+    // as its counts (as «Yönetici özeti»).
+    boardReach: boardReachSource(board.scope, boardSrc),
+    wholeTree: rights.wholeTree, schedule, tasks, board: boardSrc,
   }, { selected, lang });
   const chosen = page.choices.find((row) => row.key === page.selected) ?? null;
   const formable = rights.manage && page.choices.length > 0;

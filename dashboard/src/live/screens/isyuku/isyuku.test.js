@@ -170,6 +170,31 @@ describe("Decision 18: every number is real or says why not (§5 A6)", () => {
   });
 });
 
+// Review 3: the alarm column and the cards' «Kalan iş» are counted from the live board, so they keep the board's own
+// scope (ozet.js `boardReachSource`), not GET /scope/me: the board's scope is renewed only with the board.
+describe("the board's own scope (review 3)", () => {
+  const NIGAR_ON_N1 = { bed_id: BED(11), nurse_id: NURSE.nigar, nurse_name: "Nigar Sentetik", nurse_username: "nigar@sentetik.example" };
+
+  it("a unit /scope/me reaches but the board's scope does not yet: «yetki yok» there, never a 0", () => {
+    const s = schedule();
+    s.units[0].items = [NIGAR_ON_N1];
+    const boardReach = okSource({ all: false, units: new Set([REA.toLowerCase()]) });
+    const p = page({ schedule: okSource(s), boardReach });
+    expect(cellsOf(p).Neonatal.waiting).toEqual({ why: WHY.noRight });
+    expect(cellsOf(p).Reanimasiya.waiting).toEqual({ value: 2 });
+    expect(cellsOf(p).Neonatal.remaining).toEqual({ value: 1 });          // /tasks: her own reach, which holds it
+    expect(p.cards.find((card) => card.label === "Nigar Sentetik").tasks).toEqual({ why: WHY.noRight });
+    expect(p.cards.find((card) => card.label === "Leyla Sentetik").tasks).toEqual({ value: 2 });
+  });
+
+  it("a board scope not known: the alarm column and the cards' «Kalan iş» say why", () => {
+    const p = page({ boardReach: noSource(WHY.unknown) });
+    expect(cellsOf(p).Reanimasiya.waiting).toEqual({ why: WHY.unknown });
+    expect(cellsOf(p).Reanimasiya.late).toEqual({ value: 2 });
+    expect(p.cards.map((card) => card.tasks)).toEqual([{ why: WHY.unknown }, { why: WHY.unknown }]);
+  });
+});
+
 describe("the nurse cards (§5 A5, A11, A13)", () => {
   it("one card per nurse with a bed there, alphabetical: her beds, her patients and their «Kalan iş» — nothing else", () => {
     const { cards } = page();

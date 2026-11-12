@@ -17,14 +17,18 @@
 //   «Geciken iş» — open hand tasks the server marks late and a vital task in state late (ozet.js `lateOf`); «Kalan iş» —
 //     open hand tasks NOT late, due before the shift ends; vital tasks are not in it (A4); both by the card's unit;
 //   «Yanıt bekleyen alarm» — the live board's `needsAnswer`, LIVE only (ozet.js `boardSource`);
-//   a cell of the tasks or the board is «yetki yok» for a unit outside her reach (GET /scope/me), as on the summary.
+//   a task cell is «yetki yok» for a unit outside her reach (GET /scope/me); the alarm column keeps the live board's
+//     own scope (ozet.js `boardReachSource`), so its counts and their cut come from one answer — the board's scope is
+//     renewed only with the board, and a unit granted since would read 0 under /scope/me's newer reach. As on the
+//     summary.
 //
 // THE NURSE CARDS, for the selection (one listed unit, or all): one per nurse with a row on an open bed there,
 // alphabetical in the reader's language (two of one name told apart by their user names, A11) — her beds by their
 // structure name, her patients (the occupied ones) and «Kalan iş» of those patients; no late work and no alarm count
 // (A13: late work belongs to the unit). /tasks names no bed, so a card's patients are found through the live board — an
-// assigned bed → the board card on it → that patient's /tasks entry (A5); without a LIVE board the cell says why. Then
-// the occupied beds nobody has («Atanmamış»).
+// assigned bed → the board card on it → that patient's /tasks entry (A5); without a LIVE board the cell says why, and
+// a card with a bed outside her reach or the board's scope says «yetki yok». Then the occupied beds nobody has
+// («Atanmamış»).
 //
 // Counts only: no score, no target ratio. No patient's name or id: beds by their structure name, nurses by name.
 import { bedLabel, indexStructure, normId } from "../../data/structure.js";
@@ -170,7 +174,8 @@ function openUnitsOf(tree) {
 }
 
 /** The page. `tree`: the last tree held (null: none read yet); `occupancy`: the tree's own source (ozet.js
- *  `structureSource`); `reach`: the caller's (ozet.js `reachSource`, GET /scope/me); `wholeTree`: the tree is the whole
+ *  `structureSource`); `reach`: the caller's (ozet.js `reachSource`, GET /scope/me); `boardReach`: the live board's own
+ *  scope (ozet.js `boardReachSource`), for the alarm column and the cards' «Kalan iş»; `wholeTree`: the tree is the whole
  *  hospital's (`structure.manage`); `schedule`, `tasks` (`workSources`), `board` (`boardWork`): sources. `selected`: ALL
  *  or a listed unit's key — one the rows no longer hold falls back to ALL; `lang`: the cards' collation.
  *
@@ -179,7 +184,8 @@ function openUnitsOf(tree) {
  *    unassigned: {beds: [name]} | {why} | null }
  *  `cards` null with «yetki yok» when the answer lists none of the open units; `partial`: «Tüm birimler» while the
  *  answer leaves out an open unit — the cards and the unassigned beds are the listed units' only. */
-export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedule, tasks, board }, { selected = ALL, lang } = {}) {
+export function workloadPage({ tree, occupancy, reach, boardReach = reach, wholeTree = false, schedule, tasks, board },
+  { selected = ALL, lang } = {}) {
   const shift = schedule.ok ? { startMs: msOf(schedule.data.shift.start), endMs: msOf(schedule.data.shift.end),
     which: schedule.data.shift.which } : null;
   const head = { shift, shiftWhy: schedule.ok ? null : schedule.why };
@@ -210,8 +216,15 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
       remainingOfPatient.set(patient.patient_id, n);
     }
   }
-  const outOf = (key) => reach.ok && !reach.data.all && !reach.data.units.has(key);
-  const gate = (key, cell) => (outOf(key) ? { why: WHY.noRight } : !reach.ok ? { why: reach.why } : cell);
+  const outOf = (which, key) => which.ok && !which.data.all && !which.data.units.has(key);
+  // The task columns: /tasks is cut to her own reach (GET /scope/me).
+  const gate = (key, cell) => (outOf(reach, key) ? { why: WHY.noRight } : !reach.ok ? { why: reach.why } : cell);
+  // The alarm column: the live board's own scope, from the same answer as its counts (ozet.js `summarise`).
+  const gateBoard = (key, cell) => {
+    if (outOf(boardReach, key)) return { why: WHY.noRight };
+    if ("why" in cell) return cell;
+    return boardReach.ok ? cell : { why: boardReach.why };
+  };
 
   const rows = openUnitsOf(tree).map((unit) => {
     const mine = listed.get(unit.key);
@@ -220,7 +233,7 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
     const assigned = new Set(items.map((i) => i.bed.key));
     const occupied = unit.beds.filter((bed) => bed.occupied);
     let patients = { value: occupied.length };
-    if (!wholeTree && outOf(unit.key)) patients = { why: WHY.noRight };
+    if (!wholeTree && outOf(reach, unit.key)) patients = { why: WHY.noRight };
     else if (!occupancy.ok) patients = { why: occupancy.why };
     else if (!wholeTree && !reach.ok) patients = { why: reach.why };
     let held = null;                                            // why the assignment cells cannot be counted
@@ -237,7 +250,7 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
         unassigned: withPatients ?? { value: occupied.filter((bed) => !assigned.has(bed.key)).length },
         late: gate(unit.key, tasks.ok ? { value: late.get(unit.key) ?? 0 } : { why: tasks.why }),
         remaining: gate(unit.key, tasks.ok ? { value: remaining.get(unit.key) ?? 0 } : { why: tasks.why }),
-        waiting: gate(unit.key, board.ok ? { value: board.data.byUnit.get(unit.key)?.total ?? 0 } : { why: board.why }),
+        waiting: gateBoard(unit.key, board.ok ? { value: board.data.byUnit.get(unit.key)?.total ?? 0 } : { why: board.why }),
       },
     };
   });
@@ -257,17 +270,28 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
   const byNurse = new Map();
   for (const row of shown) {
     for (const { bed, key, name, username } of row.items) {
-      const card = byNurse.get(key) ?? { key, name, username, beds: [] };
+      const card = byNurse.get(key) ?? { key, name, username, beds: [], units: new Set() };
       card.beds.push(bed);
+      card.units.add(row.key);
       byNurse.set(key, card);
     }
   }
   const tasksOf = (beds) => beds.reduce((sum, bed) => sum + (board.data.onBed.get(bed.key) ?? [])
     .reduce((n, patient) => n + (remainingOfPatient.get(patient) ?? 0), 0), 0);
+  // A card's «Kalan iş» is /tasks (her reach) read through the live board (its own scope): a bed outside either is no
+  // answer about it — «yetki yok», never a 0 (review 3).
+  const tasksCell = (card) => {
+    if ([...card.units].some((key) => outOf(reach, key) || outOf(boardReach, key))) return { why: WHY.noRight };
+    if (!tasks.ok) return { why: tasks.why };
+    if (!board.ok) return { why: board.why };
+    if (!reach.ok) return { why: reach.why };
+    if (!boardReach.ok) return { why: boardReach.why };
+    return { value: tasksOf(card.beds) };
+  };
   const cards = labelled([...byNurse.values()]).map((card) => ({
     key: card.key, label: card.label, beds: card.beds.map((bed) => bed.label),
     patients: occupancy.ok ? { value: card.beds.filter((bed) => bed.occupied).length } : { why: occupancy.why },
-    tasks: !tasks.ok ? { why: tasks.why } : !board.ok ? { why: board.why } : { value: tasksOf(card.beds) },
+    tasks: tasksCell(card),
   })).sort(byLabel(lang));
   const unassigned = occupancy.ok
     ? { beds: shown.flatMap((row) => row.beds.filter((bed) => bed.occupied && !row.items.some((i) => i.bed.key === bed.key))
