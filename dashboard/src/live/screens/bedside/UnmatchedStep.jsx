@@ -279,7 +279,7 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
           <ul role="list" className="m-0 list-none p-0">
             {shown.map((set) => (
               <li key={keyOf(set)} data-um-set={set.received_key} className="flex flex-wrap items-center gap-2 border-b border-line py-2.5 last:border-b-0">
-                <span className="min-w-0 flex-1">
+                <span className="min-w-[180px] flex-1">
                   <SetFacts set={set} nowMs={nowMs} />
                   <SetValues set={set} />
                   {set.linkable === true ? null : <span className="mt-1 block text-12 font-semibold text-mute">{t("kayit.umTooOld")}</span>}
