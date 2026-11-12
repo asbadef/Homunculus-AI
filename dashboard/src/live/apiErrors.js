@@ -252,6 +252,10 @@ export const ADMISSION_CODE_KEYS = new Map([
   ["care_team_conflict", "ekip.err.conflict"],
   ["care_team_not_physician", "ekip.err.notPhysician"],
   ["care_team_attending_required", "ekip.err.attendingRequired"],
+
+  // G4-04 — İş yükü (spec §5 A1, A7): «Nöbet ataması» says them in its own namespace, and reads again.
+  ["shift_changed", "isyuku.err.shiftChanged"],
+  ["assignment_conflict", "isyuku.err.conflict"],
 ]);
 
 /** G3-02 — Görevlerim (homunculus/api/tasks.py WORDS, spec D11): the queue's refusals by their code

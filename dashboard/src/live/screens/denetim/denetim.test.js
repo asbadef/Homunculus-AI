@@ -162,8 +162,9 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(55);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js)
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(55);
+    expect(EVENT_TYPES).toHaveLength(56);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + G4-04's shift.assign
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(56);
+    expect(typeKey("shift.assign")).toBe("denetim.type.shiftAssign");                 // G4-04 (spec D4): «Nöbet ataması»
     expect(typeKey("care_team.attending")).toBe("denetim.type.careTeamAttending");   // G2-B1c (spec §5.5)
     expect(typeKey("care_team.add")).toBe("denetim.type.careTeamAdd");
     expect(typeKey("care_team.end")).toBe("denetim.type.careTeamEnd");

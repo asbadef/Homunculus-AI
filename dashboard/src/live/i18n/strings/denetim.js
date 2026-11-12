@@ -66,6 +66,8 @@ export default {
       taskSkipped: "Görev «uygulanmadı» olarak kapandı", vitalSkipped: "Vital ölçüm atlandı", taskSettings: "Görev ayarları değişti",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Sorumlu hekim atandı", careTeamAdd: "Bakım ekibine eklendi", careTeamEnd: "Bakım ekibinden çıkış",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Nöbet ataması",
     },
     heat: {
       title: "Alarm yoğunluğu — son {days} gün",
@@ -138,6 +140,8 @@ export default {
       taskSkipped: "Tapşırıq «tətbiq edilmədi» kimi bağlandı", vitalSkipped: "Vital ölçmə ötürüldü", taskSettings: "Tapşırıq ayarları dəyişdi",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Məsul həkim təyin edildi", careTeamAdd: "Baxım komandasına əlavə edildi", careTeamEnd: "Baxım komandasından çıxış",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Növbə təyinatı",
     },
     heat: {
       title: "Siqnal sıxlığı — son {days} gün",
@@ -210,6 +214,8 @@ export default {
       taskSkipped: "Задача закрыта как «не выполнено»", vitalSkipped: "Измерение витальных пропущено", taskSettings: "Настройки задач изменены",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Назначен лечащий врач", careTeamAdd: "Добавление в лечебную команду", careTeamEnd: "Выход из лечебной команды",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Назначение на смену",
     },
     heat: {
       title: "Плотность тревог — последние {days} дн.",
@@ -282,6 +288,8 @@ export default {
       taskSkipped: "Task closed as not done", vitalSkipped: "Vital measurement skipped", taskSettings: "Task settings changed",
       // G2-B1c (spec §5.5): the care team's three events
       careTeamAttending: "Attending physician assigned", careTeamAdd: "Added to the care team", careTeamEnd: "Care-team membership ended",
+      // G4-04 (spec D4): a unit's nurse–bed assignment for a shift
+      shiftAssign: "Shift assignment",
     },
     heat: {
       title: "Alarm density — last {days} days",
