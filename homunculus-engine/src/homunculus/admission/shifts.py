@@ -47,7 +47,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from homunculus.admin.service import CONCURRENT_CHANGE
 from homunculus.admission import service, trail, unitscope
 from homunculus.admission.errors import ASSIGNMENT_CONFLICT, OUT_OF_SCOPE, SHIFT_CHANGED, Refusal, field_invalid
-from homunculus.admission.models import NurseBedAssignment
+from homunculus.admission.models import NURSE_BED_ACTIVE_INDEX, NurseBedAssignment
+from homunculus.admission.router import _broken_constraint
 from homunculus.admission.schemas import (
     ShiftItem, ShiftNurse, ShiftSchedule, ShiftSchedulePut, ShiftScheduleSaved, ShiftUnit, ShiftWarning, ShiftWindow,
 )
@@ -264,9 +265,11 @@ async def put_shift_schedule(
                                   shift_start=window.start, shift_end=window.end) for bed, nurse in new)
     try:
         await db.flush()
-    except IntegrityError:                        # the index (bed, window) WHERE active: a coded 409, never a 500
+    except IntegrityError as exc:                 # the index (bed, window) WHERE active: a coded 409, never a 500
         await db.rollback()
-        raise Refusal(409, ASSIGNMENT_CONFLICT, "Another save of this window came first.").http() from None
+        if _broken_constraint(exc) == NURSE_BED_ACTIVE_INDEX:     # told apart by name, as the care team's two
+            raise Refusal(409, ASSIGNMENT_CONFLICT, "Another save of this window came first.").http() from None
+        raise                                     # anything else is not a lost race: raised as it is
     reaching = await _reaching(db, {nurse for _, nurse in asked}, caller_tenant, body.unit_id)
     warnings = [ShiftWarning(code="unit_not_reached", nurse_id=nurse)
                 for nurse in sorted((n for n, ok in reaching.items() if not ok), key=str)]

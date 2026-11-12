@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from homunculus.admin.service import CONCURRENT_CHANGE
 from homunculus.admission import shifts
@@ -396,6 +397,42 @@ async def test_two_saves_on_one_read_at_once_save_one_and_refuse_the_other(ward,
     assert (first.status_code, second.status_code) == (200, 409), (first.text, second.text)
     assert await _rows(db_session, w) == [("1", "nurse", True, A_START)]
     assert len(audited(app, "shift.assign")) == 1
+
+
+def _blind_to_the_rows(monkeypatch) -> None:
+    """As if another writer's row were invisible to the lock: the PUT reads no row held, so its insert meets the index."""
+    async def blind(*args, **kwargs):
+        return [], []
+    monkeypatch.setattr(shifts, "_held", blind)
+
+
+async def test_a_save_that_meets_the_index_is_a_coded_409_and_writes_nothing(ward, db_session, monkeypatch):
+    """§5 A7 (review P3): the partial unique index is the last guard — a coded 409 `assignment_conflict`, nothing
+    written, nothing audited, never a 500."""
+    w, client, app = ward
+    db_session.add(NurseBedAssignment(unit_id=w.units["rea"].id, bed_id=w.beds["1"].id, nurse_id=w.users["nurse"].id,
+                                      shift_start=A_START, shift_end=A_END))
+    await db_session.commit()
+    _blind_to_the_rows(monkeypatch)
+    r = await client.put("/shift-schedule", json=_put(w, items=[("1", "charge")]), headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "assignment_conflict")
+    assert await _rows(db_session, w) == [("1", "nurse", True, A_START)]
+    assert audited(app, "shift.assign") == []
+
+
+async def test_an_integrity_error_at_anything_but_the_index_is_not_called_a_conflict(ward, db_session, monkeypatch):
+    """Review (migration item 7): only the error that names `NURSE_BED_ACTIVE_INDEX` is `assignment_conflict`, as the
+    care team tells its two indexes apart (admission/router.py `_lost_at_an_index`); any other is raised as it is."""
+    w, client, app = ward
+    db_session.add(NurseBedAssignment(unit_id=w.units["rea"].id, bed_id=w.beds["1"].id, nurse_id=w.users["nurse"].id,
+                                      shift_start=A_START, shift_end=A_END))
+    await db_session.commit()
+    _blind_to_the_rows(monkeypatch)
+    monkeypatch.setattr(shifts, "_broken_constraint", lambda exc: "some_other_constraint")
+    with pytest.raises(IntegrityError):
+        await client.put("/shift-schedule", json=_put(w, items=[("1", "charge")]), headers=w.auth["charge"])
+    assert await _rows(db_session, w) == [("1", "nurse", True, A_START)]
+    assert audited(app, "shift.assign") == []
 
 
 async def test_a_nurse_who_cannot_see_the_unit_is_a_warning_not_a_refusal(ward):
