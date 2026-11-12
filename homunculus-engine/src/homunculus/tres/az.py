@@ -6,12 +6,13 @@ name and the sex — is either here in the platform's form, or the reason it is 
 code the tab shows so the ward can complete the record. Nothing here guesses: a value that does
 not fit is a skip, never a correction.
 
-* FİN: trimmed and upper-cased, then exactly seven Latin capitals or digits. Never transliterated
-  (an `Ə` typed in it is `fin_format`, not an `E`).
+* FİN: trimmed, refused when any character is outside ASCII, then upper-cased and exactly seven
+  Latin capitals or digits. Never transliterated (an `Ə` typed in it is `fin_format`, not an `E`;
+  nor does `ß` become `SS`, which `str.upper()` would do).
 * Name: the admission form writes «Soyad Ad» (family first), so the first word is the family name
   and the rest the given names; a single word cannot be split (`name_single`).
 * Sex: `male` → `K`, `female` → `Q` (the platform's own codes); `other` and `unknown` have none.
-* Phone: `+994` and the nine digits of the national number, from `+994…`, `994…`, the domestic
+* Phone: `+994` and the nine (ASCII) digits of the national number, from `+994…`, `994…`, the domestic
   form with its leading `0`, or the nine digits alone — spaces, dashes, dots and brackets dropped.
   Anything else is not sent (a phone is not required: no skip)."""
 from __future__ import annotations
@@ -29,15 +30,23 @@ BIRTH_DATE_INVALID = "birth_date_invalid"
 _FIN = re.compile(r"[A-Z0-9]{7}")
 SEX_CODES = {"male": "K", "female": "Q"}
 _PHONE_PUNCTUATION = re.compile(r"[\s\-.()]")
-_PHONE_FORMS = (re.compile(r"\+994(\d{9})"), re.compile(r"994(\d{9})"), re.compile(r"0(\d{9})"),
-                re.compile(r"(\d{9})"))
+# ASCII digits only: `\d` alone takes Arabic-Indic, Persian and full-width digits too, and they would
+# go into the value sent (D20: nothing is transliterated, so nothing is passed off as ASCII either).
+_PHONE_FORMS = (re.compile(r"\+994([0-9]{9})"), re.compile(r"994([0-9]{9})"), re.compile(r"0([0-9]{9})"),
+                re.compile(r"([0-9]{9})"))
 
 
 def normal_fin(value: str | None) -> tuple[str | None, str | None]:
     """(the FİN in the platform's form, None) or (None, the skip reason)."""
-    fin = (value or "").strip().upper()
+    fin = (value or "").strip()
     if not fin:
         return None, FIN_MISSING
+    # Judged as typed, BEFORE any case-folding: `str.upper()` maps ß to SS, ﬀ to FF, ſ to S and ı to I,
+    # which is transliteration (D20) — a FİN with a character outside ASCII is a `fin_format`, never
+    # a corrected one.
+    if not fin.isascii():
+        return None, FIN_FORMAT
+    fin = fin.upper()
     if not _FIN.fullmatch(fin):
         return None, FIN_FORMAT
     return fin, None

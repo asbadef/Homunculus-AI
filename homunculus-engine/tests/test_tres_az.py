@@ -21,6 +21,20 @@ def test_the_fin_is_seven_latin_capitals_or_digits(typed, expected):
     assert az.normal_fin(typed) == expected
 
 
+@pytest.mark.parametrize("typed", [
+    "ß123456",      # str.upper() would make it «SS123456»-shaped: ß → SS
+    "ß12345",       # …and «SS12345», seven characters: an invented FİN
+    "ﬀ12345",       # the ff ligature → FF
+    "ſ123456",      # the long s → S
+    "ı123456",      # the dotless i → I
+    "AB12C3Ｄ",  # a full-width D
+])
+def test_a_fin_that_is_not_ascii_is_refused_before_it_is_upper_cased(typed):
+    """D20 forbids transliteration: `str.upper()` maps ß to SS, ﬀ to FF, ſ to S and ı to I, which is
+    one — so the value is judged as typed, and any character outside ASCII is `fin_format`."""
+    assert az.normal_fin(typed) == (None, "fin_format")
+
+
 @pytest.mark.parametrize("typed, expected", [
     ("Sentetik Ayşe", (("Sentetik", ["Ayşe"]), None)),
     ("  Sentetikova   Leyla  Nur ", (("Sentetikova", ["Leyla", "Nur"]), None)),
@@ -42,6 +56,9 @@ def test_sex_has_the_platforms_two_codes_only(sex, expected):
     ("+994501234567", "+994501234567"), ("994501234567", "+994501234567"),
     ("050 123 45 67", "+994501234567"), ("(050) 123-45-67", "+994501234567"), ("501234567", "+994501234567"),
     ("+90 532 123 45 67", None), ("12345", None), ("", None), (None, None), ("05012345678", None),
+    # only ASCII digits: Arabic-Indic, Persian and full-width digits are `\d` to Python, not to the platform
+    ("+٩٩٤٥٠١٢٣٤٥٦٧", None), ("٠٥٠١٢٣٤٥٦٧", None), ("۰۵۰۱۲۳۴۵۶۷", None), ("+994５０１２３４５６７", None),
+    ("+99450123456٧", None),
 ])
 def test_a_phone_is_plus_994_and_nine_digits_or_not_sent(typed, expected):
     assert az.phone(typed) == expected
