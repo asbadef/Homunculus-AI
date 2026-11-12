@@ -5,6 +5,7 @@ delete, read, the three error shapes, 429 with `Retry-After`, a failure with no 
 spacing hook. The platform is never contacted. Synthetic account, synthetic people."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 
@@ -12,7 +13,7 @@ import httpx
 import pytest
 
 from homunculus.tres.client import (
-    LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, TresSessionError, is_outage,
+    CALL_DEADLINE_S, LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, TresSessionError, is_outage,
     read_error,
 )
 
@@ -335,6 +336,31 @@ async def test_a_failure_with_no_answer_is_an_error_named_by_its_class_never_by_
 ])
 def test_an_outage_is_the_platforms_or_the_lines_and_a_refusal_is_one_resources(error, outage):
     assert is_outage(error) is outage
+
+
+async def _never(request: httpx.Request) -> httpx.Response:
+    await asyncio.Event().wait()                     # a platform that takes the request and never answers
+
+
+@pytest.mark.parametrize("token_answers", [False, True], ids=["token-never-answers", "fhir-never-answers"])
+async def test_a_call_that_never_answers_ends_at_the_deadline_as_no_answer(token_answers):
+    async def platform(request: httpx.Request) -> httpx.Response:
+        if token_answers and request.url.path == "/auth/token":
+            return httpx.Response(200, json={"payload": {"sessionId": "S-1"}})
+        return await _never(request)
+
+    client = TresClient(ACCOUNT, transport=httpx.MockTransport(platform), deadline_s=0.05)
+    started = asyncio.get_running_loop().time()
+    with pytest.raises(TresError) as raised:
+        await client.find("Patient", "hmn-p-0001")
+    assert asyncio.get_running_loop().time() - started < 5
+    assert (raised.value.status, raised.value.message) == (None, "TimeoutError")
+    assert not isinstance(raised.value, TresSessionError) and is_outage(raised.value)
+    await client.aclose()
+
+
+def test_every_call_has_an_overall_deadline_by_default():
+    assert CALL_DEADLINE_S == 60.0 and TresClient(ACCOUNT).deadline_s == CALL_DEADLINE_S
 
 
 # ---------------------------------------------------------------- the spacing hook, and the end

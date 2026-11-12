@@ -23,7 +23,8 @@ at all; 409 `tres_host_not_allowed` for a stored address the install does not al
 before `TRES_HOSTS` was narrowed); 409 `tres_account_incomplete` while the account lacks a part.
 The client comes from `app.state.tres_client_factory` (egress.open_client, the lock and the hosts
 bound in), so the refusals hold even for a caller that forgot to ask. It is allowed in the mode
-`off`: an administrator tests before turning the feed on. Not audited: it writes nothing.
+`off`: an administrator tests before turning the feed on. Not audited: it writes nothing; and it
+ends its database transaction before it asks the platform.
 
 No patient data anywhere in this file."""
 from __future__ import annotations
@@ -180,6 +181,9 @@ async def test_connection(
         raise refusal(409, EGRESS_OFF).http()
     row = await db.get(TresSettings, caller_tenant)
     account = account_of(row) if row is not None else None
+    # Everything needed is read: the transaction ends (and its connection goes back to the pool)
+    # BEFORE the platform is asked, which may take up to the client's deadline.
+    await db.close()
     if account is None:
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http()
     factory = getattr(request.app.state, "tres_client_factory", None) or partial(

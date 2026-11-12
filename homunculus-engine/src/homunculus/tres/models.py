@@ -1,5 +1,5 @@
 # homunculus-engine/src/homunculus/tres/models.py
-"""`tres_settings` and `tres_deliveries` (migration 0019; TRƏS-01 spec D3, D6).
+"""`tres_settings` and `tres_deliveries` (migration 0020; TRƏS-01 spec D3, D6).
 
 `tres_settings` — one row per tenant, none until the administrator saves the tab (no row reads as
 the defaults: mode `off`, environment `test`):
@@ -109,6 +109,9 @@ class TresDelivery(Base):
         UniqueConstraint("tenant_id", "environment", "resource_type", "local_id",
                          name="uq_tres_deliveries_key"),
         Index("ix_tres_deliveries_tenant_status", "tenant_id", "status"),
+        # A stay's rows are read by its admission (the tab, the preview), and deleting an
+        # admission SETs NULL here: neither should scan the whole ledger.
+        Index("ix_tres_deliveries_admission_id", "admission_id"),
         CheckConstraint("environment IN ('test', 'live')", name="ck_tres_deliveries_environment"),
         CheckConstraint("status IN ('pending', 'sent', 'validated', 'failed', 'skipped', 'stuck', "
                         "'deleted')", name="ck_tres_deliveries_status"),

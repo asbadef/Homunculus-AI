@@ -129,8 +129,8 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
 
     The row is locked from `_row` to the commit, and the transaction SPANS THE HTTP CALLS — on
     purpose: the lock is what keeps a second deliverer of the same key from asking the platform
-    while the first is still waiting for its answer. It is bounded by the client's timeouts on
-    every call, and it holds one row, never the tenant's ledger."""
+    while the first is still waiting for its answer. It is bounded by the client's overall deadline
+    on every call (`client.CALL_DEADLINE_S`), and it holds one row, never the tenant's ledger."""
     if mode not in ("validate", "send"):
         raise ValueError(f"deliver() is for the modes validate and send, not {mode!r}")
     now = now or datetime.now(timezone.utc)

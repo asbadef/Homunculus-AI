@@ -26,12 +26,17 @@ file and the server disagree, the server is right and this file changes.
   counts towards `stuck` (open item O13, closed «no»).
 
 As `api/infinity_waves.py`'s hub client: `trust_env=False` (no proxy from the environment), no
-redirects, https only, an explicit timeout, one keep-alive client built on first use. Nothing is
+redirects, https only, an explicit timeout, one keep-alive client built on first use. httpx's
+timeout is per phase (connect, each read…): a server that trickles its answer never trips it. So
+every call — the token's included — also has an OVERALL deadline (CALL_DEADLINE_S, `asyncio.timeout`);
+a call that hits it is a failure with no answer (`status` None, named `TimeoutError`). It bounds
+how long the ledger holds a row's lock (ledger.py `deliver`). Nothing is
 logged here: a body is PHI (D25).
 
 `pace`, when set, is awaited before every request: the worker's 300 ms spacing (D21)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -41,6 +46,8 @@ from urllib.parse import quote
 import httpx
 
 TIMEOUT_S = 20.0
+#: The most seconds one HTTP call may take, start to end, whatever httpx's per-phase timeout allows.
+CALL_DEADLINE_S = 60.0
 #: The most characters of a platform message this module hands on.
 ERROR_MAX = 500
 #: The platform's one search key (§4.2), and the extension every resource carries it in (§4.4).
@@ -161,7 +168,8 @@ class TresClient:
     connection is made by the first request. `aclose()` when done."""
 
     def __init__(self, account: TresAccount, *,
-                 transport: httpx.AsyncBaseTransport | None = None) -> None:
+                 transport: httpx.AsyncBaseTransport | None = None,
+                 deadline_s: float = CALL_DEADLINE_S) -> None:
         if not account.base_url.startswith("https://"):
             # The credentials ride in a header: never over plain HTTP.
             raise ValueError("the TRƏS base URL must start with https://")
@@ -178,6 +186,8 @@ class TresClient:
         self.pace: Callable[[], Awaitable[None]] | None = None
         #: Requests made, the token's included: the tests and a round's report read it.
         self.requests = 0
+        #: The overall deadline of one call, in seconds (CALL_DEADLINE_S; a test makes it tiny).
+        self.deadline_s = deadline_s
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -202,7 +212,11 @@ class TresClient:
             await self.pace()
         self.requests += 1
         try:
-            return await self._http().request(method, url, **kwargs)
+            async with asyncio.timeout(self.deadline_s):
+                return await self._http().request(method, url, **kwargs)
+        except TimeoutError:
+            # The overall deadline: no answer, as a dead line is.
+            raise TresError(None, "TimeoutError") from None
         except httpx.HTTPError as exc:
             # No answer at all. The class names the failure; str(exc) may carry the URL.
             raise TresError(None, type(exc).__name__) from None

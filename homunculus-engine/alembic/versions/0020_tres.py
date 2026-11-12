@@ -16,7 +16,8 @@ the test with them. Phase F0 creates the two tables it has models for:
 * `tres_deliveries`: the ledger, one row per (tenant, environment, resource type, local id) —
   status, operation, the platform's id, the payload's keyed digest, the attempt count and the next
   attempt's time, a skip's reason code, the platform's last message (Fernet ciphertext) and the
-  admission it belongs to (FK admissions ON DELETE SET NULL). No request or response body.
+  admission it belongs to (FK admissions ON DELETE SET NULL, indexed: a stay's rows are read by
+  it, and an admission's delete must not scan the ledger). No request or response body.
 
 NO PERMISSION ROW is written for `tres.manage` (D23): it is in no default group, and the system
 group holds every key by rule at token issuance (auth/permissions.py) — as `summary.view` before it.
@@ -46,6 +47,7 @@ depends_on: Union[str, Sequence[str], None] = None
 SETTINGS = "tres_settings"
 DELIVERIES = "tres_deliveries"
 STATUS_INDEX = "ix_tres_deliveries_tenant_status"
+ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
 #: homunculus.tres.models.ALL_TYPES_JSON — written out: a migration does not import the models.
 ALL_TYPES = ('["patient", "practitioner", "encounter", "condition", "procedure", "vital", "lab", '
              '"composition"]')
@@ -113,9 +115,11 @@ def upgrade() -> None:
                            "'delete')", name="ck_tres_deliveries_operation"),
     )
     op.create_index(STATUS_INDEX, DELIVERIES, ["tenant_id", "status"])
+    op.create_index(ADMISSION_INDEX, DELIVERIES, ["admission_id"])
 
 
 def downgrade() -> None:
+    op.drop_index(ADMISSION_INDEX, table_name=DELIVERIES)
     op.drop_index(STATUS_INDEX, table_name=DELIVERIES)
     op.drop_table(DELIVERIES)
     op.drop_table(SETTINGS)

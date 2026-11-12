@@ -8,7 +8,10 @@ import httpx
 import pytest
 
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresAccount, TresClient, TresError
-from tests.fake_tres import BASE_URL, ID_MISMATCH, NO_ID, NO_REFERENCE, REFERRED, FakeTres, local_id_of, references_of
+from tests.fake_tres import (
+    BASE_URL, ID_MISMATCH, LOCAL_ID_CHANGED, MALFORMED_REFERENCE, NO_ID, NO_REFERENCE, REFERRED, FakeTres,
+    local_id_of, references_of,
+)
 
 PROFILE = "http://fhir.az/StructureDefinition/"
 
@@ -181,6 +184,32 @@ async def test_a_referred_resource_is_not_deleted_until_what_refers_to_it_is_gon
     with pytest.raises(TresError) as raised:
         await client.delete("Patient", patient_id)
     assert raised.value.status == 404
+
+
+async def test_a_malformed_reference_is_refused(platform):
+    fake, client = platform
+    remote = await client.create("Patient", {**patient(), "id": "hmn-p-0001"})
+    for reference in ("Patient/", "Patient", f"/Patient/{remote}", f"Patient/{remote}/_history/1", "#p1",
+                      f"patient /{remote}", ""):
+        encounter = resource("Encounter", "hmn-e-0001", subject={"reference": reference})
+        with pytest.raises(TresError) as raised:
+            await client.create("Encounter", {**encounter, "id": "hmn-e-0001"})
+        assert (raised.value.status, raised.value.message) == (400, MALFORMED_REFERENCE), reference
+        with pytest.raises(TresError) as raised:
+            await client.validate("Encounter", {**encounter, "id": "hmn-e-0001"})
+        assert raised.value.status == 400, reference
+    assert fake.stored("Encounter") == []
+
+
+async def test_a_put_that_would_change_the_local_id_is_refused(platform):
+    fake, client = platform
+    remote = await client.create("Patient", {**patient("hmn-p-0001"), "id": "hmn-p-0001"})
+    with pytest.raises(TresError) as raised:
+        await client.update("Patient", remote, patient("hmn-p-0002"))
+    assert (raised.value.status, raised.value.message) == (400, LOCAL_ID_CHANGED)
+    assert local_id_of(fake.resources["Patient"][remote]) == "hmn-p-0001"
+    await client.update("Patient", remote, {**patient("hmn-p-0001"), "active": True})
+    assert fake.resources["Patient"][remote]["active"] is True
 
 
 # ---------------------------------------------------------------- validate

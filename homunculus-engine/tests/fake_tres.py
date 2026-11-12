@@ -12,8 +12,11 @@ what the ministry's server does:
 * POST: the body must carry an `id` («Resource to be added has no ID», 400); the server assigns
   its own and answers the stored resource;
 * PUT: the body's `id` must equal the URL's («Resource ID mismatch», 400); 404 for an unknown id;
+  a body whose local id is not the stored resource's is refused (400): a PUT never moves a record
+  from one local id to another;
 * every stored or validated resource carries `meta.profile` and the local-id extension (400);
-* a reference to a resource the server does not hold is refused («Non-existent reference», 409);
+* a reference that is not `Type/id` («Patient/», «#p1», a URL…) is refused (400), and one to a
+  resource the server does not hold is refused («Non-existent reference», 409);
 * the only search is `?local-system-unique-id=` (any other, or none: 400), and it is a FHIR
   `string` search: a resource whose local id STARTS with the value, in any case, is a hit — so
   `hmn-l-12` also finds `hmn-l-120`, and the client must pick the exact one (review #3);
@@ -43,6 +46,8 @@ NO_ID = "Resource to be added has no ID"
 ID_MISMATCH = "Resource ID mismatch"
 NO_REFERENCE = "Non-existent reference"
 REFERRED = "There are other resources referencing this resource"
+MALFORMED_REFERENCE = "A reference must be Type/id"
+LOCAL_ID_CHANGED = "The local-system-unique-id differs from the stored resource's"
 _REFERENCE = re.compile(r"^([A-Za-z]+)/([A-Za-z0-9\-.]+)$")
 
 #: Per FHIR type, the elements its profile requires (spec §5) — filled in by F1–F5.
@@ -70,6 +75,20 @@ def references_of(node) -> set[str]:
     elif isinstance(node, list):
         for value in node:
             found |= references_of(value)
+    return found
+
+
+def reference_values(node) -> list:
+    """Every value held under a `reference` key anywhere in the JSON, well-formed or not."""
+    found: list = []
+    if isinstance(node, dict):
+        if "reference" in node:
+            found.append(node["reference"])
+        for value in node.values():
+            found += reference_values(value)
+    elif isinstance(node, list):
+        for value in node:
+            found += reference_values(value)
     return found
 
 
@@ -190,6 +209,8 @@ class FakeTres:
         for element in REQUIRED.get(resource_type, ()):
             if body.get(element) in (None, "", [], {}):
                 return _outcome(400, f"{resource_type}.{element}: minimum required = 1")
+        if any(not isinstance(value, str) or not _REFERENCE.match(value) for value in reference_values(body)):
+            return _outcome(400, MALFORMED_REFERENCE)
         for reference in sorted(references_of(body)):
             referred_type, referred_id = reference.split("/", 1)
             if referred_id not in self.resources.get(referred_type, {}):
@@ -220,6 +241,9 @@ class FakeTres:
         refused = self._refusal(resource_type, body, creating=False, url_id=server_id)
         if refused is not None:
             return refused
+        held = local_id_of(self.resources[resource_type][server_id])
+        if held is not None and local_id_of(body) != held:
+            return _outcome(400, LOCAL_ID_CHANGED)
         self.resources[resource_type][server_id] = body
         return httpx.Response(200, json=body)
 

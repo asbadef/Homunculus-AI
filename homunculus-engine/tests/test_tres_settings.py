@@ -16,7 +16,9 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from homunculus.db import get_db
 from homunculus.tenant.models import Tenant
 from homunculus.tres.client import TresClient
 from homunculus.tres.egress import DEFAULT_HOSTS
@@ -369,6 +371,33 @@ async def test_the_test_opens_one_session_and_never_tells_its_id(ward):
     assert fake.requests == [("POST", "/auth/token")]
     assert "session" not in r.text
     assert app.state.audit.records(tenant=SLUG, event_type="tres.test", limit=5) == []     # it writes nothing
+
+
+@requires_db
+async def test_the_test_ends_its_database_transaction_before_it_asks_the_platform(ward, db_session):
+    """No transaction (and no pooled connection) is held while the platform takes its time."""
+    w, client, app = ward
+    app.state.tres_egress = True
+    fake = await _stand_in(app, client, w)
+    sessions = []
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def _db():
+        async with maker() as session:
+            sessions.append(session)
+            yield session
+
+    app.dependency_overrides[get_db] = _db
+    held = []
+
+    def platform(request: httpx.Request) -> httpx.Response:
+        held.append(sessions[-1].in_transaction())
+        return fake.transport.handler(request)
+
+    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=httpx.MockTransport(platform))
+    r = await client.post(TEST_URL, headers=w.auth["admin"])
+    assert (r.status_code, r.json()) == (200, {"ok": True, "message": None}), r.text
+    assert held == [False]
 
 
 @requires_db

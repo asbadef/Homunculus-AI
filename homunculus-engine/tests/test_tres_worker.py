@@ -437,3 +437,29 @@ async def test_types_switched_during_a_round_apply_to_the_next_package(feed, db_
     rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
     assert [(r.local_id, r.status, r.reason) for r in rows] == [
         ("hmn-p-0001", "sent", None), ("hmn-p-0002", "skipped", "type_off")]
+
+
+@requires_db
+async def test_one_tenants_failure_never_ends_the_round_for_the_others(feed, db_session, caplog):
+    fake, tenants, round_ = feed
+    other = Tenant(name="Sentetik ikinci", slug="ikinci", country_code="AZ")
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(TresSettings(tenant_id=other.id, mode="send", environment="test",
+                                test_base_url=fake.account.base_url, test_username=fake.account.username,
+                                test_password=fake.account.password, test_provider_id=fake.account.provider_id))
+    await db_session.commit()
+    broken_id, other_id = tenants["acik"].id, other.id
+
+    async def source(db, settings):
+        if settings.tenant_id == broken_id:
+            raise RuntimeError("Sentetik Ayşe")    # a message that must never reach a log line
+        yield sends("hmn-p-0001")
+
+    with caplog.at_level("ERROR"):
+        report, _, clients = await round_(source)
+    assert (report.tenants, report.packages, report.failed) == (2, 1, 1)
+    rows = (await db_session.execute(select(TresDelivery))).scalars().all()
+    assert [(r.tenant_id, r.status) for r in rows] == [(other_id, "sent")]
+    assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
+    assert all(c._client is None for c in clients)

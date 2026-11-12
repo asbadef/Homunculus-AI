@@ -23,7 +23,8 @@ whole, one after the other, each on its own client:
 
 THE INSTALL'S LOCK (D2 (b)): with `egress` false `run_round` returns at once — no session is
 opened, no client is built, no connection is made, whatever a tenant's row says. `tres_loop` is
-started by the app's lifespan only when the lock is open, and a bad round never ends it. The app's
+started by the app's lifespan only when the lock is open, and a bad round never ends it; nor does
+one tenant's failure end the round for the tenants after it. The app's
 client factory is `egress.open_client` (the lock and the allowed hosts bound in): a tenant whose
 address the install does not allow is passed over, counted in `refused`.
 
@@ -116,7 +117,7 @@ class RoundReport:
     incomplete: int = 0                 # passed over: the selected environment's account is not whole
     refused: int = 0                    # passed over: the install does not allow the account's address
     packages: int = 0                   # packages that ran to their end
-    failed: int = 0                     # packages that raised
+    failed: int = 0                     # packages that raised, and tenants whose round itself did
     retry_after: float | None = None    # the longest wait a 429 asked for; None when none came
 
 
@@ -195,7 +196,8 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                     client_factory: Callable[[TresAccount], TresClient],
                     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> RoundReport:
     """One round over every tenant (the module's docstring). With `egress` false nothing at all is
-    touched: not the database, not the client factory."""
+    touched: not the database, not the client factory. One tenant's failure — its package source
+    raising, say — is logged by its class and the round goes on to the next tenant."""
     report = RoundReport()
     if not egress:
         return report
@@ -223,6 +225,11 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                             enabled_types=())        # `_work` reads the tenant's types before each package
             try:
                 await _work(db, client, sender, settings, source, report)
+            except Exception as exc:  # noqa: BLE001 — one tenant's failure must not end the others'
+                report.failed += 1
+                log.error("TRƏS: the round failed for tenant %s (%s); the next tenant goes on",
+                          tenant_id, type(exc).__name__)
+                await db.rollback()
             finally:
                 await client.aclose()
     return report

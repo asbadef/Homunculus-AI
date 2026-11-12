@@ -32,6 +32,8 @@ from tests.conftest import requires_db
 
 SETTINGS, DELIVERIES = "tres_settings", "tres_deliveries"
 KEY, INDEX = "uq_tres_deliveries_key", "ix_tres_deliveries_tenant_status"
+#: A stay's rows are read by its admission (the tab, the preview); and an admission's delete SETs NULL here.
+ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
 CHECKS = {"ck_tres_settings_mode", "ck_tres_settings_environment", "ck_tres_settings_settle",
           "ck_tres_deliveries_environment", "ck_tres_deliveries_status", "ck_tres_deliveries_operation"}
 
@@ -195,7 +197,7 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
         if type_ == "column":
             return (object_.table.name if object_ is not None else None) in {SETTINGS, DELIVERIES}
         if type_ in ("index", "unique_constraint"):
-            return name in {INDEX, KEY}
+            return name in {INDEX, KEY, ADMISSION_INDEX}
         return False
 
     with engine.connect() as conn:
@@ -208,4 +210,4 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
         indexes = set(conn.execute(text(
             "SELECT indexname FROM pg_indexes WHERE tablename = :t"), {"t": DELIVERIES}).scalars())
     assert checks == CHECKS
-    assert {INDEX, KEY} <= indexes
+    assert {INDEX, KEY, ADMISSION_INDEX} <= indexes
