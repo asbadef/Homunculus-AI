@@ -788,6 +788,70 @@ class TestLinking:
             states = {row.code: (row.state, row.patient_key) for row in store.get("h1", ids)}
             assert states == {"heart_rate": (STATE_ASSIGNED, KEY), "spo2": (STATE_UNMATCHED, None)}
 
+    def _slow_link(self, then):
+        """A set of three whose first reading is in when `then(store, ids)` runs — the minutes a slow audit takes, in
+        which `reconcile` (or another hand) gets at the claims the set has not reached yet. Answers the app, the
+        store, the trail, the ids in attempt order, and what the link answered."""
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("heart_rate", 88), ("spo2", 97), ("temperature", 37.2)])
+            ids = _ids(client)
+            assert [row.code for row in store.get("h1", ids)] == ["heart_rate", "spo2", "temperature"]
+            plain = audit.append
+            hits = {"n": 0}
+
+            def append(event):
+                written = plain(event)
+                if event.event_type == "ingest":
+                    hits["n"] += 1
+                    if hits["n"] == 1:
+                        then(store, ids)
+                return written
+            audit.append = append
+            r = _assign(client, ids)
+            audit.append = plain
+            return client, store, audit, ids, r, hits, _list(client)
+
+    def test_a_claim_released_while_the_set_is_in_work_stops_the_link(self):
+        """B10 review: a set of 50 readings against a degraded audit outlives CLAIM_STALE and `reconcile` puts the
+        claims not yet reached back on the list. Applied anyway, the reading would be in the engine AND waiting in
+        the list. The set stops at the first reading that is no longer its claim: nothing more reaches the engine,
+        the part that went in is audited, and the answer is 409 `reading_not_unmatched`."""
+        _, store, audit, ids, r, hits, listed = self._slow_link(lambda store, ids: store.release("h1", ids[1:]))
+        assert (r.status_code, _code(r)) == (409, "reading_not_unmatched")
+        assert hits["n"] == 1 and len(audit.records(tenant="h1", patient_id=KEY, event_type="ingest", limit=10)) == 1
+        states = {row.code: (row.state, row.patient_key) for row in store.get("h1", ids)}
+        assert states == {"heart_rate": (STATE_ASSIGNED, KEY), "spo2": (STATE_UNMATCHED, None),
+                          "temperature": (STATE_UNMATCHED, None)}
+        assert [x["code"] for s in listed["sets"] for x in s["readings"]] == ["spo2", "temperature"]
+        [linked] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+        assert linked.payload["readings"] == [ids[0]]                    # only the reading that went in
+
+    def test_a_claim_another_hand_made_since_is_left_to_that_hand(self):
+        """The released claim was made again by someone else: this set neither applies the reading nor puts THEIR
+        claim back on the list. The claim this request still holds (the third) goes back."""
+        def another_hand(store, ids):
+            store.release("h1", ids[1:])
+            store.claim("h1", [ids[1]], by="hem.zeynep", at=datetime.now(timezone.utc))
+        _, store, audit, ids, r, hits, _ = self._slow_link(another_hand)
+        assert (r.status_code, _code(r)) == (409, "reading_not_unmatched")
+        assert hits["n"] == 1
+        spo2, temperature = store.get("h1", ids[1:])
+        assert (spo2.state, spo2.patient_key, spo2.resolved_by) == (STATE_ASSIGNED, None, "hem.zeynep")
+        assert temperature.state == STATE_UNMATCHED
+
+    def test_a_claim_the_same_person_made_again_is_a_different_claim(self):
+        """The same nurse linking the set again after the release is another request's claim, made at another
+        instant: this one stops all the same."""
+        def again(store, ids):
+            store.release("h1", ids[1:])
+            store.claim("h1", ids[1:], by="hem.ayse", at=datetime.now(timezone.utc) + timedelta(seconds=5))
+        _, store, audit, ids, r, hits, _ = self._slow_link(again)
+        assert (r.status_code, _code(r)) == (409, "reading_not_unmatched")
+        assert hits["n"] == 1
+        assert all(row.state == STATE_ASSIGNED and row.patient_key is None for row in store.get("h1", ids[1:]))
+
 
 class TestRejecting:
     def test_a_rejected_set_is_closed_with_its_reason_and_the_value_is_kept(self, world):

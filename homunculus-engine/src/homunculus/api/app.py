@@ -788,12 +788,18 @@ def create_app(
             await _prune_once()
             await asyncio.sleep(3600)
 
+    reconcile_failing: set[str] = set()       # the hospitals whose last pass failed: a streak is logged once
+
     async def _reconcile_once() -> None:
         """G3-05 (D7): one pass of `reconcile` — the audit rows of the last 48 hours written into the readings
         table where it lacks them — for every hospital of this deployment: the device tokens' and any a request has
         reached. A durable store is reconciled off the loop (the reads and writes are bounded database calls); a
         store in memory on it, where the doors write. Never raises: a hospital that fails is logged and the others
-        still run; the next hour tries again."""
+        still run; the next hour tries again.
+
+        A failure is a WARNING once per streak: this pass is the only repair of a table row the door could not write
+        (the unmatched list's among them), so a pass that stops must be seen — and a database that stays down must not
+        write the same line every hour. The streak ends with a pass that runs (INFO, once)."""
         now = datetime.now(timezone.utc)
         for hospital in sorted(set(tenants.values()) | set(engines)):
             def one(hospital=hospital):
@@ -802,9 +808,14 @@ def create_app(
                 counts = await asyncio.to_thread(one) if readings.durable else one()
             except Exception as exc:
                 # The class only, never `log.exception`: a driver's text carries the number and the value.
-                log.error("vital_readings: reconcile başarısız (hastane %s, %s); bir saat sonra yeniden",
-                          hospital, type(exc).__name__)
+                if hospital not in reconcile_failing:
+                    reconcile_failing.add(hospital)
+                    log.warning("vital_readings: reconcile başarısız (hastane %s, %s) — onarım durdu; "
+                                "bir saat sonra yeniden denenir", hospital, type(exc).__name__)
                 continue
+            if hospital in reconcile_failing:
+                reconcile_failing.discard(hospital)
+                log.info("vital_readings: reconcile yeniden çalışıyor (hastane %s)", hospital)
             if any(counts.values()):
                 log.info("vital_readings: reconcile (hastane %s): %s", hospital,
                          ", ".join(f"{name} {n}" for name, n in counts.items() if n))

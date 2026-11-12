@@ -615,6 +615,32 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             log.error("vital_readings: %d ölçümün kilidi bırakılamadı (hastane %s, %s); reconcile bırakır",
                       len(ids), hospital, type(exc).__name__)
 
+    def _same_claim(current: Reading | None, made: Reading) -> bool:
+        """Is `current` still THE claim this request made on the reading — a claim (`assigned`, no patient), of this
+        person, made at this instant? `reconcile` releases a claim older than CLAIM_STALE, and a set of 50 readings
+        against a slow audit can outlive it: the reading is then waiting again, or claimed by another hand."""
+        return (current is not None and current.state == STATE_ASSIGNED and current.patient_key is None
+                and current.resolved_by == made.resolved_by and current.resolved_at == made.resolved_at)
+
+    def _still_ours(hospital: str, made: Reading) -> bool:
+        """Checked before each reading of a link goes into the engine (a read, by id)."""
+        found = store.get(hospital, [made.id])
+        return _same_claim(found[0] if found else None, made)
+
+    def _release_ours(hospital: str, made: list[Reading]) -> None:
+        """The claims among `made` that are still this request's, put back on the list. One that is not — it was
+        released and linked or claimed by another hand since — is that hand's, and left alone. Best effort, as
+        `_release`: a claim not put back is released by `reconcile` when it is old enough."""
+        if not made:
+            return
+        try:
+            now_held = {r.id: r for r in store.get(hospital, [m.id for m in made])}
+        except Exception as exc:
+            log.error("vital_readings: %d ölçümün kilidi okunamadı (hastane %s, %s); reconcile bırakır",
+                      len(made), hospital, type(exc).__name__)
+            return
+        _release(hospital, [m.id for m in made if _same_claim(now_held.get(m.id), m)])
+
     @router.get("/readings/unmatched")
     async def list_unmatched(authorization: str | None = Header(default=None)):
         who = await caller(authorization)
@@ -672,17 +698,27 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         # The table's row is filed by `apply` itself the moment the `ingest` row exists (`_filer`), so a failure
         # later in the tail leaves the reading filed and a re-send recognised. `linked` is what was applied AND
         # filed.
+        #
+        # The claim is checked again before EACH reading (B10 review): a set of 50 readings against a degraded audit
+        # can take longer than CLAIM_STALE, and `reconcile` then puts the claims not yet attempted back on the
+        # list (or another hand claims them). Applied anyway, the reading would be in the engine AND waiting in the
+        # list, its `finalize` a silent no-op. A reading that is no longer this request's claim stops the set: nothing
+        # more is applied, the part that went in is audited, the claims still ours go back, and the answer is 409.
         waiting = [r.id for r in claimed]
         linked: list[int] = []
         held: list[int] = []
         alerts: list = []
         discharged = False
+        lost = False
         try:
             admission = admission_for(hospital, record)
             for row in claimed:
                 record = identity(hospital, patient_id)
                 if is_tombstone(record):
                     discharged = True
+                    break
+                if not _still_ours(hospital, row):
+                    lost = True
                     break
                 waiting.remove(row.id)
                 if _already_held(hospital, patient_id, row):
@@ -694,15 +730,19 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                 alerts, _ = await apply(hospital, obs, record, now, reading=row.id, actor=actor,
                                         on_written=_filer(hospital, patient_id, admission, row, linked))
         except Exception:
-            _release(hospital, waiting)
+            _release_ours(hospital, [r for r in claimed if r.id in waiting])
             _note_partial(hospital, patient_id, claimed[0], linked, held, actor)
             raise
         if discharged:
             # What was applied stays applied and finalized and is audited as the part of the set that went in; the
             # rest return to the list; nothing more reaches the engine.
-            _release(hospital, waiting)
+            _release_ours(hospital, [r for r in claimed if r.id in waiting])
             _note_partial(hospital, patient_id, claimed[0], linked, held, actor)
             raise reading_refusal(409, READING_TARGET_DISCHARGED)
+        if lost:
+            _release_ours(hospital, [r for r in claimed if r.id in waiting])
+            _note_partial(hospital, patient_id, claimed[0], linked, held, actor)
+            raise reading_refusal(409, READING_NOT_UNMATCHED)
         audit.append(_assigned_event(hospital, patient_id, claimed[0], ids, actor, held))
         return {"assigned": ids, "patient_id": patient_id, "alerts": [a.kind for a in alerts]}
 
@@ -806,21 +846,34 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
     What it files, from the rows of the trail in id order:
     * an `ingest` row, or a `chart` row of the bedside codes (`MANUAL_CODES`) → the `recorded` row with that
       `audit_id`, stamped with the stay by the store's rule (`admission_of`: an open admission of the key, so a HIS-fed
-      number has none); a `reading_unmatched` row → the `unmatched` row (the door answers 200 when its own add
-      fails, so this is the only repair of that row). Built with the doors' own builders, so the widths agree.
+      number has none) — but only a reading measured since that stay began (`open_stays`): an earlier one belongs to
+      an earlier stay under the same key (a readmission, a transfer) or to the days before the admission, and is
+      stamped with none, as is every row of a first pass over history; a `reading_unmatched` row → the `unmatched`
+      row (the door answers 200 when its own add fails, so this is the only repair of that row). Built with the
+      doors' own builders, so the widths agree.
     * a `chart_retract` row → the mark on the row of the entry it names — and, for a device reading, on every row
       of the same reading (`_withdrawn_entries`).
     * an `ingest` row naming a `reading` (a link) → the link finished (`finalize`) when that reading is still a
-      claim: the person is the claim's own, and the row is never filed as a second reading.
-    * a `reading_rejected` row → the rejection finished (`reject`) for the claims it names, never released.
+      claim of that row's person (`actor`) made no later than the row was written; the row is never filed as a
+      second reading.
+    * a `reading_rejected` row → the rejection finished (`reject`) for the claims it names, on the same terms,
+      never released.
     * a claim older than CLAIM_STALE with none of those → `release` (the request that made it died).
-    A table that already holds a row (`add` answers None: the same `audit_id`, or D14's device tuple — the twin of
-    a reading written to the trail twice) has it «present»: counted under `skipped`, not an error. Rows closed as
-    `rejected` with RESOLVE_ALREADY_HELD, and any other closed row, are never touched: only claims are finished.
+    A row of the trail finishes a claim only if it is that claim's own: the person who made the claim wrote it
+    (`actor` is the claim's `resolved_by`), after the claim was made (`ts` is not before `resolved_at`). Otherwise it
+    belongs to an earlier claim of the reading — one that was released and made again — and leaves the fresh one
+    alone. A table that already holds a row (`add` answers None: the same `audit_id`, or D14's device tuple — the
+    twin of a reading written to the trail twice) has it «present»: counted under `skipped`, not an error. Rows
+    closed as `rejected` with RESOLVE_ALREADY_HELD, and any other closed row, are never touched: only claims are
+    finished.
 
-    `since` bounds the audit rows read by when they were WRITTEN (None: every row — the backfill). A claim older
-    than `since` pulls the bound back to its own time: the `ingest` or `reading_rejected` row that finishes it was
-    written after it, and a claim released for want of a row the pass did not read would be linked a second time.
+    `since` bounds the audit rows read by when they were WRITTEN (None: every row — the backfill). The read starts
+    at an id floor when the audit can answer one (`first_id_at_or_after`: a binary search by point reads, the
+    audit being append-only with `ts` following `id`), so an hourly pass never walks the log from its first row;
+    an audit without it is read from the start, as before. A claim older than `since` pulls the bound back to its own
+    time: the `ingest` or `reading_rejected` row that finishes it was written after it, and a claim released for
+    want of a row the pass did not read would go back to the list while the engine holds the reading (the link
+    cannot be made again — LINK_MAX_AGE — but the reading would be there to see, unlinked).
     `stays`, when given (the backfill, D19), keeps the run to those card keys and, for each, to the readings
     measured since its stay began; the unmatched list and the claims are then left alone — they are nobody's
     stay. `dry_run` counts what a run would add or finish and writes nothing; a mark (`voided`) and a release are
@@ -832,22 +885,44 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
     counts = dict.fromkeys(_COUNTS, 0)
     whole = stays is None
     claim_rows = store.claims(tenant) if whole else []
-    claims = {r.id for r in claim_rows}
+    claim_of = {r.id: r for r in claim_rows}
+    claims = set(claim_of)
     lower = since
     oldest = min((r.resolved_at for r in claim_rows if r.resolved_at is not None), default=None)
     if since is not None and oldest is not None and oldest < since:
         lower = oldest
     admissions: dict[str, str | None] = {}
+    began_at: dict[str, datetime] | None = stays          # an open stay's start, per key; the whole run asks once
 
     def admission_of(key: str) -> str | None:
         if key not in admissions:
             admissions[key] = store.admission_of(tenant, key)
         return admissions[key]
 
+    def stay_of(key: str, observed_at: datetime) -> str | None:
+        """The open admission of `key` — for a reading measured since it began, and for none that came before."""
+        nonlocal began_at
+        if began_at is None:
+            began_at = store.open_stays(tenant)
+        began = began_at.get(key)
+        return admission_of(key) if began is not None and observed_at >= began else None
+
     def wanted(rec: AuditRecord, obs: Observation) -> bool:
         return whole or (rec.patient_id in stays and obs.timestamp >= stays[rec.patient_id])
 
+    def finishes(rec: AuditRecord, reading_id: object) -> bool:
+        """Is `rec` — a link's `ingest` row or a rejection's row — the trail of the claim now on `reading_id`: the
+        claim's own person, written no earlier than the claim was made?"""
+        claim = claim_of.get(reading_id) if reading_id in claims else None
+        at, actor = _instant(rec.ts), rec.payload.get("actor")
+        return (claim is not None and at is not None and claim.resolved_at is not None
+                and isinstance(actor, str) and bool(actor) and actor == claim.resolved_by
+                and at >= claim.resolved_at)
+
     after: int | None = None
+    floor_of = getattr(audit, "first_id_at_or_after", None)
+    if lower is not None and floor_of is not None:
+        after = floor_of(lower) - 1                       # no id below the floor was written at or after `lower`
     while True:
         page = audit.records(tenant=tenant, event_types=_RECONCILE_EVENTS, since=lower, limit=RECONCILE_PAGE,
                              after_id=after)
@@ -866,7 +941,7 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
                 continue
             if kind == READING_REJECTED:
                 named = rec.payload.get("readings")
-                ids = [i for i in named if isinstance(i, int) and i in claims] if isinstance(named, list) else []
+                ids = [i for i in named if isinstance(i, int) and finishes(rec, i)] if isinstance(named, list) else []
                 if ids:
                     if not dry_run:
                         store.reject(tenant, ids, reason=str(rec.payload.get("reason") or "")[:REJECT_MAX_REASON_CHARS])
@@ -880,7 +955,7 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
             linked = rec.payload.get("reading") if kind == "ingest" else None
             if isinstance(linked, int) and not isinstance(linked, bool):
                 # A linked reading's own `ingest` row: the table's row is the unmatched one, never a second row.
-                if linked in claims:
+                if finishes(rec, linked):
                     if not dry_run:
                         store.finalize(tenant, linked, patient_key=rec.patient_id,
                                        admission_id=admission_of(rec.patient_id), entry_id=rec.id)
@@ -903,12 +978,12 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
                 label = "unmatched"
             elif kind == "ingest":
                 row = replace(device_reading(tenant, obs, received_at=received_at, audit_id=rec.id),
-                              admission_id=admission_of(rec.patient_id))
+                              admission_id=stay_of(rec.patient_id, obs.timestamp))
                 label = "recorded"
             else:
                 row = replace(manual_reading(tenant, obs, received_at=received_at, entry_id=rec.id,
                                              recorded_by=str(rec.payload.get("charted_by") or "")[:_PERSON_MAX]),
-                              admission_id=admission_of(rec.patient_id))
+                              admission_id=stay_of(rec.patient_id, obs.timestamp))
                 label = "recorded"
             if dry_run or store.add(row) is not None:
                 counts[label] += 1

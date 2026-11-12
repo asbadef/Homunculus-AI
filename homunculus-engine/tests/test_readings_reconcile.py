@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
+import homunculus.api.audit as audit_module
 from homunculus.api.app import create_app
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.clinical import RETRACT
@@ -72,6 +74,29 @@ def _withdrawal(audit, entry, code, value, when=WHEN, key=KEY, device="CONNEX-3A
 def _obs_of(record):
     """The observation an `ingest` row recorded — what the door held when it filed the row's table row."""
     return _observation_of_row(record)
+
+
+class _Reads(InMemoryAuditLog):
+    """An audit log that remembers the `after_id` of every page `reconcile` asked for."""
+
+    def __init__(self):
+        super().__init__()
+        self.afters = []
+
+    def records(self, **kw):
+        self.afters.append(kw.get("after_id"))
+        return super().records(**kw)
+
+
+class _NoFloor(_Reads):
+    """An audit that cannot answer a floor (a fake, an older backend): `reconcile` reads it from the start."""
+    first_id_at_or_after = None
+
+
+def _stamped(monkeypatch, *instants):
+    """The audit's clock, set: the next appends are written at these instants, in order."""
+    stamps = iter(at.isoformat() for at in instants)
+    monkeypatch.setattr(audit_module, "_now_iso", lambda: next(stamps))
 
 
 def _run(store, audit, **kw):
@@ -393,6 +418,71 @@ class TestAClaimLeftBehind:
         assert _run(store, audit) == NOTHING
         assert store.get("h1", [waiting.id])[0].state == STATE_ASSIGNED and store.claims("h1") != []
 
+    # B10 review: a row of the trail finishes a claim only if it is that claim's own — its person, written after the
+    # claim was made. A reading released and claimed again has an earlier claim's rows in the trail.
+
+    def _listed(self, store, audit):
+        _unmatched_row(audit, "spo2", 97)
+        _run(store, audit)
+        [waiting] = store.unmatched("h1", since=NOW - timedelta(days=7))
+        return waiting
+
+    @staticmethod
+    def _rejection(audit, waiting, actor="hem.ayse"):
+        audit.append(AuditEvent("h1", READING_REJECTED, TYPO, "reading", {
+            "readings": [waiting.id], "received_key": TYPO, "device": "CONNEX-3A", "obs_ts": WHEN.isoformat(),
+            "reason": "yanlış numara girilmiş", "actor": actor}))
+
+    @staticmethod
+    def _link(audit, waiting, actor="hem.ayse"):
+        return _ingest_row(audit, "spo2", 97, reading=waiting.id, actor=actor)
+
+    def _still_a_claim(self, store, waiting):
+        [row] = store.get("h1", [waiting.id])
+        assert (row.state, row.patient_key, row.resolve_reason, row.entry_id) == (STATE_ASSIGNED, None, None, None)
+        assert [r.id for r in store.claims("h1")] == [waiting.id]
+
+    @pytest.mark.parametrize("trail", ["rejection", "link"])
+    def test_the_rows_of_another_person_leave_a_fresh_claim_alone(self, trail):
+        audit, store = InMemoryAuditLog(), InMemoryReadingStore()
+        waiting = self._listed(store, audit)
+        store.claim("h1", [waiting.id], by="hem.ayse", at=NOW - timedelta(seconds=30))
+        (self._rejection if trail == "rejection" else self._link)(audit, waiting, actor="hem.zeynep")
+        assert _run(store, audit) == NOTHING
+        self._still_a_claim(store, waiting)
+
+    @pytest.mark.parametrize("trail", ["rejection", "link"])
+    def test_a_row_written_before_the_claim_belongs_to_an_earlier_claim(self, trail):
+        """The same person, but the row is older than the claim: the earlier claim was released and this one made
+        after, so the row says nothing of it."""
+        audit, store = InMemoryAuditLog(), InMemoryReadingStore()
+        waiting = self._listed(store, audit)
+        (self._rejection if trail == "rejection" else self._link)(audit, waiting)
+        store.claim("h1", [waiting.id], by="hem.ayse", at=datetime.now(timezone.utc) + timedelta(minutes=1))
+        assert _run(store, audit) == NOTHING
+        self._still_a_claim(store, waiting)
+
+    @pytest.mark.parametrize("trail", ["rejection", "link"])
+    def test_an_old_claim_that_is_not_theirs_is_released_not_finished(self, trail):
+        audit, store = InMemoryAuditLog(), InMemoryReadingStore()
+        waiting = self._listed(store, audit)
+        store.claim("h1", [waiting.id], by="hem.ayse", at=NOW - CLAIM_STALE - timedelta(minutes=1))
+        (self._rejection if trail == "rejection" else self._link)(audit, waiting, actor="hem.zeynep")
+        assert _run(store, audit) == {**NOTHING, "released": 1}
+        assert store.get("h1", [waiting.id]) == [waiting]
+
+    @pytest.mark.parametrize("trail", ["rejection", "link"])
+    def test_a_row_with_no_person_finishes_nothing(self, trail):
+        audit, store = InMemoryAuditLog(), InMemoryReadingStore()
+        waiting = self._listed(store, audit)
+        store.claim("h1", [waiting.id], by="hem.ayse", at=NOW - timedelta(seconds=30))
+        if trail == "rejection":
+            audit.append(AuditEvent("h1", READING_REJECTED, TYPO, "reading", {"readings": [waiting.id], "reason": "yanlış"}))
+        else:
+            _ingest_row(audit, "spo2", 97, reading=waiting.id)
+        assert _run(store, audit) == NOTHING
+        self._still_a_claim(store, waiting)
+
     def test_a_dry_run_counts_what_it_would_finish_and_changes_no_claim(self):
         audit, store = InMemoryAuditLog(), InMemoryReadingStore()
         waiting = self._claimed(store, audit)
@@ -467,7 +557,137 @@ class TestTheWindowAndTheStays:
         assert store.for_patient("h1", KEY, **ALL) == [] and store.unmatched("h1", since=NOW - timedelta(days=7)) == []
 
 
+class TestTheReadStartsAtTheFloor:
+    """B10 review: the hourly read must not walk the whole audit table. `records(since=)` casts every row's TEXT `ts`
+    and no index serves it, so `reconcile` starts its read after the id floor the audit answers
+    (`first_id_at_or_after`: a binary search by point reads)."""
+
+    OLD = 20
+
+    def _log(self, monkeypatch, audit):
+        """20 rows written five days ago, then 3 an hour ago. Answers the instant 'now' of the log."""
+        now = datetime.now(timezone.utc)
+        _stamped(monkeypatch, *[now - timedelta(days=5) + timedelta(minutes=i) for i in range(self.OLD)],
+                 *[now - timedelta(hours=1) + timedelta(minutes=i) for i in range(3)])
+        for i in range(self.OLD):
+            _ingest_row(audit, "spo2", 90.0, when=WHEN - timedelta(days=5) + timedelta(minutes=i))
+        for i in range(3):
+            _ingest_row(audit, "heart_rate", 80.0 + i, when=WHEN + timedelta(minutes=i))
+        return now
+
+    def test_the_first_page_starts_after_the_floor(self, monkeypatch):
+        audit, store = _Reads(), InMemoryReadingStore()
+        now = self._log(monkeypatch, audit)
+        counts = reconcile(store, audit, tenant="h1", now=now, since=now - RECONCILE_WINDOW)
+        assert counts == {**NOTHING, "recorded": 3}
+        assert audit.afters == [self.OLD]                  # ids 1..20 are older than the window: never read
+
+    def test_an_audit_without_a_floor_is_read_from_the_start_as_before(self, monkeypatch):
+        audit, store = _NoFloor(), InMemoryReadingStore()
+        now = self._log(monkeypatch, audit)
+        counts = reconcile(store, audit, tenant="h1", now=now, since=now - RECONCILE_WINDOW)
+        assert counts == {**NOTHING, "recorded": 3} and audit.afters == [None]
+
+    def test_a_run_with_no_bound_has_no_floor(self, monkeypatch):
+        audit, store = _Reads(), InMemoryReadingStore()
+        now = self._log(monkeypatch, audit)
+        assert reconcile(store, audit, tenant="h1", now=now)["recorded"] == self.OLD + 3
+        assert audit.afters[0] is None
+
+    def test_the_pulled_back_bound_has_its_own_floor(self, monkeypatch):
+        """A claim three days old pulls the bound back to its time; the floor is that bound's, so the `ingest` row
+        that finishes the claim is read, and the five-day-old rows still are not."""
+        audit, store = _Reads(), InMemoryReadingStore()
+        now = datetime.now(timezone.utc)
+        three_days = now - timedelta(days=3)
+        _stamped(monkeypatch, *[now - timedelta(days=5) + timedelta(minutes=i) for i in range(self.OLD)],
+                 three_days - timedelta(minutes=1), three_days + timedelta(minutes=1))
+        for i in range(self.OLD):
+            _ingest_row(audit, "heart_rate", 80.0, when=WHEN - timedelta(days=5) + timedelta(minutes=i))
+        _unmatched_row(audit, "spo2", 97)
+        reconcile(store, audit, tenant="h1", now=now)
+        [waiting] = store.unmatched("h1", since=now - timedelta(days=7))
+        store.claim("h1", [waiting.id], by="hem.ayse", at=three_days)
+        _ingest_row(audit, "spo2", 97, reading=waiting.id, actor="hem.ayse")
+        audit.afters.clear()
+        counts = reconcile(store, audit, tenant="h1", now=now, since=now - RECONCILE_WINDOW)
+        assert counts == {**NOTHING, "finalized": 1} and audit.afters == [self.OLD]
+
+
+class TestTheStayStampsItsOwnReadings:
+    """B10 review: `admission_of` answers today's open stay, but a reading measured before that stay began belongs to
+    an earlier stay under the same key (a readmission, a transfer) or to no stay — the first pass after the deploy
+    files 48 hours of history. It is stamped with none."""
+
+    def test_only_a_reading_measured_since_the_stay_began_is_stamped(self):
+        began = WHEN - timedelta(hours=1)
+        audit = InMemoryAuditLog()
+        store = InMemoryReadingStore(admitted={("h1", KEY): ADMISSION}, admitted_at={("h1", KEY): began})
+        _ingest_row(audit, "spo2", 95, when=began - timedelta(hours=3))             # an earlier stay under this key
+        _ingest_row(audit, "heart_rate", 80, when=began)                            # the very instant it began: in
+        _ingest_row(audit, "temperature", 37.2, when=began + timedelta(minutes=10))
+        _chart_row(audit, "resp_rate", 16, when=began - timedelta(minutes=1))       # a hand value just before it
+        _chart_row(audit, "sbp", 120, when=began + timedelta(minutes=20))
+        assert _run(store, audit) == {**NOTHING, "recorded": 5}
+        stamps = {r.code: r.admission_id for r in store.for_patient("h1", KEY, **ALL)}
+        assert stamps == {"spo2": None, "heart_rate": ADMISSION, "temperature": ADMISSION,
+                          "resp_rate": None, "sbp": ADMISSION}
+
+    def test_the_open_stays_are_read_once_a_pass_and_only_when_a_row_is_filed(self):
+        class _Counting(InMemoryReadingStore):
+            reads = 0
+
+            def open_stays(self, tenant):
+                self.reads += 1
+                return super().open_stays(tenant)
+        audit, store = InMemoryAuditLog(), _Counting(admitted={("h1", KEY): ADMISSION})
+        assert _run(store, audit) == NOTHING and store.reads == 0
+        for minute in range(4):
+            _ingest_row(audit, "spo2", 97, when=WHEN + timedelta(minutes=minute))
+        _run(store, audit)
+        assert store.reads == 1
+        _run(store, audit)
+        assert store.reads == 1                                                     # nothing to file: not asked
+
+    def test_a_number_with_no_open_stay_is_stamped_with_none_whatever_the_time(self):
+        audit, store = InMemoryAuditLog(), InMemoryReadingStore(admitted={("h1", "H-99"): ADMISSION})
+        _ingest_row(audit, "spo2", 97)
+        _run(store, audit)
+        assert [r.admission_id for r in store.for_patient("h1", KEY, **ALL)] == [None]
+
+
 class TestTheAppRunsIt:
+    def test_a_failing_pass_is_a_warning_once_per_streak(self, caplog):
+        """The pass is the only repair of a row the door could not write: a pass that stops must be seen, and the
+        same line must not come every hour while the database is down. Class only, no number, no value."""
+        class _Down(InMemoryReadingStore):
+            broken = True
+
+            def claims(self, tenant):
+                if self.broken:
+                    raise RuntimeError("readings down for 202600000001")
+                return super().claims(tenant)
+        store = _Down()
+        app = create_app({TOKEN: "h1"}, run_escalation_loop=False, readings=store)
+        caplog.set_level(logging.INFO, logger="homunculus.api.app")
+
+        def mine():
+            return [r for r in caplog.records if "reconcile" in r.getMessage()]
+        with TestClient(app) as client:
+            for _ in range(3):
+                client.portal.call(app.state.reconcile_readings)
+            warned = [r for r in mine() if r.levelno == logging.WARNING]
+            assert len(warned) == 1 and "RuntimeError" in warned[0].getMessage()
+            assert "202600000001" not in warned[0].getMessage() and warned[0].exc_info is None
+            store.broken = False
+            client.portal.call(app.state.reconcile_readings)
+            assert [r.levelno for r in mine()][-1] == logging.INFO                  # the streak ended, said once
+            client.portal.call(app.state.reconcile_readings)
+            assert len(mine()) == 2
+            store.broken = True
+            client.portal.call(app.state.reconcile_readings)
+            assert len([r for r in mine() if r.levelno == logging.WARNING]) == 2     # a new streak is a new line
+
     def test_one_pass_is_on_app_state_and_never_raises(self):
         class _Broken(InMemoryReadingStore):
             def claims(self, tenant):

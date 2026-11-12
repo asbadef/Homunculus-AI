@@ -10,9 +10,9 @@ import hashlib
 import json
 import sqlite3
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 # --- Integrity chain (G2) ------------------------------------------------------------------------
@@ -192,6 +192,44 @@ def _matches(rec: AuditRecord, tenant, patient_id, event_type, since=None, kinds
             and (since is None or datetime.fromisoformat(rec.ts) >= since))
 
 
+#: How far a row's `ts` may lag the rows written just before it. A row's `ts` is stamped in the application before
+#: its INSERT and its `id` is given by the database, so two appends racing swap by milliseconds; the margin is far
+#: wider than that and keeps `id_floor`'s search honest on a log that is only nearly in order.
+ID_FLOOR_SKEW = timedelta(minutes=5)
+
+
+def id_floor(first_from: Callable[[int], tuple[int, str] | None], newest_id: int, since: datetime, *,
+             skew: timedelta = ID_FLOOR_SKEW) -> int:
+    """The id to start reading from for the rows written at or after `since`: a binary search over the ids, each
+    step ONE primary-key point read — `first_from(mid)` answers `(id, ts)` of the first row whose id is at least
+    `mid`, or None — so it costs O(log n) reads however long the log is (the alternative, a `ts` filter alone, walks
+    the log from its first row: `ts` is TEXT and has no index).
+
+    The audit is append-only and its `ts` follows its `id` (one clock, stamped as the row is written), so the rows
+    at or after `since` are, but for the `skew` margin, the rows from the answer on. The answer is a floor, never a
+    filter: it is the smallest id from which the first row's `ts` is at least `since - skew`, so no row at or after
+    `since` has a lower id; the caller reads from it (`records(after_id=floor - 1)`) and still applies `since`
+    itself. An empty log, or one older than `since`, answers `newest_id + 1`: nothing to read. A `ts` that cannot be
+    read counts as late enough — the floor only ever errs low."""
+    bound = since_utc(since) - skew
+    lo, hi = 1, newest_id + 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        first = first_from(mid)
+        if first is None or _late_enough(first[1], bound):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+def _late_enough(ts: str, bound: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(ts) >= bound
+    except (TypeError, ValueError):
+        return True
+
+
 def _one_order(newest: bool, after_id: int | None) -> None:
     """Refuse `newest` with `after_id` (G2-A2, D11): the newest N rows and the rows after an id are
     different questions, and a read asked both would have to drop one of them silently."""
@@ -288,6 +326,13 @@ class InMemoryAuditLog:
         # The newest `limit`, still oldest first (D11) — cut from the end by count: `hits[-0:]`
         # would be every row.
         return hits[max(len(hits) - limit, 0):] if newest else hits[:limit]
+
+    def first_id_at_or_after(self, since: datetime) -> int:
+        """The id to start reading from for the rows written at or after `since` (`id_floor`): ids here are the
+        row's place in the list, so a probe is an index."""
+        rows = self._rows
+        return id_floor(lambda mid: (rows[mid - 1].id, rows[mid - 1].ts) if mid <= len(rows) else None,
+                        len(rows), since)
 
 
 class SqliteAuditLog:
@@ -426,3 +471,15 @@ class SqliteAuditLog:
                             patient_id=r["patient_id"], subject=r["subject"],
                             payload=json.loads(r["payload"]),
                             prev_hash=r["prev_hash"] or "", hash=r["hash"] or "") for r in rows]
+
+    def first_id_at_or_after(self, since: datetime) -> int:
+        """The id to start reading from for the rows written at or after `since` (`id_floor`): each probe is a
+        read of the INTEGER PRIMARY KEY, under the connection's lock like every read."""
+        with self._lock:
+            newest = self.connection.execute("SELECT MAX(id) FROM audit").fetchone()[0] or 0
+
+            def first_from(mid: int):
+                row = self.connection.execute(
+                    "SELECT id, ts FROM audit WHERE id >= ? ORDER BY id LIMIT 1", (mid,)).fetchone()
+                return None if row is None else (row["id"], row["ts"])
+            return id_floor(first_from, newest, since)

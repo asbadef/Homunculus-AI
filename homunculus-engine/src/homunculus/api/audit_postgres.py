@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
 from homunculus.api.audit import (
-    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, kinds_of, since_utc)
+    GENESIS_HASH, AuditEvent, AuditRecord, _now_iso, _one_order, chain_hash, id_floor, kinds_of, since_utc)
 
 
 _PG_SCHEMES = ("postgresql+asyncpg://", "postgresql+psycopg2://", "postgresql://", "postgres://")
@@ -225,6 +225,23 @@ class PostgresAuditLog:
             )
             for r in rows
         ]
+
+    def first_id_at_or_after(self, since: datetime) -> int:
+        """The id to start reading from for the rows written at or after `since` (G3-05, `id_floor`). `records(since=)`
+        casts the TEXT `ts` of every row it looks at, which no index serves, so on its own it walks the primary key
+        from the first row; a caller that reads a recent window (the readings `reconcile`, hourly) asks for this floor
+        first and reads `after_id=floor - 1`. About thirty primary-key point reads, in one transaction, however long
+        the log is."""
+        since_utc(since)                                             # refused without a zone, as `records`
+        with self._engine.begin() as conn:
+            set_local_statement_timeout(conn, AUDIT_READ_STATEMENT_TIMEOUT_MS)
+            newest = conn.execute(text("SELECT max(id) FROM audit")).scalar() or 0
+
+            def first_from(mid: int):
+                row = conn.execute(text("SELECT id, ts FROM audit WHERE id >= :mid ORDER BY id LIMIT 1"),
+                                   {"mid": mid}).first()
+                return None if row is None else (int(row[0]), row[1])
+            return id_floor(first_from, int(newest), since)
 
     def dispose(self) -> None:
         self._engine.dispose()

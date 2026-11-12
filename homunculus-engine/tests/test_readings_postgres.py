@@ -292,6 +292,40 @@ def test_reconcile_reaches_every_copy_and_finishes_the_claims_on_the_real_table(
         store.close()
 
 
+def test_reconcile_reads_the_real_audit_from_its_id_floor(migrated, monkeypatch):
+    """B10 review: the hourly read must not walk the audit from its first row. With the real `audit` table the floor is
+    found by point reads of the primary key, the first page is asked for after it, and what is filed is what a read of
+    the whole window would have filed."""
+    import homunculus.api.audit_postgres as audit_pg
+    from homunculus.api.audit import AuditEvent
+    from homunculus.api.audit_postgres import PostgresAuditLog
+    from homunculus.api.readings import RECONCILE_WINDOW, reconcile
+
+    class Reads(PostgresAuditLog):
+        afters: list = []
+
+        def records(self, **kw):
+            self.afters.append(kw.get("after_id"))
+            return super().records(**kw)
+    now = datetime.now(timezone.utc)
+    stamps = iter([(now - timedelta(days=5) + timedelta(minutes=i)).isoformat() for i in range(30)]
+                  + [(now - timedelta(hours=1) + timedelta(minutes=i)).isoformat() for i in range(2)])
+    monkeypatch.setattr(audit_pg, "_now_iso", lambda: next(stamps))
+    audit, store = Reads(TEST_DATABASE_URL), PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        for i in range(32):
+            audit.append(AuditEvent("h1", "ingest", KEY, "spo2", {
+                "value": 90.0 + i, "unit": "%", "obs_ts": (now - timedelta(minutes=40 - i)).isoformat(),
+                "device": "CONNEX-3A"}))
+        counts = reconcile(store, audit, tenant="h1", now=now, since=now - RECONCILE_WINDOW)
+        assert (counts["recorded"], counts["skipped"]) == (2, 0)
+        assert audit.afters[0] == 30                      # the thirty rows of five days ago are not read
+        assert len(store.for_patient("h1", KEY, since=now - timedelta(days=1), until=now)) == 2
+    finally:
+        audit.dispose()
+        store.close()
+
+
 def test_the_backfill_files_an_open_stays_readings_on_the_real_tables(migrated, capsys):
     """G3-05 (D19, E-11) on the real tables: `open_stays` answers the stay's start from `admissions`, the audit is
     read from the real `audit` table with no 48-hour bound, only the readings measured since the stay began are
