@@ -197,7 +197,9 @@ async def test_connection(
         client = factory(account)
     except TresEgressRefused as exc:    # the lock, or an address the install does not allow
         raise refusal(409, exc.code).http() from None
-    except ValueError:                  # a base URL that is not https, written past this route
+    except ValueError:
+        # Only from a factory that builds a TresClient itself (the app's, open_client, refuses
+        # first): its constructor refused the stored base URL (not https, not a URL).
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
     try:
         await client.token()

@@ -33,9 +33,11 @@ As `api/infinity_waves.py`'s hub client: `trust_env=False` (no proxy from the en
 redirects, https only, an explicit timeout, one keep-alive client built on first use. httpx's
 timeout is per phase (connect, each read…): a server that trickles its answer never trips it. So
 every call — the token's included — also has an OVERALL deadline (CALL_DEADLINE_S, `asyncio.timeout`);
-a call that hits it is a failure with no answer (`status` None, named `TimeoutError`). It bounds
-how long the ledger holds a row's lock (ledger.py `deliver`). Nothing is
-logged here: a body is PHI (D25).
+a call that hits it is a failure with no answer (`status` None, named `TimeoutError`). The bound is
+PER CALL: one delivery may make several (a PUT to a stale id, its 404, the search, the POST, and a
+new token on a 401 between them), and the ledger holds the row's lock for all of them (ledger.py
+`deliver`) — a few minutes at the very worst, never without end. Nothing is logged here: a body is
+PHI (D25).
 
 `pace`, when set, is awaited before every request: the worker's 300 ms spacing (D21)."""
 from __future__ import annotations

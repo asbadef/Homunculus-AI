@@ -240,7 +240,9 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 continue
             try:
                 client = client_factory(account)
-            except ValueError:          # a base URL that is not https (a row written past the route)
+            except ValueError:
+                # Only from a factory that builds a TresClient itself (the app's, open_client,
+                # refuses first): its constructor refused the base URL (not https, not a URL).
                 report.incomplete += 1
                 continue
             except TresEgressRefused as exc:   # the lock, or an address the install does not allow
