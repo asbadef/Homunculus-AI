@@ -6,7 +6,9 @@ environment in it, the settings and the ledger gone with their tenant, a ledger 
 admission; NO permission row for `tres.manage` (the system group holds it by rule); the model
 agrees with the migration; 0019 → 0020 → 0019 → 0020 runs and the downgrade drops exactly the two
 tables. The migration's two constants are the models' (no database for that one). Synthetic rows
-only. F1–F5 extend this file with their tables (D26)."""
+only. F1–F5 extend this file with their tables (D26): F1 adds `tres_department_map` and
+`tres_practitioner_identity` (each gone with its unit or user and with its tenant; the FİN is
+ciphertext at rest) and the settings' `send_from` and `retried_at`."""
 from __future__ import annotations
 
 import importlib.util
@@ -31,6 +33,9 @@ from homunculus.tres.models import ALL_TYPES_JSON, RESOURCE_TYPES
 from tests.conftest import requires_db
 
 SETTINGS, DELIVERIES = "tres_settings", "tres_deliveries"
+DEPARTMENTS, IDENTITIES = "tres_department_map", "tres_practitioner_identity"     # F1 (D16, D17)
+DEPARTMENTS_INDEX = "ix_tres_department_map_tenant_id"
+TABLES = {SETTINGS, DELIVERIES, DEPARTMENTS, IDENTITIES}
 KEY, INDEX = "uq_tres_deliveries_key", "ix_tres_deliveries_tenant_status"
 #: A stay's rows are read by its admission (the tab, the preview); and an admission's delete SETs NULL here.
 ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
@@ -85,6 +90,19 @@ def _admission(conn, tenant: uuid.UUID) -> uuid.UUID:
     return admission
 
 
+def _unit_of(conn, admission: uuid.UUID) -> uuid.UUID:
+    return conn.execute(text("SELECT admitting_unit_id FROM admissions WHERE id = :id"),
+                        {"id": admission}).scalar_one()
+
+
+def _user(conn) -> uuid.UUID:
+    uid = uuid.uuid4()
+    conn.execute(text("INSERT INTO users (id, username, full_name, is_active, created_at, updated_at) "
+                      "VALUES (:id, :u, 'Sentetik Hekim', true, now(), now())"),
+                 {"id": uid, "u": f"hekim-{uid.hex[:8]}@sentetik.example.com"})
+    return uid
+
+
 def _delivery(conn, tenant: uuid.UUID, **columns) -> uuid.UUID:
     did = uuid.uuid4()
     values = {"id": did, "tenant_id": tenant, "environment": "test", "resource_type": "patient",
@@ -107,7 +125,7 @@ def test_0020_adds_the_two_tables_and_writes_no_row_and_no_permission(clean_db):
             "created_at, updated_at) VALUES (gen_random_uuid(), :t, 'hospital_admin', 'Sistem Yöneticisi', "
             "'', true, true, now(), now())"), {"t": tenant})
     command.upgrade(cfg, "0020")
-    assert set(inspect(engine).get_table_names()) - before == {SETTINGS, DELIVERIES}
+    assert set(inspect(engine).get_table_names()) - before == TABLES
     with engine.connect() as conn:
         assert conn.execute(text(f"SELECT count(*) FROM {SETTINGS}")).scalar_one() == 0
         assert conn.execute(text(f"SELECT count(*) FROM {DELIVERIES}")).scalar_one() == 0
@@ -130,8 +148,8 @@ def test_settings_default_to_off_test_every_type_and_24_hours_and_the_checks_hol
         conn.execute(text(f"INSERT INTO {SETTINGS} (tenant_id) VALUES (:t)"), {"t": tenant})
         row = conn.execute(text(
             f"SELECT mode, environment, settle_hours, enabled_types, test_password, live_base_url, "
-            f"updated_at IS NOT NULL, updated_by, session_refused_at FROM {SETTINGS}")).one()
-    assert tuple(row) == ("off", "test", 24, list(RESOURCE_TYPES), None, None, True, None, None)
+            f"updated_at IS NOT NULL, updated_by, session_refused_at, send_from, retried_at FROM {SETTINGS}")).one()
+    assert tuple(row) == ("off", "test", 24, list(RESOURCE_TYPES), None, None, True, None, None, None, None)
     for bad in ("mode = 'on'", "environment = 'prod'", "settle_hours = -1", "settle_hours = 169"):
         with pytest.raises(IntegrityError, match="ck_tres_settings_"), engine.begin() as conn:
             conn.execute(text(f"UPDATE {SETTINGS} SET {bad}"))
@@ -193,11 +211,11 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
 
     def only_0020(object_, name, type_, reflected, compare_to):
         if type_ == "table":
-            return name in {SETTINGS, DELIVERIES}
+            return name in TABLES
         if type_ == "column":
-            return (object_.table.name if object_ is not None else None) in {SETTINGS, DELIVERIES}
+            return (object_.table.name if object_ is not None else None) in TABLES
         if type_ in ("index", "unique_constraint"):
-            return name in {INDEX, KEY, ADMISSION_INDEX}
+            return name in {INDEX, KEY, ADMISSION_INDEX, DEPARTMENTS_INDEX}
         return False
 
     with engine.connect() as conn:
@@ -211,3 +229,43 @@ def test_the_model_and_the_migration_agree_and_the_round_trip_runs(clean_db):
             "SELECT indexname FROM pg_indexes WHERE tablename = :t"), {"t": DELIVERIES}).scalars())
     assert checks == CHECKS
     assert {INDEX, KEY, ADMISSION_INDEX} <= indexes
+    with engine.connect() as conn:
+        assert DEPARTMENTS_INDEX in set(conn.execute(text(
+            "SELECT indexname FROM pg_indexes WHERE tablename = :t"), {"t": DEPARTMENTS}).scalars())
+
+
+@requires_db
+def test_the_two_maps_go_with_their_unit_user_and_tenant_and_the_fin_is_ciphertext(clean_db):
+    """F1 (D16, D17): one department row per unit, one identity per (tenant, user)."""
+    engine, cfg = clean_db
+    command.upgrade(cfg, "head")
+    with engine.begin() as conn:
+        tenant = _tenant(conn, "hastane-a")
+        unit = _unit_of(conn, _admission(conn, tenant))
+        doctor = _user(conn)
+        conn.execute(text(f"INSERT INTO {DEPARTMENTS} (unit_id, tenant_id, code, display) "
+                          "VALUES (:u, :t, 'RE-01', 'Reanimasiya')"), {"u": unit, "t": tenant})
+        conn.execute(text(f"INSERT INTO {IDENTITIES} (tenant_id, user_id, fin, family_name, given_name) "
+                          "VALUES (:t, :u, 'enc::v1::sentetik', 'Sentetikov', 'Elçin')"), {"t": tenant, "u": doctor})
+        row = conn.execute(text(f"SELECT updated_at IS NOT NULL, updated_by FROM {DEPARTMENTS}")).one()
+        assert tuple(row) == (True, None)
+    with pytest.raises(IntegrityError), engine.begin() as conn:            # one row per unit
+        conn.execute(text(f"INSERT INTO {DEPARTMENTS} (unit_id, tenant_id, code, display) "
+                          "VALUES (:u, :t, 'X', 'Y')"), {"u": unit, "t": tenant})
+    with pytest.raises(IntegrityError), engine.begin() as conn:            # one identity per (tenant, user)
+        conn.execute(text(f"INSERT INTO {IDENTITIES} (tenant_id, user_id, family_name, given_name) "
+                          "VALUES (:t, :u, 'A', 'B')"), {"t": tenant, "u": doctor})
+    with pytest.raises(IntegrityError), engine.begin() as conn:            # the names are required
+        conn.execute(text(f"INSERT INTO {IDENTITIES} (tenant_id, user_id, family_name) VALUES (:t, :u, 'A')"),
+                     {"t": tenant, "u": _user(conn)})
+    with engine.begin() as conn:
+        width = conn.execute(text("SELECT character_maximum_length FROM information_schema.columns "
+                                  "WHERE table_name = :t AND column_name = 'fin'"), {"t": IDENTITIES}).scalar_one()
+        assert width == PHI_COLUMN_LENGTH
+        conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": doctor})
+        assert conn.execute(text(f"SELECT count(*) FROM {IDENTITIES}")).scalar_one() == 0
+        conn.execute(text("DELETE FROM admissions WHERE tenant_id = :t"), {"t": tenant})
+        conn.execute(text("DELETE FROM beds"))
+        conn.execute(text("DELETE FROM rooms"))
+        conn.execute(text("DELETE FROM units WHERE id = :u"), {"u": unit})
+        assert conn.execute(text(f"SELECT count(*) FROM {DEPARTMENTS}")).scalar_one() == 0

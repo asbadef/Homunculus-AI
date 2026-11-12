@@ -1,5 +1,6 @@
 # homunculus-engine/src/homunculus/tres/models.py
-"""`tres_settings` and `tres_deliveries` (migration 0020; TRƏS-01 spec D3, D6).
+"""`tres_settings`, `tres_deliveries`, `tres_department_map` and `tres_practitioner_identity`
+(migration 0020; TRƏS-01 spec D3, D6, D16, D17).
 
 `tres_settings` — one row per tenant, none until the administrator saves the tab (no row reads as
 the defaults: mode `off`, environment `test`):
@@ -19,6 +20,13 @@ the defaults: mode `off`, environment `test`):
                  set, so a wrong password costs one failed login, not one every five minutes
                  (review I3). Cleared by a save that changes something, or a successful
                  connection test. Not a setting: writing it never touches `updated_at`.
+* `send_from`    the cut-off of the automatic rounds (open item O15, plan F1 — PROPOSED, AWAITING THE
+                 OWNER'S WORD): only a stay discharged at or after it is sent without a hand.
+                 Set to the moment of the save that first chooses `send`; the tab can move it.
+                 None until then (no cut-off: a `validate` round reaches back as far as its window).
+* `retried_at`   when the nightly retry of `stuck` rows last ran for this tenant (D21, O21): it runs
+                 at the first round after 04:00 in the tenant's zone. Not a setting either: written
+                 by its own statement, never touching `updated_at`.
 
 `tres_deliveries` — the ledger (D6): one row per (tenant, environment, resource type, local id).
 A sandbox success never counts for live: the environment is in the key. NO REQUEST OR RESPONSE
@@ -28,7 +36,16 @@ the platform's own message, which may echo a value, so it is encrypted too. `rea
 catalogue code for a skip (`fin_missing`, `unit_unmapped`…), never free text.
 
 `resource_type` is the LEDGER's key (`vital`, `lab`, `patient`…), not the FHIR type: two of them
-are both `Observation` on the platform."""
+are both `Observation` on the platform. `admission_id` is the stay's LAST admission (its chain's
+newest row: where its protocol number is held, plan F1).
+
+`tres_department_map` — the tab's map of a unit to a `hospital-departments` code and display
+(D17): an Encounter's `serviceType`. One row per unit; a unit with no row is unmapped, and its
+stays' Encounters are skipped (`unit_unmapped`), never sent under a default department.
+
+`tres_practitioner_identity` — what the platform needs of a practitioner and `users` does not hold
+(D16): the FİN (encrypted at rest, as a patient's; write-only at the door), the family and the
+given name. One row per user and tenant. `users` is not touched."""
 from __future__ import annotations
 
 import json
@@ -107,6 +124,8 @@ class TresSettings(Base):
         DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     session_refused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TresDelivery(Base):
@@ -146,6 +165,36 @@ class TresDelivery(Base):
         DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now, onupdate=_now, server_default=func.now())
+
+
+class TresDepartmentMap(Base):
+    __tablename__ = "tres_department_map"
+    __table_args__ = (Index("ix_tres_department_map_tenant_id", "tenant_id"),)
+
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    display: Mapped[str] = mapped_column(String(200), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class TresPractitionerIdentity(Base):
+    __tablename__ = "tres_practitioner_identity"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    fin: Mapped[str | None] = mapped_column(EncryptedString(PHI_COLUMN_LENGTH), nullable=True)
+    family_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    given_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 def account_of(settings: TresSettings, environment: str | None = None) -> TresAccount | None:

@@ -1,8 +1,9 @@
 # homunculus-engine/tests/test_tres_models.py
-"""TRƏS-01 (spec D3, D6): the two tables as the models map them — the defaults (mode `off`,
+"""TRƏS-01 (spec D3, D6, D16, D17): the tables as the models map them — the defaults (mode `off`,
 environment `test`, every type on, 24 hours), the CHECKs, the ledger's key with the environment in
 it, the password and the platform's message encrypted at rest, both gone with their tenant — and
-`account_of`, which needs no database. The DB part runs on Postgres. Synthetic tenant only."""
+`account_of`, which needs no database; and (F1) the department map and the practitioner identities,
+the FİN ciphertext at rest. The DB part runs on Postgres. Synthetic tenant only."""
 from __future__ import annotations
 
 import uuid
@@ -15,7 +16,7 @@ from homunculus.tenant.models import Tenant
 from homunculus.tres.client import TresAccount
 from homunculus.tres.models import (
     ACCOUNT_FIELDS, ENVIRONMENTS, MODES, OPERATIONS, RESOURCE_TYPES, SESSION_FIELDS, STATUSES,
-    TresDelivery, TresSettings, account_of,
+    TresDelivery, TresDepartmentMap, TresPractitionerIdentity, TresSettings, account_of,
 )
 from tests.conftest import requires_db
 
@@ -157,3 +158,33 @@ async def test_both_tables_go_with_their_tenant(db_session):
     await db_session.commit()
     for table in ("tres_settings", "tres_deliveries"):
         assert (await db_session.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one() == 0
+
+
+@requires_db
+async def test_the_department_map_and_the_identities_and_the_fin_at_rest(db_session):
+    """F1 (D16, D17): a unit's department, a practitioner's identity — the FİN ciphertext at rest
+    and plain to the model; `send_from` and `retried_at` start empty."""
+    from homunculus.auth.models import User
+    from homunculus.tenant.models import Site, Unit, UnitType
+    tenant = await _tenant(db_session)
+    tenant_id = tenant.id
+    site = Site(tenant_id=tenant_id, name="Ana bina")
+    db_session.add(site)
+    await db_session.flush()
+    unit = Unit(site_id=site.id, name="Reanimasiya", unit_type=UnitType.ADULT_ICU)
+    doctor = User(username="hekim@sentetik.example.com", full_name="Sentetik Hekim", is_active=True)
+    db_session.add_all([unit, doctor, TresSettings(tenant_id=tenant.id)])
+    await db_session.flush()
+    db_session.add_all([TresDepartmentMap(unit_id=unit.id, tenant_id=tenant.id, code="RE-01", display="Reanimasiya"),
+                        TresPractitionerIdentity(tenant_id=tenant.id, user_id=doctor.id, fin="ZZ99YY8",
+                                                 family_name="Sentetikov", given_name="Elçin")])
+    await db_session.commit()
+    stored = (await db_session.execute(text("SELECT fin FROM tres_practitioner_identity"))).scalar_one()
+    assert stored.startswith("enc::v1::") and "ZZ99YY8" not in stored
+    db_session.expire_all()
+    identity = (await db_session.execute(select(TresPractitionerIdentity))).scalar_one()
+    assert (identity.fin, identity.family_name, identity.updated_at is not None) == ("ZZ99YY8", "Sentetikov", True)
+    department = (await db_session.execute(select(TresDepartmentMap))).scalar_one()
+    assert (department.code, department.display, department.tenant_id) == ("RE-01", "Reanimasiya", tenant_id)
+    settings = (await db_session.execute(select(TresSettings))).scalar_one()
+    assert (settings.send_from, settings.retried_at) == (None, None)
