@@ -63,6 +63,20 @@ describe("the refresh at the shift's end (useShiftEnd)", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  // Re-review 4: a hidden tab is not read at the end, as the 60 s poll reads none (useSummaryReads); the poll reads at
+  // once when the tab is shown again.
+  it("reads nothing at the end while the tab is hidden", async () => {
+    const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      const onEnd = vi.fn();
+      renderHook(() => useShiftEnd({ endMs: END, skewMs: 0, onEnd }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(10 * MIN + PAST_THE_END_MS); });
+      expect(onEnd).not.toHaveBeenCalled();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
   it("arms nothing without a window, and fires at once for one already over", async () => {
     const onEnd = vi.fn();
     const { rerender } = renderHook((props) => useShiftEnd(props), { initialProps: { endMs: null, skewMs: 0, onEnd } });

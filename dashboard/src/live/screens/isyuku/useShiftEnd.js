@@ -13,7 +13,8 @@ import { useEffect, useRef } from "react";
 export const PAST_THE_END_MS = 5_000;
 
 /** Calls `onEnd` once, PAST_THE_END_MS after `endMs` (a server instant) on the server's clock (`Date.now() + skewMs`;
- *  an unknown skew is 0). Nothing is armed without an `endMs`. The newest `onEnd` is the one called. */
+ *  an unknown skew is 0), unless the tab is hidden then. Nothing is armed without an `endMs`. The newest `onEnd` is the
+ *  one called. */
 export function useShiftEnd({ endMs, skewMs, onEnd }) {
   const latest = useRef(onEnd);
   useEffect(() => { latest.current = onEnd; });
@@ -21,7 +22,8 @@ export function useShiftEnd({ endMs, skewMs, onEnd }) {
   useEffect(() => {
     if (!Number.isFinite(endMs)) return undefined;
     const wait = Math.max(0, endMs - (Date.now() + skew)) + PAST_THE_END_MS;
-    const timer = setTimeout(() => { latest.current(); }, wait);
+    // A hidden tab is not read, as the 60 s poll reads none; the poll reads at once when it is shown (re-review 4).
+    const timer = setTimeout(() => { if (document.visibilityState !== "hidden") latest.current(); }, wait);
     return () => clearTimeout(timer);
   }, [endMs, skew]);
 }
