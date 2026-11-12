@@ -18,7 +18,8 @@ AFTER the commit with the NAMES of the fields that changed (`mode`, `test.passwo
 changed base URL, the HOST it now points at (no path, no credentials) — never another value (D24;
 A-26: never a 500 for a committed change). A save that changes nothing writes no audit row.
 Plan F1: the answer carries `send_from` (O15, proposed: the rounds' cut-off), which the first save
-that chooses `send` sets to its own moment and a body's `send_from` moves; a mode other than `off`
+that chooses `send` sets to its own moment and a body's `send_from` moves (from 2020-01-01 to 366
+days after the save: else 422 `tres_send_from`, batch-4 review); a mode other than `off`
 is refused 422 `tres_live_closed` while the selected account would reach the live platform.
 A save that changes the `environment` resets the rounds' watermark `reached_to` (plan F1, amendment
 25, A3: the ledger is keyed by the environment; a changed address of the account in use no longer
@@ -170,14 +171,14 @@ async def write_settings(
         .with_for_update().execution_options(populate_existing=True))).scalar_one()
     # Judged against the row as stored (review M10): an address sent back unchanged is not judged
     # against the install's hosts again. A refusal writes nothing — not even a new row.
+    now = datetime.now(timezone.utc)
     refused = refusal_of(payload, hosts=_hosts(request),
-                         stored={prefix: getattr(row, f"{prefix}_base_url") for prefix in ENVIRONMENTS})
+                         stored={prefix: getattr(row, f"{prefix}_base_url") for prefix in ENVIRONMENTS}, now=now)
     if refused is not None:
         await db.rollback()
         code, environment = refused
         extra = {"environment": environment} if code == TRES_HOST_NOT_ALLOWED else None
         raise refusal(422, code, extra).http()
-    now = datetime.now(timezone.utc)
     changed = _apply(row, payload, now)
     audit: dict = {"actor": actor, "changed": changed}
     hosts = {prefix: _host(getattr(row, f"{prefix}_base_url")) for prefix in ENVIRONMENTS

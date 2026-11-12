@@ -294,6 +294,7 @@ export const TRES_CODE_KEYS = new Map([
   ["tres_platform_unavailable", "tres.err.platformUnavailable"],
   ["tres_throttled", "tres.err.throttled"],             // F1, Task-12 review M1: a 429 to a hand (`retry_after` beside it)
   ["tres_other_environment", "tres.err.otherEnvironment"],   // F1, M3: a retried row of the environment not selected
+  ["tres_send_from", "tres.err.sendFrom"],              // F1, batch-4 review: the cut-off's bounds
 ]);
 /** TRƏS-01 (review M10): `tres_host_not_allowed` says which account's address, when the refusal names it
  *  (`err.apiEnvironment`, backendApi.js) — the install narrowed TRES_HOSTS, and the form holds two addresses. */

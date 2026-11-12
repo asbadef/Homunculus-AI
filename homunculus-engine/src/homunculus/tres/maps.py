@@ -7,7 +7,9 @@ with its `hospital-departments` code and display, or none. An unmapped unit's st
 (`unit_unmapped`), never sent under a default department.
 
 PUT /admin/tres/departments — THE WHOLE MAP: `{"departments": [{"unit_id", "code", "display"}]}`;
-a unit the body leaves out is unmapped. A unit that is not the tenant's, or named twice, is 422
+a unit the body leaves out is unmapped. What is held is read under the tenant's map lock
+(`lock_map`, batch-4 review): two admins' saves at once take turns, the second replacing the first's
+map whole — never the two merged. A unit that is not the tenant's, or named twice, is 422
 `tres_unit_unknown`; an empty code or one over 32 characters `tres_department_code`; an empty
 display or one over 200 `tres_department_display` — nothing written. A change is audited
 `tres.map` AFTER the commit: `{"actor", "units": [<the unit ids whose mapping changed>]}`; a save
@@ -20,9 +22,12 @@ write-only, as the account's password), the family and the given name.
 PUT /admin/tres/practitioners/{user_id} — `{"fin", "family_name", "given_name"}`. `fin` omitted or
 null keeps the stored one, an empty string clears it; otherwise it is trimmed and upper-cased and
 must be seven Latin capitals or digits (`tres_fin_format`, D20's rule). Both names are required,
-at most 100 characters (`tres_name`). A user who is not an active member of the tenant is 404
-`tres_user_unknown`. A change is audited `tres.identity`: `{"actor", "user_id", "changed": [<field
-names>]}` — never a value; a save that changes nothing writes no row.
+at most 100 characters (`tres_name`). A user who is not a member of the tenant is 404
+`tres_user_unknown`; so is a member no longer active (the membership or the account) for whom the
+tab holds no identity — one it holds can still be corrected (a leaver's FİN typo; batch-4 review). A
+change is audited `tres.identity`: `{"actor", "user_id", "changed": [<field names>]}` — never a
+value; a save that changes nothing writes no row. (O17: FastAPI's own 422 for a body of the wrong
+shape echoes the `input`, which may return a typed FİN to its sender — decided before live.)
 
 `users` is never touched (D16): staff identity proper is H4's."""
 from __future__ import annotations
@@ -32,7 +37,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, StrictStr
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,6 +99,20 @@ class PractitionerOut(BaseModel):
     updated_at: datetime | None
 
 
+def map_lock_key(tenant_id: uuid.UUID) -> str:
+    """The text the tenant's department-map lock is keyed by (`hashtextextended` of it)."""
+    return f"homunculus.tres-department-map:{tenant_id}"
+
+
+async def lock_map(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """The tenant's department-map lock, held until the caller's commit or rollback (batch-4 review):
+    a transaction-scoped ADVISORY lock on the tenant's key, as auth/groups.py `lock_admin_guard`.
+    Not the tenant's `tres_settings` row FOR UPDATE: a tenant that never saved the TRƏS tab has no
+    such row, and making one here would turn «no row: the defaults, never saved» into a saved row
+    as a side effect of the map."""
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(map_lock_key(tenant_id), 0))))
+
+
 async def _departments(db: AsyncSession, tenant_id: uuid.UUID) -> list[DepartmentOut]:
     rows = (await db.execute(
         select(Unit, TresDepartmentMap).join(Site, Site.id == Unit.site_id)
@@ -135,6 +154,9 @@ async def write_departments(
         if not display or len(display) > DISPLAY_MAX:
             raise refusal(422, TRES_DEPARTMENT_DISPLAY).http()
         wanted[item.unit_id] = (code, display)
+    # Batch-4 review: the map is written WHOLE, so what is held is read under the tenant's map lock —
+    # a second admin's save waits for the first and then replaces its map, never merges with it.
+    await lock_map(db, caller_tenant)
     held = {row.unit_id: (row.code, row.display) for row in (await db.execute(
         select(TresDepartmentMap).where(TresDepartmentMap.tenant_id == caller_tenant))).scalars()}
     gone = sorted(set(held) - set(wanted), key=str)
@@ -196,17 +218,18 @@ async def write_practitioner(
 ) -> PractitionerOut:
     actor, editor = user.username, user.id
     member = (await db.execute(
-        select(TenantMembership.user_id).join(User, User.id == TenantMembership.user_id)
-        .where(TenantMembership.tenant_id == caller_tenant, TenantMembership.user_id == user_id,
-               TenantMembership.is_active.is_(True), User.is_active.is_(True)))).first()
-    if member is None:
+        select(TenantMembership.is_active, User.is_active).join(User, User.id == TenantMembership.user_id)
+        .where(TenantMembership.tenant_id == caller_tenant, TenantMembership.user_id == user_id))).first()
+    row = (await db.execute(select(TresPractitionerIdentity).where(
+        TresPractitionerIdentity.tenant_id == caller_tenant, TresPractitionerIdentity.user_id == user_id)
+        .execution_options(populate_existing=True))).scalar_one_or_none()
+    # A member of the tenant, active — or no longer active but with an identity the tab holds already
+    # (batch-4 review: a leaver's FİN typo is corrected; no identity is MADE for a leaver).
+    if member is None or (not all(member) and row is None):
         raise refusal(404, TRES_USER_UNKNOWN).http()
     family, given = payload.family_name.strip(), payload.given_name.strip()
     if not family or not given or len(family) > NAME_MAX or len(given) > NAME_MAX:
         raise refusal(422, TRES_NAME).http()
-    row = (await db.execute(select(TresPractitionerIdentity).where(
-        TresPractitionerIdentity.tenant_id == caller_tenant, TresPractitionerIdentity.user_id == user_id)
-        .execution_options(populate_existing=True))).scalar_one_or_none()
     fin = row.fin if row is not None else None
     if payload.fin is not None:
         fin = None

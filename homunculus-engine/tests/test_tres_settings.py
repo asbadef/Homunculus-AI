@@ -114,6 +114,17 @@ def test_every_code_has_its_words():
     assert set(WORDS) == CODES and all(text_.strip() for text_ in WORDS.values())
 
 
+def test_the_cut_off_is_refused_before_2020_and_more_than_366_days_ahead():
+    """Batch-4 review: `send_from` bounds — a slip of the year (0026, 2206) is a coded 422, never a cut-off
+    that sends a hospital's whole past, or nothing for years."""
+    now = datetime(2026, 11, 12, 9, 0, tzinfo=timezone.utc)
+    for bad in ("2019-12-31T23:59:59+00:00", "0026-11-12T00:00:00+04:00", "2027-11-14T09:00:01+00:00"):
+        assert settings_refusal(TresSettingsIn(**body(mode="send", send_from=bad)), hosts=HOSTS, now=now) == \
+            "tres_send_from", bad
+    for good in ("2020-01-01T00:00:00+00:00", "2026-11-12T09:00:00+00:00", "2027-11-13T09:00:00+00:00"):
+        assert settings_refusal(TresSettingsIn(**body(mode="send", send_from=good)), hosts=HOSTS, now=now) is None, good
+
+
 # ---------------------------------------------------------------- the routes
 @pytest_asyncio.fixture
 async def ward(db_session, monkeypatch):
@@ -613,6 +624,12 @@ async def test_the_first_save_in_send_sets_the_cut_off_and_the_form_can_move_it(
     assert _audit(app)[-1].payload["changed"] == ["send_from"]
     assert (await client.put(URL, json=body(mode="send", test=SANDBOX, send_from="2026-11-01T00:00:00"),
                              headers=w.auth["admin"])).status_code == 422          # no zone: FastAPI's own 422
+    # batch-4 review: a year typed wrong is a coded 422, and writes nothing
+    r = await client.put(URL, json=body(mode="send", test=SANDBOX, send_from="2016-11-01T00:00:00+04:00"),
+                         headers=w.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "tres_send_from")
+    assert datetime.fromisoformat((await client.get(URL, headers=w.auth["admin"])).json()["send_from"]) == \
+        datetime.fromisoformat(moved)
 
 
 @requires_db
