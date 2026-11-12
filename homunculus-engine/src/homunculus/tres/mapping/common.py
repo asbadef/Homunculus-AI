@@ -19,6 +19,11 @@ AZ = "http://fhir.az/"
 STRUCTURE = AZ + "StructureDefinition/"
 CODE_SYSTEM = AZ + "CodeSystem/"
 TIMEZONE_UNKNOWN = "timezone_unknown"
+#: A stay whose last admission is DISCHARGED but holds no discharge time (the Encounter cannot say when it ended).
+DISCHARGE_MISSING = "discharge_missing"
+#: `instant` is given a time with no zone: refused, never read as the server's local time (D22). Constant,
+#: and without the value, so the exception holds nothing of the record.
+INSTANT_NAIVE = "a time sent to the platform needs a zone: refusing to read it as the server's local time"
 
 
 @dataclass(frozen=True)
@@ -48,7 +53,11 @@ def reference(fhir_type: str, remote_id: str) -> dict:
 
 
 def instant(at: datetime, zone: tzinfo) -> str:
-    """`at` in the tenant's zone with its offset, to the second (D22)."""
+    """`at` in the tenant's zone with its offset, to the second (D22). A time with no zone (naive, or a
+    tzinfo that gives no offset) is a ValueError: `astimezone` would read it as the SERVER's local
+    time, and a wrong hour would go into the national record unseen."""
+    if at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError(INSTANT_NAIVE)
     return at.astimezone(zone).isoformat(timespec="seconds")
 
 

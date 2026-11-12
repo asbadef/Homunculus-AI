@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import replace
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,7 +23,7 @@ from homunculus.api.identity import Caller
 from homunculus.api.rehydrate import retracted_entries
 from homunculus.tres import codes, ids, stay as stay_module
 from homunculus.tres.client import LOCAL_ID_EXTENSION
-from homunculus.tres.mapping.common import Built, Skip
+from homunculus.tres.mapping.common import DISCHARGE_MISSING, INSTANT_NAIVE, Built, Skip, instant
 from homunculus.tres.mapping.encounter import encounter
 from homunculus.tres.mapping.patient import patient
 from homunculus.tres.mapping.practitioner import practitioner
@@ -122,6 +122,9 @@ def test_a_practitioner_without_a_whole_identity_is_skipped():
     assert practitioner(Clinician(DOCTOR, None, "S", "E", known=True)) == Skip("practitioner", local_id, "fin_missing")
     assert practitioner(Clinician(DOCTOR, "ZZ99", "S", "E", known=True)) == Skip("practitioner", local_id, "fin_format")
     assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "", "E", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "S", "", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", "S", "   ", known=True)) == Skip("practitioner", local_id, "name_missing")
+    assert practitioner(Clinician(DOCTOR, "ZZ99YY8", None, None, known=True)) == Skip("practitioner", local_id, "name_missing")
 
 
 # ---------------------------------------------------------------- Encounter (D8, D17, D22)
@@ -150,6 +153,42 @@ def test_a_stay_still_open_is_in_progress_with_no_end_and_no_participant_when_no
                       organization_id="ORG-0001")
     assert (built.resource["status"], built.resource["period"]) == ("in-progress", {"start": "2026-11-02T10:30:00+04:00"})
     assert "participant" not in built.resource
+
+
+def test_a_utc_tenant_gets_a_plus_zero_offset_never_a_z():
+    """D22: a time carries its offset; `Z` is never written — a tenant left on `UTC` reads `+00:00`."""
+    built = encounter(stay(zone=timezone.utc), patient_id="7001", practitioner_ids=[], organization_id="ORG-0001")
+    assert built.resource["period"] == {"start": "2026-11-02T06:30:00+00:00", "end": "2026-11-06T11:00:00+00:00"}
+    observation = vitals(stay(zone=timezone.utc), patient_id="7001", encounter_id="7003")[0].resource
+    assert observation["effectiveDateTime"] == "2026-11-02T07:30:00+00:00"
+    assert instant(ADMITTED, timezone.utc) == "2026-11-02T06:30:00+00:00"
+    assert "Z" not in str(built.resource["period"]) + observation["effectiveDateTime"]
+
+
+class _NoOffset(tzinfo):
+    """A tzinfo that is attached but knows no offset: as naive as no tzinfo at all (Python's own rule)."""
+
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
+
+
+def test_a_time_with_no_zone_is_refused_not_read_as_the_servers_local_time():
+    for naive in (datetime(2026, 11, 2, 10, 30), datetime(2026, 11, 2, 10, 30, tzinfo=_NoOffset())):
+        with pytest.raises(ValueError) as refused:
+            instant(naive, BAKU)
+        assert str(refused.value) == INSTANT_NAIVE and "2026" not in str(refused.value)
+    assert instant(datetime(2026, 11, 2, 6, 30, tzinfo=timezone.utc), BAKU) == "2026-11-02T10:30:00+04:00"
+
+
+def test_a_stay_finished_with_no_discharge_time_is_skipped_not_sent_open_ended():
+    """A `finished` Encounter without `period.end` is a record that contradicts itself."""
+    skipped = encounter(stay(finished=True, discharged_at=None), patient_id="7001", practitioner_ids=[],
+                        organization_id="ORG-0001")
+    assert skipped == Skip("encounter", f"hmn-e-{ROOT}.", "discharge_missing")
+    assert skipped.reason == DISCHARGE_MISSING == "discharge_missing"
 
 
 def test_an_encounter_without_its_department_organization_or_zone_is_skipped():
@@ -213,6 +252,16 @@ def test_a_changed_loinc_code_is_the_same_resource_under_the_same_local_id(monke
 def test_no_readings_and_no_measurements_send_no_vitals():
     assert vitals(stay(readings=(), weight_kg=None, height_cm=None), patient_id="1", encounter_id="2") == []
     assert vitals(stay(zone=None), patient_id="1", encounter_id="2") == []
+
+
+@pytest.mark.parametrize("bad", [0, 0.0, -1.0, -72.5, float("inf"), float("-inf"), float("nan")])
+def test_a_weight_or_height_that_is_not_a_positive_finite_number_is_not_sent(bad):
+    """`inf` must never reach `valueQuantity`; zero and negative values are not measurements."""
+    assert vitals(stay(readings=(), weight_kg=bad, height_cm=bad), patient_id="1", encounter_id="2") == []
+    only_height = vitals(stay(readings=(), weight_kg=bad), patient_id="1", encounter_id="2")
+    assert [b.local_id for b in only_height] == [f"hmn-v-{ROOT}-height-first."]
+    only_weight = vitals(stay(readings=(), height_cm=bad), patient_id="1", encounter_id="2")
+    assert [b.local_id for b in only_weight] == [f"hmn-v-{ROOT}-weight-first."]
 
 
 def test_first_and_last_are_by_measurement_time_and_one_value_is_first_only():

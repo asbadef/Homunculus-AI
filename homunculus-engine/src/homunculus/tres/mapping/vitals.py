@@ -2,7 +2,8 @@
 """Observation · `az-observation`, vital signs (TRƏS-01, spec §5, D5, D10, D12).
 
 Per signal of the stay, its FIRST and its LAST hand-charted value (stay.first_and_last) — one value
-only → only `first` — then the admission's weight and height, each once, at the admission. Monitor
+only → only `first` — then the admission's weight and height, each once, at the admission (a value
+that is not a positive, finite number is not sent). Monitor
 samples are never sent (D10). Every code, display and unit is codes.py's, checked (D12); the
 systolic pressure goes alone under its own code, not as a panel: the diastolic is not charted.
 
@@ -12,6 +13,7 @@ display (plan F1: no reviewed local label exists); `subject` and `encounter` the
 `code` and `unit`."""
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from homunculus.tres import ids
@@ -55,7 +57,7 @@ def vitals(stay: Stay, *, patient_id: str, encounter_id: str) -> list[Built]:
             out.append(_observation(stay, signal, ids.LAST, last.value, last.at,
                                     patient_id=patient_id, encounter_id=encounter_id))
     for signal, value in ((WEIGHT, stay.weight_kg), (HEIGHT, stay.height_cm)):
-        if value is not None and value > 0:
+        if value is not None and math.isfinite(value) and value > 0:
             out.append(_observation(stay, signal, ids.FIRST, value, stay.admitted_at,
                                     patient_id=patient_id, encounter_id=encounter_id))
     return out

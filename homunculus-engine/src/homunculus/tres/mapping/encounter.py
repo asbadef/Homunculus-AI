@@ -4,7 +4,8 @@
 One stay, keyed by its chain's ROOT admission (ids.encounter): one Encounter across beds.
 
 * `status` `finished` once the chain's last admission is DISCHARGED, else `in-progress` (a stay
-  sent by hand while admitted, D9);
+  sent by hand while admitted, D9); a finished stay with no discharge time is skipped
+  `discharge_missing` — never a `finished` Encounter with no `period.end`;
 * `class` v3-ActCode `IMP` (codes.INPATIENT, checked); `type` `az:CodeSystem/encounter-type` `1`,
   without a display — none is in any source in hand (plan F1, O23);
 * `subject` the Patient's platform id; `period` from the root's admission to the last's
@@ -19,7 +20,9 @@ from __future__ import annotations
 
 from homunculus.tres import ids
 from homunculus.tres.codes import INPATIENT
-from homunculus.tres.mapping.common import CODE_SYSTEM, TIMEZONE_UNKNOWN, Built, Skip, base, instant, reference
+from homunculus.tres.mapping.common import (
+    CODE_SYSTEM, DISCHARGE_MISSING, TIMEZONE_UNKNOWN, Built, Skip, base, instant, reference,
+)
 from homunculus.tres.stay import Stay
 
 PROFILE = "az-encounter"
@@ -35,13 +38,15 @@ def encounter(stay: Stay, *, patient_id: str, practitioner_ids: list[str],
     local_id = ids.encounter(stay.root_id)
     if stay.zone is None:
         return Skip("encounter", local_id, TIMEZONE_UNKNOWN)
+    if stay.finished and stay.discharged_at is None:
+        return Skip("encounter", local_id, DISCHARGE_MISSING)
     if stay.department is None:
         return Skip("encounter", local_id, UNIT_UNMAPPED)
     organization = (organization_id or "").strip()
     if not organization:
         return Skip("encounter", local_id, ORGANIZATION_MISSING)
     period = {"start": instant(stay.admitted_at, stay.zone)}
-    if stay.finished and stay.discharged_at is not None:
+    if stay.finished:
         period["end"] = instant(stay.discharged_at, stay.zone)
     resource = base("Encounter", PROFILE, local_id)
     resource.update({
