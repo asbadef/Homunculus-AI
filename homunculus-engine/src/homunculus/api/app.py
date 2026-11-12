@@ -70,9 +70,9 @@ from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
     MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_HOURS, READING_TARGET_DISCHARGED, READING_UNMATCHED,
-    READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, RECORD_ROWS_MAX, UNKNOWN_POLICIES, InMemoryReadingStore,
-    Reading, ReadingStore, device_reading, device_source, manual_reading, patient_readings, reading_refusal,
-    readings_router,
+    READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, RECONCILE_WINDOW, RECORD_ROWS_MAX, UNKNOWN_POLICIES,
+    InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading, patient_readings,
+    reading_refusal, readings_router, reconcile,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -788,6 +788,34 @@ def create_app(
             await _prune_once()
             await asyncio.sleep(3600)
 
+    async def _reconcile_once() -> None:
+        """G3-05 (D7): one pass of `reconcile` — the audit rows of the last 48 hours written into the readings
+        table where it lacks them — for every hospital of this deployment: the device tokens' and any a request has
+        reached. A durable store is reconciled off the loop (the reads and writes are bounded database calls); a
+        store in memory on it, where the doors write. Never raises: a hospital that fails is logged and the others
+        still run; the next hour tries again."""
+        now = datetime.now(timezone.utc)
+        for hospital in sorted(set(tenants.values()) | set(engines)):
+            def one(hospital=hospital):
+                return reconcile(readings, audit, tenant=hospital, now=now, since=now - RECONCILE_WINDOW)
+            try:
+                counts = await asyncio.to_thread(one) if readings.durable else one()
+            except Exception as exc:
+                # The class only, never `log.exception`: a driver's text carries the number and the value.
+                log.error("vital_readings: reconcile başarısız (hastane %s, %s); bir saat sonra yeniden",
+                          hospital, type(exc).__name__)
+                continue
+            if any(counts.values()):
+                log.info("vital_readings: reconcile (hastane %s): %s", hospital,
+                         ", ".join(f"{name} {n}" for name, n in counts.items() if n))
+
+    async def _reconcile_loop() -> None:
+        """`_reconcile_once` at start-up, then hourly — for a durable store only: a store in memory holds what
+        this process's doors wrote and nothing a restart could have left behind."""
+        while True:
+            await _reconcile_once()
+            await asyncio.sleep(3600)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         freshness_started[0] = datetime.now(timezone.utc)   # G2-A2 (D5): the first cycle's `since`
@@ -804,6 +832,8 @@ def create_app(
         task = asyncio.create_task(_escalation_loop()) if run_escalation_loop else None
         prune = (asyncio.create_task(_prune_loop())                           # Aşama B (D8)
                  if samples.durable or shadow.rules else None)
+        reconciling = asyncio.create_task(_reconcile_loop()) if readings.durable else None      # G3-05 (D7)
+        app.state.reconcile_task = reconciling
         try:
             yield
         finally:
@@ -811,6 +841,8 @@ def create_app(
                 task.cancel()
             if prune is not None:
                 prune.cancel()
+            if reconciling is not None:
+                reconciling.cancel()
             if ldap_check is not None and not ldap_check.done():
                 ldap_check.cancel()
             # The stores' connection pools go back now rather than at the server's idle timeout
@@ -926,6 +958,8 @@ def create_app(
     app.state.tickets = tickets
     app.state.tasks = tasks                         # G3-02
     app.state.readings = readings                   # G3-05
+    app.state.reconcile_readings = _reconcile_once  # one pass of the hourly reconcile (the tests call it)
+    app.state.reconcile_task = None                 # the hourly pass, once the lifespan has started it
     app.state.ldap = ldap
     app.state.shadow_store = shadow_store
     app.state.shadow_ledger = shadow_ledger         # G4-01

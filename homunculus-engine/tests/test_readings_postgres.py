@@ -204,3 +204,128 @@ def test_times_come_back_in_utc(migrated):
         assert store.seen("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is True
     finally:
         store.close()
+
+
+def test_reconcile_files_voids_and_releases_on_the_real_table(migrated):
+    """G3-05 (D7): the audit → table pass against Postgres — the `ON CONFLICT DO NOTHING` insert, the batch
+    `have`, the conditional updates — and a second pass that does nothing."""
+    from homunculus.api.audit import AuditEvent, InMemoryAuditLog
+    from homunculus.api.clinical import RETRACT
+    from homunculus.api.readings import CLAIM_STALE, READING_UNMATCHED, STATE_UNMATCHED, reconcile
+    now = datetime.now(timezone.utc)
+    when = now - timedelta(minutes=30)
+    audit = InMemoryAuditLog()
+    device = audit.append(AuditEvent("h1", "ingest", KEY, "sbp", {"value": 88.0, "unit": "mmHg", "obs_ts": when.isoformat(), "device": "CONNEX-3A"}))
+    audit.append(AuditEvent("h1", "chart", KEY, "resp_rate", {"value": 16.0, "unit": "/min", "obs_ts": when.isoformat(), "charted_by": "hem.ayse"}))
+    audit.append(AuditEvent("h1", READING_UNMATCHED, "202600000010", "spo2", {"value": 97.0, "unit": "%", "obs_ts": when.isoformat(), "device": "CONNEX-3A", "reason": "unknown"}))
+    audit.append(AuditEvent("h1", RETRACT, KEY, "sbp", {"entry": device.id, "code": "sbp", "value": 88.0, "obs_ts": when.isoformat(),
+                                                        "reason": "manşet yanlış koldaydı", "retracted_by": "hem.ayse",
+                                                        "origin": "device", "device": "CONNEX-3A"}))
+    store = PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        counts = reconcile(store, audit, tenant="h1", now=now)
+        assert (counts["recorded"], counts["unmatched"], counts["voided"]) == (2, 1, 1)
+        rows = {r.code: r for r in store.for_patient("h1", KEY, since=when - timedelta(hours=1), until=now)}
+        assert rows["sbp"].void_reason == "manşet yanlış koldaydı" and rows["resp_rate"].recorded_by == "hem.ayse"
+        [waiting] = store.unmatched("h1", since=now - timedelta(days=7))
+        store.claim("h1", [waiting.id], by="hem.ayse", at=now - CLAIM_STALE - timedelta(minutes=1))
+        again = reconcile(store, audit, tenant="h1", now=now)
+        assert again == {**dict.fromkeys(again, 0), "released": 1}
+        assert store.get("h1", [waiting.id])[0].state == STATE_UNMATCHED
+        assert not any(reconcile(store, audit, tenant="h1", now=now).values())
+    finally:
+        store.close()
+
+
+def test_reconcile_reaches_every_copy_and_finishes_the_claims_on_the_real_table(migrated):
+    """G3-05 (D7, D12, D13) on the real table: the table's `ON CONFLICT` answers None for the twin of a reading it
+    holds (`skipped`, not a failure); a withdrawal naming one twin marks the row filed under the other — found by the
+    reading's key at its exact instant; a claim whose link wrote its `ingest` row is finalized from it and one whose
+    rejection was audited is closed — neither is released, though both are older than CLAIM_STALE."""
+    from homunculus.api.audit import AuditEvent, InMemoryAuditLog
+    from homunculus.api.clinical import RETRACT
+    from homunculus.api.readings import (
+        CLAIM_STALE, READING_REJECTED, READING_UNMATCHED, STATE_ASSIGNED, STATE_REJECTED, device_reading, reconcile,
+    )
+    from homunculus.canonical import Observation, SignalCode
+    now = datetime.now(timezone.utc)
+    when = now - timedelta(minutes=30)
+    audit = InMemoryAuditLog()
+    store = PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        sbp = {"value": 88.0, "unit": "mmHg", "obs_ts": when.isoformat(), "device": "CONNEX-3A"}
+        a = audit.append(AuditEvent("h1", "ingest", KEY, "sbp", sbp))
+        b = audit.append(AuditEvent("h1", "ingest", KEY, "sbp", sbp))                 # one reading written twice
+        held = Observation(patient_id=KEY, code=SignalCode("sbp"), value=88.0, unit="mmHg", timestamp=when,
+                           source_device="CONNEX-3A")
+        store.add(device_reading("h1", held, received_at=now, audit_id=b.id))        # the table's one row: B's
+        gone = audit.append(AuditEvent("h1", RETRACT, KEY, "sbp", {
+            "entry": a.id, "code": "sbp", "value": 88.0, "obs_ts": when.isoformat(), "reason": "manşet yanlış koldaydı",
+            "retracted_by": "hem.ayse", "origin": "device", "device": "CONNEX-3A"}))
+        for code, value in (("spo2", 97.0), ("heart_rate", 88.0)):
+            audit.append(AuditEvent("h1", READING_UNMATCHED, "202600000010", code, {
+                "value": value, "unit": "%", "obs_ts": when.isoformat(), "device": "CONNEX-3A", "reason": "unknown"}))
+        first = reconcile(store, audit, tenant="h1", now=now)
+        assert (first["recorded"], first["unmatched"], first["voided"], first["skipped"]) == (0, 2, 1, 1)
+        [row] = store.for_patient("h1", KEY, since=when, until=when)
+        assert (row.entry_id, row.voided_by, row.void_reason) == (b.id, "hem.ayse", "manşet yanlış koldaydı")
+        assert row.voided_at == datetime.fromisoformat(gone.ts)
+        spo2, heart = sorted(store.unmatched("h1", since=now - timedelta(days=7)), key=lambda r: r.code, reverse=True)
+        old = now - CLAIM_STALE - timedelta(hours=1)
+        store.claim("h1", [spo2.id, heart.id], by="hem.ayse", at=old)
+        link = audit.append(AuditEvent("h1", "ingest", KEY, "spo2", {
+            "value": 97.0, "unit": "%", "obs_ts": when.isoformat(), "device": "CONNEX-3A", "reading": spo2.id,
+            "actor": "hem.ayse"}))
+        audit.append(AuditEvent("h1", READING_REJECTED, "202600000010", "reading", {
+            "readings": [heart.id], "received_key": "202600000010", "device": "CONNEX-3A", "obs_ts": when.isoformat(),
+            "reason": "yanlış numara girilmiş", "actor": "hem.ayse"}))
+        second = reconcile(store, audit, tenant="h1", now=now)
+        assert (second["finalized"], second["rejected"], second["released"]) == (1, 1, 0)
+        linked, closed = store.get("h1", [spo2.id])[0], store.get("h1", [heart.id])[0]
+        assert (linked.state, linked.patient_key, linked.entry_id, linked.resolved_by) == (STATE_ASSIGNED, KEY, link.id, "hem.ayse")
+        assert (closed.state, closed.patient_key, closed.resolve_reason, closed.resolved_by) == (
+            STATE_REJECTED, None, "yanlış numara girilmiş", "hem.ayse")
+        assert store.claims("h1") == []
+        third = reconcile(store, audit, tenant="h1", now=now)
+        assert third == {**dict.fromkeys(third, 0), "skipped": 1}                    # the twin: present, every pass
+    finally:
+        store.close()
+
+
+def test_the_backfill_files_an_open_stays_readings_on_the_real_tables(migrated, capsys):
+    """G3-05 (D19, E-11) on the real tables: `open_stays` answers the stay's start from `admissions`, the audit is
+    read from the real `audit` table with no 48-hour bound, only the readings measured since the stay began are
+    filed — stamped with the admission — and a second run files nothing."""
+    import importlib.util
+    import json
+    from homunculus.api.audit import AuditEvent
+    from homunculus.api.audit_postgres import PostgresAuditLog
+    from tests.conftest import ENGINE_ROOT
+    spec = importlib.util.spec_from_file_location("backfill_vital_readings", ENGINE_ROOT / "scripts" / "backfill_vital_readings.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    with migrated.begin() as conn:
+        tenant = _tenant(conn, "h1")
+        admission = _admission(conn, tenant, _patient(conn, tenant, "H-0000001"), "ACTIVE", protocol=KEY, hours_ago=5)
+    now = datetime.now(timezone.utc)
+    audit, store = PostgresAuditLog(TEST_DATABASE_URL), PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        def ingest(key, at, value):
+            audit.append(AuditEvent("h1", "ingest", key, "spo2", {"value": value, "unit": "%", "obs_ts": at.isoformat(),
+                                                                  "device": "CONNEX-3A"}))
+        ingest(KEY, now - timedelta(days=3), 95.0)                       # an earlier stay under the same key
+        ingest(KEY, now - timedelta(hours=2), 97.0)                      # this stay
+        ingest("202600000002", now - timedelta(hours=2), 96.0)           # not an open stay
+        assert script.run(["--tenant", "h1", "--open-only", "--dry-run"], audit=audit, store=store) == 0
+        dry = json.loads(capsys.readouterr().out.split(" ", 1)[1])
+        assert (dry["stays"], dry["recorded"], dry["dry_run"]) == (1, 1, True)
+        assert store.for_patient("h1", KEY, since=now - timedelta(days=4), until=now) == []
+        assert script.run(["--tenant", "h1", "--open-only"], audit=audit, store=store) == 0
+        assert json.loads(capsys.readouterr().out.split(" ", 1)[1])["recorded"] == 1
+        [row] = store.for_patient("h1", KEY, since=now - timedelta(days=4), until=now)
+        assert (row.value, row.admission_id) == (97.0, admission)
+        assert script.run(["--tenant", "h1", "--open-only"], audit=audit, store=store) == 0
+        assert json.loads(capsys.readouterr().out.split(" ", 1)[1])["recorded"] == 0
+    finally:
+        audit.dispose()
+        store.close()

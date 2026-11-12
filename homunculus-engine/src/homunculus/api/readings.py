@@ -8,12 +8,13 @@ its value: an authorised person links it to the right admission or rejects it.
 
 THE AUDIT TRAIL STAYS THE SOURCE OF TRUTH (spec D7). The engine, the restart's replay and «who did what» read the
 audit; this table is its projection, written after the audit row, and every row can be derived again from audit
-rows (`reconcile`, Task B10). The table exists for what the audit cannot answer cheaply: «this stay's
-measurements, with their source», and «which readings wait for a patient».
+rows (`reconcile`, at the end of this file). The table exists for what the audit cannot answer cheaply: «this
+stay's measurements, with their source», and «which readings wait for a patient».
 
-This file: the row, the store protocol and the in-memory store (Task B1). The Postgres store is
-`api/readings_postgres.py`. No name, no free text but the two reasons a person typed (≤ 200 characters): a
-patient is the board's number, as in the audit."""
+This file: the row, the store protocol and the in-memory store, the doors' row builders, the list's and the record's
+answers, the unmatched list's router, and `reconcile`. The Postgres store is `api/readings_postgres.py`. No
+name, no free text but the two reasons a person typed (≤ 200 characters): a patient is the board's number, as in
+the audit."""
 from __future__ import annotations
 
 import logging
@@ -24,8 +25,8 @@ from typing import Protocol
 
 from fastapi import APIRouter, Body, Header, HTTPException
 
-from homunculus.api.audit import AuditEvent, AuditLog
-from homunculus.api.clinical import FLUID_CODES, RETRACTABLE_CODES
+from homunculus.api.audit import AuditEvent, AuditLog, AuditRecord
+from homunculus.api.clinical import FLUID_CODES, RETRACT, RETRACTABLE_CODES
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import is_tombstone
 from homunculus.auth.permissions import validate_permissions
@@ -83,6 +84,12 @@ SET_MAX = 50
 #: The windows GET /patients/{id}/readings accepts (spec D16): 24 hours, 72 hours, 7 days. Any other is refused
 #: with the code READING_HOURS (below, with the list's codes; the dashboard maps it, apiErrors.js).
 READINGS_HOURS = (24, 72, 168)
+#: D7: `reconcile` runs at start and hourly over the audit rows written in this window, a page at a time.
+RECONCILE_WINDOW = timedelta(hours=48)
+RECONCILE_PAGE = 1000
+#: D12: a claim this old with nothing in the trail to finish it is an orphan — the request that made it died —
+#: and goes back to the list. A link or a rejection in work holds its claim for less than a request's time.
+CLAIM_STALE = timedelta(minutes=10)
 #: D16: a set whose arrival is later than its measurement by more than this says «alındı» with the arrival time
 #: — a buffered device round, a reading linked from the list. A display rule, decided here so that the browser
 #: compares no two times itself.
@@ -724,3 +731,196 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         return {"rejected": ids}
 
     return router
+
+
+# ----------------------------------------------------------------------------- reconcile: audit → table
+
+_RECONCILE_EVENTS = frozenset({"ingest", "chart", RETRACT, READING_UNMATCHED, READING_REJECTED})
+#: The audit rows a table row is filed FROM: the rows whose own id is the row's `audit_id`.
+_FILED_FROM = ("ingest", "chart", READING_UNMATCHED)
+_COUNTS = ("recorded", "unmatched", "voided", "finalized", "rejected", "released", "skipped")
+#: The table's person columns (`recorded_by`, `resolved_by`, `voided_by`) are 128 characters (migration 0021).
+_PERSON_MAX = 128
+
+
+def _instant(raw) -> datetime | None:
+    """An ISO instant that carries a zone, or None."""
+    try:
+        at = datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
+    return at if at.tzinfo is not None and at.utcoffset() is not None else None
+
+
+def _observation_of_row(rec: AuditRecord, patient_id: str | None = None) -> Observation | None:
+    """The observation an `ingest`, `chart` or `reading_unmatched` row recorded, as the door built it — or None
+    for a row that cannot be read (an unknown code, a value that is no number, a time with no zone)."""
+    payload = rec.payload
+    at = _instant(payload.get("obs_ts"))
+    value = payload.get("value")
+    try:
+        code = SignalCode(rec.subject)
+    except ValueError:
+        return None
+    if at is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    source = "clinician" if rec.event_type == "chart" else str(payload.get("device") or "")
+    return Observation(patient_id=patient_id or rec.patient_id, code=code, value=number,
+                       unit=str(payload.get("unit") or ""), timestamp=at, source_device=source)
+
+
+def _withdrawn_entries(store: ReadingStore, tenant: str, rec: AuditRecord) -> list[int]:
+    """The `entry_id`s whose table rows a `chart_retract` row takes out of the record. The entry it names — and,
+    for a DEVICE reading, every other row of the table that is the same reading (D13): the route withdraws every
+    copy, so the mark must reach a twin the withdrawal does not name (one reading written to the trail twice, or a
+    direct row and a linked one of the same reading, each under its own `ingest` row). They are found by the
+    reading's key — `rehydrate.withdrawal_key`, the very key the replay and the route use — through the table's
+    own `device_identity`. A hand entry's withdrawal names its row alone."""
+    # Imported here: `rehydrate` imports this module (for SOURCE_MAX), so a top-level import would be circular.
+    from homunculus.api.rehydrate import withdrawal_key
+    entries: set[int] = set()
+    entry = rec.payload.get("entry")
+    if isinstance(entry, int) and not isinstance(entry, bool):
+        entries.add(entry)
+    key = withdrawal_key(rec)
+    at = key[2] if key is not None else None
+    if isinstance(at, datetime) and at.tzinfo is not None and at.utcoffset() is not None:
+        for row in store.for_patient(tenant, rec.patient_id, since=at, until=at):
+            if (row.origin == ORIGIN_DEVICE and row.voided_at is None and row.entry_id is not None
+                    and device_identity(row) == key):
+                entries.add(row.entry_id)
+    return sorted(entries)
+
+
+def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetime, since: datetime | None = None,
+              stays: dict[str, datetime] | None = None, dry_run: bool = False) -> dict[str, int]:
+    """The audit trail, written into the table where the table lacks it (spec D7). Idempotent: every write is
+    conditional, so it runs at every start and every hour, and a second run does nothing.
+
+    What it files, from the rows of the trail in id order:
+    * an `ingest` row, or a `chart` row of the bedside codes (`MANUAL_CODES`) → the `recorded` row with that
+      `audit_id`, stamped with the stay by the store's rule (`admission_of`: an open admission of the key, so a HIS-fed
+      number has none); a `reading_unmatched` row → the `unmatched` row (the door answers 200 when its own add
+      fails, so this is the only repair of that row). Built with the doors' own builders, so the widths agree.
+    * a `chart_retract` row → the mark on the row of the entry it names — and, for a device reading, on every row
+      of the same reading (`_withdrawn_entries`).
+    * an `ingest` row naming a `reading` (a link) → the link finished (`finalize`) when that reading is still a
+      claim: the person is the claim's own, and the row is never filed as a second reading.
+    * a `reading_rejected` row → the rejection finished (`reject`) for the claims it names, never released.
+    * a claim older than CLAIM_STALE with none of those → `release` (the request that made it died).
+    A table that already holds a row (`add` answers None: the same `audit_id`, or D14's device tuple — the twin of
+    a reading written to the trail twice) has it «present»: counted under `skipped`, not an error. Rows closed as
+    `rejected` with RESOLVE_ALREADY_HELD, and any other closed row, are never touched: only claims are finished.
+
+    `since` bounds the audit rows read by when they were WRITTEN (None: every row — the backfill). A claim older
+    than `since` pulls the bound back to its own time: the `ingest` or `reading_rejected` row that finishes it was
+    written after it, and a claim released for want of a row the pass did not read would be linked a second time.
+    `stays`, when given (the backfill, D19), keeps the run to those card keys and, for each, to the readings
+    measured since its stay began; the unmatched list and the claims are then left alone — they are nobody's
+    stay. `dry_run` counts what a run would add or finish and writes nothing; a mark (`voided`) and a release are
+    not predicted in a dry run, since they need the rows they touch, and a twin `add` would turn away is counted.
+
+    It answers what it did: `recorded` / `unmatched` rows added, entries `voided`, links `finalized`, claims
+    `rejected`, orphaned claims `released`, and audit rows it passed over (`skipped`: one that cannot be read,
+    or one the table holds already)."""
+    counts = dict.fromkeys(_COUNTS, 0)
+    whole = stays is None
+    claim_rows = store.claims(tenant) if whole else []
+    claims = {r.id for r in claim_rows}
+    lower = since
+    oldest = min((r.resolved_at for r in claim_rows if r.resolved_at is not None), default=None)
+    if since is not None and oldest is not None and oldest < since:
+        lower = oldest
+    admissions: dict[str, str | None] = {}
+
+    def admission_of(key: str) -> str | None:
+        if key not in admissions:
+            admissions[key] = store.admission_of(tenant, key)
+        return admissions[key]
+
+    def wanted(rec: AuditRecord, obs: Observation) -> bool:
+        return whole or (rec.patient_id in stays and obs.timestamp >= stays[rec.patient_id])
+
+    after: int | None = None
+    while True:
+        page = audit.records(tenant=tenant, event_types=_RECONCILE_EVENTS, since=lower, limit=RECONCILE_PAGE,
+                             after_id=after)
+        have = store.have(tenant, [rec.id for rec in page if rec.event_type in _FILED_FROM])
+        for rec in page:
+            kind = rec.event_type
+            if kind == RETRACT:
+                at = _instant(rec.ts)
+                if dry_run or at is None or not (whole or rec.patient_id in stays):
+                    continue
+                by = str(rec.payload.get("retracted_by") or "")[:_PERSON_MAX]
+                why = str(rec.payload.get("reason") or "")[:REJECT_MAX_REASON_CHARS]
+                for entry in _withdrawn_entries(store, tenant, rec):
+                    if store.void(tenant, entry, by=by, at=at, reason=why):
+                        counts["voided"] += 1
+                continue
+            if kind == READING_REJECTED:
+                named = rec.payload.get("readings")
+                ids = [i for i in named if isinstance(i, int) and i in claims] if isinstance(named, list) else []
+                if ids:
+                    if not dry_run:
+                        store.reject(tenant, ids, reason=str(rec.payload.get("reason") or "")[:REJECT_MAX_REASON_CHARS])
+                    claims.difference_update(ids)
+                    counts["rejected"] += len(ids)
+                continue
+            if kind == "chart" and rec.subject not in MANUAL_CODES:
+                continue
+            if kind == READING_UNMATCHED and not whole:
+                continue
+            linked = rec.payload.get("reading") if kind == "ingest" else None
+            if isinstance(linked, int) and not isinstance(linked, bool):
+                # A linked reading's own `ingest` row: the table's row is the unmatched one, never a second row.
+                if linked in claims:
+                    if not dry_run:
+                        store.finalize(tenant, linked, patient_key=rec.patient_id,
+                                       admission_id=admission_of(rec.patient_id), entry_id=rec.id)
+                    claims.discard(linked)
+                    counts["finalized"] += 1
+                continue
+            if rec.id in have:
+                continue
+            obs = _observation_of_row(rec)
+            received_at = _instant(rec.ts)
+            if obs is None or received_at is None:
+                counts["skipped"] += 1
+                continue
+            if not wanted(rec, obs):
+                continue
+            if kind == READING_UNMATCHED:
+                reason = rec.payload.get("reason")
+                row = device_reading(tenant, obs, received_at=received_at, audit_id=rec.id,
+                                     reason=reason if reason in (REASON_UNKNOWN, REASON_DISCHARGED) else REASON_UNKNOWN)
+                label = "unmatched"
+            elif kind == "ingest":
+                row = replace(device_reading(tenant, obs, received_at=received_at, audit_id=rec.id),
+                              admission_id=admission_of(rec.patient_id))
+                label = "recorded"
+            else:
+                row = replace(manual_reading(tenant, obs, received_at=received_at, entry_id=rec.id,
+                                             recorded_by=str(rec.payload.get("charted_by") or "")[:_PERSON_MAX]),
+                              admission_id=admission_of(rec.patient_id))
+                label = "recorded"
+            if dry_run or store.add(row) is not None:
+                counts[label] += 1
+            else:
+                counts["skipped"] += 1               # the table holds it already (D14's tuple): present, not a failure
+        if len(page) < RECONCILE_PAGE:
+            break
+        after = page[-1].id
+    if whole and not dry_run:
+        stale = [r.id for r in store.claims(tenant)
+                 if r.id in claims and r.resolved_at is not None and now - r.resolved_at > CLAIM_STALE]
+        if stale:
+            store.release(tenant, stale)
+            counts["released"] += len(stale)
+    return counts
