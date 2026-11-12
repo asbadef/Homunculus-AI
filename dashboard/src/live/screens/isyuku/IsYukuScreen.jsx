@@ -133,6 +133,7 @@ function NursesBox({ t, page, onSelect }) {
     body = (
       <>
         <p className="m-0 text-12 font-semibold">{t("isyuku.nurses.note")}</p>
+        {page.partial ? <p className="m-0 text-12 text-mute" data-partial>{t("isyuku.nurses.partial")}</p> : null}
         {page.cards.length === 0 ? <p className="m-0 text-13 text-mute">{t("isyuku.nurses.none")}</p> : (
           <ul className="m-0 flex list-none flex-wrap gap-2.5 p-0">
             {page.cards.map((card) => <NurseCard key={card.key} t={t} card={card} />)}

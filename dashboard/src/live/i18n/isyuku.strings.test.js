@@ -58,6 +58,12 @@ describe("the workload page's words (isyuku)", () => {
     for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["isyuku.why.noNurse"], lang).toBe(noNurse[lang]);
   });
 
+  // G4-04 review 2: the cards under «Tüm birimler» with a unit she cannot see.
+  it("says the cards leave out the units she cannot see", () => {
+    expect(DICTIONARIES.tr["isyuku.nurses.partial"]).toBe("Görülemeyen birimler dahil değil");
+    for (const lang of LANG_CODES) expect(DICTIONARIES[lang]["isyuku.nurses.partial"], lang).toBeTruthy();
+  });
+
   it("names the unit in the nurse cards' and the form's titles, in every language", () => {
     for (const lang of LANG_CODES) {
       for (const key of ["isyuku.nurses.title", "isyuku.form.title"]) {

@@ -175,15 +175,18 @@ function openUnitsOf(tree) {
  *  or a listed unit's key — one the rows no longer hold falls back to ALL; `lang`: the cards' collation.
  *
  *  { shift: {startMs, endMs, which} | null, shiftWhy, rows: [{key, id, name, beds, listed, items, cells}] | null, why,
- *    otherRows, selected, choices: [row], cards: [{key, label, beds, patients, tasks}] | null, cardsWhy,
- *    unassigned: {beds: [name]} | {why} | null } */
+ *    otherRows, selected, choices: [row], partial, cards: [{key, label, beds, patients, tasks}] | null, cardsWhy,
+ *    unassigned: {beds: [name]} | {why} | null }
+ *  `cards` null with «yetki yok» when the answer lists none of the open units; `partial`: «Tüm birimler» while the
+ *  answer leaves out an open unit — the cards and the unassigned beds are the listed units' only. */
 export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedule, tasks, board }, { selected = ALL, lang } = {}) {
   const shift = schedule.ok ? { startMs: msOf(schedule.data.shift.start), endMs: msOf(schedule.data.shift.end),
     which: schedule.data.shift.which } : null;
   const head = { shift, shiftWhy: schedule.ok ? null : schedule.why };
   if (!tree) {
     const why = occupancy.ok ? WHY.loading : occupancy.why;
-    return { ...head, rows: null, why, otherRows: false, selected: ALL, choices: [], cards: null, cardsWhy: why, unassigned: null };
+    return { ...head, rows: null, why, otherRows: false, selected: ALL, choices: [], partial: false, cards: null, cardsWhy: why,
+      unassigned: null };
   }
 
   // The units the GET lists, each with its rows by bed.
@@ -242,8 +245,13 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
   const choices = rows.filter((row) => row.listed);
   const pick = selected !== ALL && choices.some((row) => row.key === selected) ? selected : ALL;
   const otherRows = [...listed.values()].some((unit) => unit.otherRows > 0);
-  const page = { ...head, rows, why: null, otherRows, selected: pick, choices };
+  const page = { ...head, rows, why: null, otherRows, selected: pick, choices, partial: false };
   if (!schedule.ok) return { ...page, cards: null, cardsWhy: schedule.why, unassigned: null };
+  // An answer that lists none of the open units (a bed-only grant; `structure.manage` without a unit grant) is no
+  // answer about any nurse or bed here: «yetki yok», never «none» (§5 A6, review 2).
+  if (choices.length === 0) return { ...page, cards: null, cardsWhy: WHY.noRight, unassigned: { why: WHY.noRight } };
+  // «Tüm birimler» with a unit the answer leaves out: the cards and the unassigned beds cover the listed ones only.
+  const partial = pick === ALL && rows.some((row) => !row.listed);
 
   const shown = choices.filter((row) => pick === ALL || row.key === pick);
   const byNurse = new Map();
@@ -265,7 +273,7 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
     ? { beds: shown.flatMap((row) => row.beds.filter((bed) => bed.occupied && !row.items.some((i) => i.bed.key === bed.key))
       .map((bed) => bed.label)) }
     : { why: occupancy.why };
-  return { ...page, cards, cardsWhy: null, unassigned };
+  return { ...page, partial, cards, cardsWhy: null, unassigned };
 }
 
 /** «Nöbet ataması»'s model for one row (a listed unit) from the form's own reads — `schedule` (GET for that unit and

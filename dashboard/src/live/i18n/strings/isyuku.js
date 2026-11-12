@@ -38,6 +38,7 @@ export default {
     nurses: {
       title: "Hemşireler · {unit}",
       note: "Alfabetik; sıralama değildir",
+      partial: "Görülemeyen birimler dahil değil",
       beds: "Yataklar", patients: "Hasta", tasks: "Kalan iş",
       none: "Bu seçimde bu nöbet için atama yok.",
       unassigned: "Atanmamış",
@@ -95,6 +96,7 @@ export default {
     nurses: {
       title: "Tibb bacıları · {unit}",
       note: "Əlifba sırası ilə; reytinq deyil",
+      partial: "Görünməyən şöbələr daxil deyil",
       beds: "Çarpayılar", patients: "Xəstə", tasks: "Qalan iş",
       none: "Bu seçimdə bu növbə üçün təyinat yoxdur.",
       unassigned: "Təyinatsız",
@@ -152,6 +154,7 @@ export default {
     nurses: {
       title: "Медсёстры · {unit}",
       note: "По алфавиту; это не рейтинг",
+      partial: "Недоступные вам отделения не включены",
       beds: "Койки", patients: "Пациенты", tasks: "Осталось задач",
       none: "В этом выборе на эту смену назначений нет.",
       unassigned: "Без медсестры",
@@ -209,6 +212,7 @@ export default {
     nurses: {
       title: "Nurses · {unit}",
       note: "Alphabetical; not a ranking",
+      partial: "Units you cannot see are not included",
       beds: "Beds", patients: "Patients", tasks: "Remaining work",
       none: "No assignment for this shift in this selection.",
       unassigned: "Unassigned",

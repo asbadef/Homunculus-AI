@@ -187,6 +187,21 @@ describe("the nurse cards (§5 A5, A11, A13)", () => {
     expect(page({}, { selected: "a unit the rows do not hold" }).selected).toBe(ALL);
   });
 
+  // Review 2 (§5 A6): an answer that lists no unit is no answer about any card or bed — «yetki yok», never «none».
+  it("says «yetki yok» for the cards and the unassigned beds when the answer lists no unit", () => {
+    const p = page({ schedule: okSource(schedule({ units: [] })) });
+    expect([p.cards, p.cardsWhy, p.unassigned, p.partial]).toEqual([null, WHY.noRight, { why: WHY.noRight }, false]);
+    expect(cellsOf(p).Reanimasiya.patients).toEqual({ value: 4 });       // the table still counts what the tree says
+  });
+
+  it("says the cards cover only the listed units when «Tüm birimler» leaves some out", () => {
+    expect(page().partial).toBe(false);
+    const s = okSource(schedule({ units: [schedule().units[1]] }));     // Neonatal not listed
+    expect(page({ schedule: s }).partial).toBe(true);
+    expect(page({ schedule: s }, { selected: REA.toLowerCase() }).partial).toBe(false);
+    expect(page({ schedule: noSource(WHY.failed) }).partial).toBe(false);
+  });
+
   it("tells two of one name apart by their user names, and sorts in the reader's language", () => {
     expect(labelled([{ key: "1", name: "Leyla", username: "leyla.a" }, { key: "2", name: "Leyla", username: "leyla.b" },
       { key: "3", name: "Aysel", username: "aysel" }]).map((p) => p.label)).toEqual(["Leyla (leyla.a)", "Leyla (leyla.b)", "Aysel"]);

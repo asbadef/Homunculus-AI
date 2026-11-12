@@ -115,6 +115,25 @@ describe("the workload page", () => {
     act(() => { board.clear(); });
   });
 
+  // Review 2: no unit listed is no answer about the cards or the beds; «Bütün şöbələr» with some unlisted says so.
+  it("says «səlahiyyət yoxdur» for the cards when the answer lists no unit, never «yoxdur»", async () => {
+    const { board } = await mountIsYuku({ setup: (api) => api.shiftSchedule.mockResolvedValue(schedule({ units: [] })) });
+    expect(nursesBox()).toHaveTextContent("Tibb bacısı kartları yazıla bilmir · səlahiyyət yoxdur");
+    expect(nursesBox().textContent).not.toMatch(/Təyinatsız xəstə yoxdur|təyinat yoxdur\./);
+    expect(nursesBox().querySelector("[data-unassigned]")).toBeNull();
+    act(() => { board.clear(); });
+  });
+
+  it("says the cards leave out the units she cannot see, under «Bütün şöbələr» only", async () => {
+    const onlyRea = schedule({ units: [schedule().units[1]] });
+    const { board } = await mountIsYuku({ setup: (api) => api.shiftSchedule.mockImplementation((shift = "current", unitId = null) =>
+      Promise.resolve(unitId ? unitSchedule(shift, unitId) : onlyRea)) });
+    expect(nursesBox()).toHaveTextContent("Görünməyən şöbələr daxil deyil");
+    await pick("Reanimasiya");
+    expect(nursesBox().textContent).not.toContain("Görünməyən şöbələr daxil deyil");
+    act(() => { board.clear(); });
+  });
+
   it("says when the shift hours changed meanwhile", async () => {
     const changed = schedule();
     changed.units[1].other_rows = 2;
