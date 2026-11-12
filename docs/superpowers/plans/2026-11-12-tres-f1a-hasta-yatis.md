@@ -34,6 +34,7 @@
 21. **§9, N6 — the stand-in checks each profile** by `meta.profile[0]`, not by FHIR type (a vital sign and a laboratory result are both Observations): the elements spec §5, D16, D17, D20 and FHIR R4 itself require, and the values a profile fixes. F0's tests of §4 now send `fake_tres.UNCHECKED_PROFILE`, a profile the stand-in holds no rules for.
 22. **§7 — nginx's access log.** The routes with a path parameter (`/admin/tres/practitioners/{user_id}`, `/admin/tres/admissions/{admission_id}/preview|send`, `/admin/tres/deliveries/{delivery_id}/retry`) join `deploy/local/web/nginx.conf`'s `map $uri $homunculus_log_uri` (G2-B1d O10's drift guard, `tests/test_access_log_redaction.py`), and their prefixes the map's catch-all: an id never reaches the log. `GET /admin/tres/admissions?key=` carries the protocol number in the query string, which that log format never writes.
 23. **Batch-1 review (2026-11-12) — the pure layer (Tasks 1–3) after an independent review; the files and the code blocks of Tasks 1–3 below carry it.** (1) `az.normal_fin` refuses a value that is not ASCII BEFORE `upper()`: `ß`→`SS`, `ﬀ`→`FF`, `ſ`→`S`, `ı`→`I` are transliteration, which D20 forbids. (2) `az.phone` takes ASCII digits only (`\d` let Arabic-Indic and full-width digits into the value sent). (3) `stay.readings_of` counts a `chart_retract`'s `entry` only as an `int` that is not a `bool` (the engine's own guard, `api/rehydrate.py` `retracted_entries`): `True` and `1.0` had withdrawn row 1, `[1]` had raised; drift tests hold `stay.RETRACT` to `api/clinical.py` and run the real `/clinical` door so a renamed `chart` row cannot silently empty the readings. (5) A `chart` row whose `charted_by` is `stay.DEVICE_CHARTER` (`tenant-token`, what `api/app.py` writes when the bridge's token charts) is skipped: D10 sends hand-charted values, and a device's sample is unverified (a test reads `app.py`'s literal). (6) A vital sign's local id is keyed by the signal's stable `id_key`, not by its LOINC code — `hmn-v-{root admission id}-{key}-{first|last}.` with `heart-rate`, `resp-rate`, `spo2`, `temperature`, `sbp`, `map`, `weight`, `height` — because a sent local id never changes (amendment 1) and SpO2's code is the ministry's open question (O7: `2708-6` now, maybe `59408-5`): a code change must become a PUT of the same resource, not a second record; `ids.vital` validates the key. (7) `ids.patient` normalises the FİN through `az.normal_fin` itself (`ab12c3d` and `AB12C3D` are one id) and raises a `ValueError` with a constant message, never the FİN, when it is unusable. (8) `mapping.common.instant` raises on a time with no zone instead of reading it as the server's local time. (9) A weight or height must be finite as well as positive (`inf` never reaches `valueQuantity`). (10) A `finished` stay without a `discharge_at` is skipped with the new catalogue reason `discharge_missing` (`mapping/common.py`, beside `timezone_unknown`) rather than sent as a `finished` Encounter without `period.end`; its dashboard words come with F1b. (11) `Person`'s and `Clinician`'s identity fields are `repr=False`. NOT changed, on purpose: a reading timed before the stay's `admitted_at` or after its `discharged_at` is sent as charted, with no clamping or filtering (O27).
+24. **Batch-2 review (2026-11-12) — Tasks 4–7 after an independent review; the files carry it (Tasks 4–7 are implemented: their code blocks below keep the first cut), and Tasks 10, 12 and 13 below follow the files.** (1) **I1 — O19's down-and-up from F0's cut.** `0020_tres.py`'s `downgrade()` drops every object `IF EXISTS` (`op.drop_table` and `op.drop_index` with `if_exists=True`; the settings' `send_from` and `retried_at` go with their table): F0's cut of the file has neither of F1's tables nor those columns, and a plain `DROP` stopped on the first. Tested from two hand-made earlier cuts, down to 0019 and up again. (2) **M1 — `egress.live_closed` fails closed.** An address it cannot read — httpx refuses it, or it parses to no host (`not a url`, `https://`, no scheme) — counts as the live platform, and the host is judged without a trailing dot (`https://ehr.e-health.gov.az.` is the live host); no address at all (None, empty) is still not closed (the account is incomplete; nothing to reach). Why: this lock must hold whatever the install says. The settings save already judges the URL first (Task 10's check stands after the loop over both accounts), so a base URL that cannot be read still answers `tres_base_url`, never `tres_live_closed`; a test holds the order. (3) **M10 — the live lock inside the client factory, closed by default.** `egress.open_client(…, patient_data=True)` raises `TresLiveClosed` (a `TresEgressRefused`; code `tres_live_closed`, no URL and no account in it) before any client is built for an address on a live host; the connection test alone passes `patient_data=False` (the app's factory takes the keyword; a stand-in factory used for the connection test accepts `**_`). The rounds' and the hand routes' own `live_closed` check stays: it also judges the environment, which the factory cannot see (`TresAccount` carries none). Why: F2–F6 add sending paths (deletes in F6); one that forgets its own check still cannot reach the live host. Every `open_client` call that carries patient data keeps the default (the rounds, Task 12's `_hand`); Task 12's block needs a comment only. (4) **M2 — `worker.park(…, version=None)` parks nothing** (False, logged «not parked», the database untouched): the N15 race cannot come back through a careless caller. (5) **M3 — the lock timeout bounds only taking the row.** `ledger._row` runs `SET LOCAL lock_timeout TO DEFAULT` once the row is held, so the write after the HTTP calls is not under the 2-second bound. (6) **M4 — `forget_skip` (and `Sender.forget_skip`) are under the same hand lock timeout**; `LedgerBusy` on timeout. (7) **M5, M6, M8 — tests, wording, docstrings.** Both maps cascade from the tenant (the models, and the migration's constraints), the existing row is unchanged after `LedgerBusy`, `lock_timeout` is the default after the row and after the commit; «two tables» became four, `RoundReport.refused` names `tres_live_closed`, E302; `ledger.deliver`, `record_skip` and the `Sender` say that `LedgerBusy` rolls back the caller's whole session transaction (a caller holds no pending write it wants to keep). (8) **D16's practitioner identity is keyed (tenant, user)**, not per user as the spec's D16 text says — right for a multi-tenant engine; recorded here so spec §14 carries it (F1b, Task 21). Counts: this amendment's tests are +18 passed / +9 skipped in the no-DB engine suite (egress +17 and worker +1 passed; ledger +2, models +1, migration +4, settings +1, worker +1 skipped); Task 10 adds one more test (+1 passed). The gates below carry them.
 
 **The codes, checked (D12).** Source: the HL7 terminology server, `https://tx.fhir.org/r4` `CodeSystem/$lookup` (LOINC 2.83, UCUM 2.2 as served there). Checked 2026-11-12. Every LOINC code's STATUS is ACTIVE; its display is LOINC's LONG_COMMON_NAME.
 
@@ -61,7 +62,7 @@ Also checked there the same day: `http://terminology.hl7.org/CodeSystem/observat
 
 **Gates (measured when the plan is carried out — every `…` replaced by the number seen):**
 - Baseline (Task 0, head `485dcf4f` = `f74b474a` + this plan): engine 4199 passed / 1428 skipped (no-DB); dashboard 166 files / 4481 tests.
-- After F1a (Task 13): engine … passed / … skipped (no-DB; expected baseline +125 passed / +36 skipped: +79 as first planned, +46 from amendment 23's tests of Tasks 1–3); Postgres per file (Task 13, Step 3) …; dashboard … files / … tests (expected the baseline's file count, the test count unchanged — F1a changes assertions, not tests); head `<sha>`.
+- After F1a (Task 13): engine … passed / … skipped (no-DB; expected baseline +144 passed / +45 skipped: +79 as first planned, +46 from amendment 23's tests of Tasks 1–3, +19 passed / +9 skipped from amendment 24's tests and the one Task 10 adds); Postgres per file (Task 13, Step 3) …; dashboard … files / … tests (expected the baseline's file count, the test count unchanged — F1a changes assertions, not tests); head `<sha>`.
 
 ---
 
@@ -4208,10 +4209,10 @@ cd /c/tmp/tres && git add homunculus-engine/src/homunculus/tres/source.py homunc
 
 ### Task 10: The settings — `send_from` (O15, proposed) and the live refusal
 
-The first save that chooses `send` sets `send_from` to its own moment; a body's `send_from` moves it; null keeps it. A mode other than `off` on an account that would reach the live platform is 422 `tres_live_closed` — with its dashboard words in this commit.
+The first save that chooses `send` sets `send_from` to its own moment; a body's `send_from` moves it; null keeps it. A mode other than `off` on an account that would reach the live platform is 422 `tres_live_closed` — with its dashboard words in this commit. The live check stands AFTER the loop over the two accounts (`refusal_of`), so a base URL that cannot be read answers `tres_base_url`, never `tres_live_closed` (amendment 24: `egress.live_closed` fails closed on an address it cannot read, so the URL's own refusal must come first; a test holds the order). The factory's refusal `egress.TresLiveClosed` takes its code from the constant this task adds.
 
 **Files:**
-- Modify: `homunculus-engine/src/homunculus/tres/errors.py`, `homunculus-engine/src/homunculus/tres/schemas.py`, `homunculus-engine/src/homunculus/tres/router.py`
+- Modify: `homunculus-engine/src/homunculus/tres/errors.py`, `homunculus-engine/src/homunculus/tres/schemas.py`, `homunculus-engine/src/homunculus/tres/router.py`, `homunculus-engine/src/homunculus/tres/egress.py`
 - Modify: `dashboard/src/live/apiErrors.js`, `dashboard/src/live/apiErrors.test.js`, `dashboard/src/live/i18n/strings/tres.js`
 - Test: `homunculus-engine/tests/test_tres_settings.py`
 
@@ -4268,6 +4269,16 @@ def test_a_live_host_under_the_test_account_is_refused_too_but_not_while_off():
     assert settings_refusal(TresSettingsIn(**body(mode="send", live=live_host)), hosts=hosts) is None   # not selected
 
 
+def test_an_address_that_cannot_be_read_is_the_urls_own_refusal_never_the_live_lock():
+    """Amendment 24 (M1): `live_closed` fails closed on an address it cannot read, so the form judges the
+    URL FIRST, in either environment."""
+    for unreadable in ("not a url", "ehr.e-health.gov.az", "https://"):
+        for environment in ("test", "live"):
+            sent = body(mode="send", environment=environment, **{environment: {**EMPTY, "base_url": unreadable}})
+            assert settings_refusal(TresSettingsIn(**sent), hosts=DEFAULT_HOSTS) == "tres_base_url", (
+                unreadable, environment)
+
+
 @requires_db
 async def test_the_first_save_in_send_sets_the_cut_off_and_the_form_can_move_it(ward, db_session):
     """O15 (proposed, awaiting the owner's word): a stay discharged before `send_from` is sent only
@@ -4303,7 +4314,7 @@ async def test_a_mode_on_the_live_platform_is_refused_and_writes_nothing(ward, d
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py 2>&1 | tail -3`
-Expected: `3 failed, 38 passed, 30 skipped` — the two `tres_live_closed` cases of `test_a_bad_body_has_its_code` (`assert None == 'tres_live_closed'`) and `test_a_live_host_under_the_test_account_is_refused_too_but_not_while_off`.
+Expected: `3 failed, 39 passed, 31 skipped` — the two `tres_live_closed` cases of `test_a_bad_body_has_its_code` (`assert None == 'tres_live_closed'`) and `test_a_live_host_under_the_test_account_is_refused_too_but_not_while_off`.
 
 - [ ] **Step 3: The code, the body, the route**
 
@@ -4335,6 +4346,32 @@ with
     TRES_LIVE_CLOSED: "Sending patient data to the live platform is closed in this version: the legal basis "
                       "and the cut-over are open (O5, O11). Only the mode off is saved for a live account.",
 }
+```
+
+In `homunculus-engine/src/homunculus/tres/egress.py` replace
+```python
+from homunculus.tres.errors import EGRESS_OFF, TRES_HOST_NOT_ALLOWED
+```
+with
+```python
+from homunculus.tres.errors import EGRESS_OFF, TRES_HOST_NOT_ALLOWED, TRES_LIVE_CLOSED
+```
+
+In `homunculus-engine/src/homunculus/tres/egress.py` replace
+```python
+    or the account. Its code is the settings and hand routes' `tres_live_closed`; errors.py gains
+    that constant with its dashboard words in plan F1's Task 10 (one commit), and this literal
+    becomes an import of it there."""
+
+    def __init__(self) -> None:
+        super().__init__("tres_live_closed")
+```
+with
+```python
+    or the account. Its code is the settings and hand routes' `tres_live_closed`."""
+
+    def __init__(self) -> None:
+        super().__init__(TRES_LIVE_CLOSED)
 ```
 
 In `homunculus-engine/src/homunculus/tres/schemas.py` replace
@@ -4562,16 +4599,16 @@ with
 - [ ] **Step 5: Run them to see them pass**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py 2>&1 | tail -3`
-Expected: `41 passed, 30 skipped`.
+Expected: `42 passed, 31 skipped`.
 Run: `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py -k "cut_off or live_platform or starts_off or bad_value or administrator_saves" 2>&1 | tail -3`
-Expected: `13 passed, 58 deselected` (about 75 s).
+Expected: `13 passed, 60 deselected` (about 75 s).
 Run: `cd /c/tmp/tres/dashboard && ./node_modules/.bin/vitest run src/live/apiErrors.test.js 2>&1 | tail -4`
 Expected: passed (the map holds every code `tres/errors.py` names).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /c/tmp/tres && git add homunculus-engine/src/homunculus/tres/errors.py homunculus-engine/src/homunculus/tres/schemas.py homunculus-engine/src/homunculus/tres/router.py dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js dashboard/src/live/i18n/strings/tres.js homunculus-engine/tests/test_tres_settings.py && git commit -m "feat(tres-01): F1 — send_from, set by the first save in send and movable (O15, proposed); a mode on the live platform refused (tres_live_closed)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+cd /c/tmp/tres && git add homunculus-engine/src/homunculus/tres/errors.py homunculus-engine/src/homunculus/tres/schemas.py homunculus-engine/src/homunculus/tres/router.py homunculus-engine/src/homunculus/tres/egress.py dashboard/src/live/apiErrors.js dashboard/src/live/apiErrors.test.js dashboard/src/live/i18n/strings/tres.js homunculus-engine/tests/test_tres_settings.py && git commit -m "feat(tres-01): F1 — send_from, set by the first save in send and movable (O15, proposed); a mode on the live platform refused (tres_live_closed)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -5985,6 +6022,8 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
     factory = getattr(request.app.state, "tres_client_factory", None) or partial(
         open_client, egress=egress, hosts=getattr(request.app.state, "tres_hosts", frozenset()))
     try:
+        # Patient data: the factory's default, `patient_data=True`, keeps egress.open_client's own live
+        # lock behind the check above (amendment 24, M10) — it would answer the same 409 `tres_live_closed`.
         client = factory(account)
     except TresEgressRefused as exc:
         raise refusal(409, exc.code).http() from None
@@ -6321,17 +6360,17 @@ cd /c/tmp/tres && git add homunculus-engine/src/homunculus/tres/deliveries.py ho
 - [ ] **Step 1: The feed's files, no database**
 
 Run: `cd /c/tmp/tres/homunculus-engine && PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_codes.py tests/test_tres_az.py tests/test_tres_mapping.py tests/test_fake_tres.py tests/test_tres_client.py tests/test_tres_egress.py tests/test_tres_package.py tests/test_tres_source.py tests/test_tres_maps.py tests/test_tres_deliveries.py tests/test_tres_models.py tests/test_migration_0020_tres.py tests/test_tres_ledger.py tests/test_tres_worker.py tests/test_tres_settings.py tests/test_route_permissions.py tests/test_permissions.py 2>&1 | tail -3`
-Expected: `299 passed, 152 skipped` (before F1: `220 passed, 116 skipped`).
+Expected: `364 passed, 161 skipped` (as first planned `299 passed, 152 skipped`; +46 passed from amendment 23's tests of Tasks 1–3; +19 passed / +9 skipped from amendment 24's tests and the one Task 10 adds; before F1: `220 passed, 116 skipped`).
 
-- [ ] **Step 2: The whole no-DB suite** — Task 0, Step 4's six chunks. Expected: no `failed`; against the baseline **+79 passed and +36 skipped** (measured on the scratch copy: 4278 passed / 1464 skipped), nothing else moved. Write the numbers into the Gates block.
+- [ ] **Step 2: The whole no-DB suite** — Task 0, Step 4's six chunks. Expected: no `failed`; against the baseline **+144 passed and +45 skipped** (4343 passed / 1473 skipped: +79 / +36 as measured on the scratch copy, +46 passed from amendment 23's tests, +19 passed / +9 skipped from amendment 24's tests and the one Task 10 adds), nothing else moved. Write the numbers into the Gates block.
 
 - [ ] **Step 3: Postgres, one file or chunk at a time** (one session at a time; tell the controller before a long wait). Each command's expected line:
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_migration_0020_tres.py tests/test_tres_models.py tests/test_route_permissions.py tests/test_migration_0010_schema_parity.py 2>&1 | tail -1` → `39 passed` (about 2 min)
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_worker.py 2>&1 | tail -1` → `38 passed` (about 2 min)
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_ledger.py -k "not (refusal_about_the_resource or sandbox_row or skip_is_a_row or carries_the_admission or mode_off or two_deliverers or search_that_cannot or server_error_about or read_again or lock_timeout or held_reads)" 2>&1 | tail -1` → `22 passed, 20 deselected`
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_ledger.py -k "refusal_about_the_resource or sandbox_row or skip_is_a_row or carries_the_admission or mode_off or two_deliverers or search_that_cannot or server_error_about or read_again or lock_timeout or held_reads" 2>&1 | tail -1` → `20 passed, 22 deselected`
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py -k "bad_value or changed_address or dead_line or field_too_many or mode_on_the_live or narrowed_install or password_left_out or parked_tenant" 2>&1 | tail -1` → `17 passed, 54 deselected` (about 90 s)
-- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py -k "not (bad_value or changed_address or dead_line or field_too_many or mode_on_the_live or narrowed_install or password_left_out or parked_tenant)" 2>&1 | tail -1` → `54 passed, 17 deselected` (about 65 s)
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_migration_0020_tres.py tests/test_tres_models.py tests/test_route_permissions.py tests/test_migration_0010_schema_parity.py 2>&1 | tail -1` → `44 passed` (about 2 min)
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_worker.py 2>&1 | tail -1` → `40 passed` (about 2 min)
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_ledger.py -k "not (refusal_about_the_resource or sandbox_row or skip_is_a_row or carries_the_admission or mode_off or two_deliverers or search_that_cannot or server_error_about or read_again or lock_timeout or held_reads)" 2>&1 | tail -1` → `23 passed, 21 deselected`
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_ledger.py -k "refusal_about_the_resource or sandbox_row or skip_is_a_row or carries_the_admission or mode_off or two_deliverers or search_that_cannot or server_error_about or read_again or lock_timeout or held_reads" 2>&1 | tail -1` → `21 passed, 23 deselected`
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py -k "bad_value or changed_address or dead_line or field_too_many or mode_on_the_live or narrowed_install or password_left_out or parked_tenant" 2>&1 | tail -1` → `17 passed, 56 deselected` (about 90 s)
+- `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_settings.py -k "not (bad_value or changed_address or dead_line or field_too_many or mode_on_the_live or narrowed_install or password_left_out or parked_tenant)" 2>&1 | tail -1` → `56 passed, 17 deselected` (about 65 s)
 - `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_package.py tests/test_tres_source.py tests/test_tres_maps.py 2>&1 | tail -1` → `24 passed` (about 75 s)
 - `cd /c/tmp/tres/homunculus-engine && TEST_DATABASE_URL=postgresql+asyncpg://homunculus:homunculus@localhost:56432/homunculus_test PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /c/tmp/f7-py312/venv/Scripts/python.exe -m pytest -p no:cacheprovider -q -p no:warnings tests/test_tres_deliveries.py 2>&1 | tail -1` → `10 passed` (about 45 s)
 
