@@ -415,3 +415,29 @@ async def test_two_deliverers_of_one_key_take_turns_and_the_platform_holds_one_r
     rows = (await db_session.execute(
         select(TresDelivery).execution_options(populate_existing=True))).scalars().all()
     assert [(r.status, r.remote_id, r.attempts) for r in rows] == [("sent", stored["id"], 0)]
+
+
+# ---------------------------------------------------------------- a search that proves nothing (review I1)
+@requires_db
+async def test_a_search_that_cannot_prove_an_absence_is_counted_and_nothing_is_posted(db_session):
+    """The platform holds the Patient, but on its search's second page: never a second record of it.
+    Counted against the resource — failed, the 30-minute wait, `stuck` at the fifth."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.commit()
+    fake = FakeTres(page_size=2)
+    for server_id, local_id in (("5001", "hmn-p-00010"), ("5002", "hmn-p-00011"), ("5003", LOCAL)):
+        fake.seed("Patient", server_id, patient(local_id=local_id))
+    client = TresClient(fake.account, transport=fake.transport)
+    for n in range(5):
+        row = await deliver(db_session, client, tenant_id=tenant.id, environment="test", mode="send",
+                            resource_type="patient", fhir_type="Patient", local_id=LOCAL, resource=patient(),
+                            now=T0 + n * RETRY_AFTER)
+        if n == 0:
+            assert (row.status, row.attempts, row.remote_id, row.next_attempt_at) == (
+                "failed", 1, None, T0 + RETRY_AFTER)
+            assert row.last_error == "the search answer has a next page"
+    assert (row.status, row.attempts) == ("stuck", 5)
+    assert [line for line in fake.fhir_requests if line[0] != "GET"] == []    # nothing POSTed, nothing PUT
+    assert len(fake.stored("Patient")) == 3
+    await client.aclose()

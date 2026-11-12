@@ -111,6 +111,9 @@ async def _write(client: TresClient, fhir_type: str, local_id: str, resource: di
         except TresError as exc:
             if exc.status != 404 and NO_REFERENCE not in exc.message:
                 raise
+    # None only when the platform's answer proves it holds none; an answer that cannot (a next
+    # page, an entry with no local id…) raises `TresSearchUnclear` and nothing is POSTed: the row
+    # counts it as a refusal (review I1).
     found = await client.find(fhir_type, local_id)
     if found:
         await client.update(fhir_type, found, resource)

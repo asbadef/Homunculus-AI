@@ -19,7 +19,10 @@ what the ministry's server does:
   resource the server does not hold is refused («Non-existent reference», 409);
 * the only search is `?local-system-unique-id=` (any other, or none: 400), and it is a FHIR
   `string` search: a resource whose local id STARTS with the value, in any case, is a hit — so
-  `hmn-l-12` also finds `hmn-l-120`, and the client must pick the exact one (review #3);
+  `hmn-l-12` also finds `hmn-l-120`, and the client must pick the exact one (review #3). It answers
+  a searchset Bundle a PAGE at a time (`page_size`, 20 by default), with `total` and a `next` link
+  when more matches exist — the next page itself is never served (review I1: the client must not
+  take a first page for the whole answer);
 * DELETE of a resource another stored resource refers to is refused («There are other resources
   referencing this resource», 409);
 * `$validate` runs the same checks and stores nothing.
@@ -100,8 +103,10 @@ def _outcome(status: int, text: str, *, headers: dict | None = None) -> httpx.Re
 
 class FakeTres:
     def __init__(self, *, username: str = "sentetik", password: str = "gizli-parola",
-                 provider_id: str = "PRV-0001") -> None:
+                 provider_id: str = "PRV-0001", page_size: int = 20) -> None:
         self.account = TresAccount(BASE_URL, username, password, provider_id)
+        #: The most entries one search answer carries (a server's default page).
+        self.page_size = page_size
         #: FHIR type → server id → the stored resource.
         self.resources: dict[str, dict[str, dict]] = {}
         #: Every request, in order: (method, path).
@@ -224,8 +229,13 @@ class FakeTres:
         wanted = params[LOCAL_ID_PARAM].lower()
         hits = [resource for resource in self.stored(resource_type)
                 if (local_id_of(resource) or "").lower().startswith(wanted)]
+        link = [{"relation": "self", "url": str(request.url)}]
+        if len(hits) > self.page_size:
+            link.append({"relation": "next",
+                         "url": f"{BASE_URL}/fhir?_getpages=stand-in&_getpagesoffset={self.page_size}"})
         return httpx.Response(200, json={"resourceType": "Bundle", "type": "searchset", "total": len(hits),
-                                         "entry": [{"resource": resource} for resource in hits]})
+                                         "link": link,
+                                         "entry": [{"resource": resource} for resource in hits[:self.page_size]]})
 
     def _create(self, resource_type: str, body: dict) -> httpx.Response:
         refused = self._refusal(resource_type, body, creating=True)

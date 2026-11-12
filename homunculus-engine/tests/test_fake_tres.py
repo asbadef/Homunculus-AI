@@ -141,6 +141,20 @@ async def test_only_the_local_id_search_exists(platform):
         assert response.status_code == 400, params
 
 
+async def test_the_search_answers_a_page_at_a_time_with_its_total_and_a_next_link():
+    assert FakeTres().page_size == 20
+    fake = FakeTres(page_size=3)
+    client = TresClient(fake.account, transport=fake.transport)
+    for local_id in ("hmn-p-1", "hmn-p-10", "hmn-p-11", "hmn-p-12"):
+        await client.create("Patient", {**patient(local_id), "id": local_id})
+    paged = (await raw(fake, "GET", "/fhir/Patient", params={"local-system-unique-id": "hmn-p-1"})).json()
+    assert (paged["type"], paged["total"], len(paged["entry"])) == ("searchset", 4, 3)
+    assert [link["relation"] for link in paged["link"]] == ["self", "next"]
+    whole = (await raw(fake, "GET", "/fhir/Patient", params={"local-system-unique-id": "hmn-p-12"})).json()
+    assert (whole["total"], len(whole["entry"]), [link["relation"] for link in whole["link"]]) == (1, 1, ["self"])
+    await client.aclose()
+
+
 async def test_the_search_is_a_fhir_string_search_case_insensitive_and_by_prefix(platform):
     """Review #3: a FHIR `string` parameter matches what STARTS with the value, in any case — so the
     search alone cannot tell `hmn-l-12` from `hmn-l-120`; the client must."""

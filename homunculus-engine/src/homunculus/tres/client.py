@@ -10,7 +10,8 @@ file and the server disagree, the server is right and this file changes.
   every FHIR request carries it as a Bearer token. No expiry is published: a 401 means a new
   token, asked once, and the request once more.
 * One resource per request (§4.2, D4): `find` by the local id — an exact match only, the search
-  itself being a prefix — then `create` or `update`.
+  itself being a prefix, and None only when the answer proves the absence (`TresSearchUnclear`
+  otherwise: never a POST on a page that may not hold the record) — then `create` or `update`.
   `create` must carry an `id` although the server assigns its own (the caller's placeholder);
   `update` carries the server's id in the URL and in the body. `validate` stores nothing.
 * Errors (§4.5) come in three shapes; `read_error` reads all three. Every refusal is a
@@ -81,6 +82,15 @@ class TresSessionError(TresError):
     """No session could be had: the token route refused or answered no usable session id, or a
     FHIR call was refused 401 again after the one new token. `status`, `message` and
     `retry_after` as `TresError`'s (a 429 from the token route keeps its `Retry-After`)."""
+
+
+class TresSearchUnclear(TresError):
+    """The search answered, but its answer cannot prove that the platform holds no resource with
+    this local id: it is not a searchset Bundle, it has a next page, its `total` is more than its
+    entries, or an entry carries no local id to compare. NOT an outage: it is counted against the
+    resource (failed, the 30-minute wait, `stuck` at the fifth), and nothing is POSTed — a second
+    national record of a resource is worse than a late one (review I1). The message names the
+    reason and never a value."""
 
 
 def is_outage(exc: TresError) -> bool:
@@ -270,22 +280,45 @@ class TresClient:
         return response
 
     async def find(self, resource_type: str, local_id: str) -> str | None:
-        """The server's id of the resource carrying EXACTLY this local id, or None (§4.2).
+        """The server's id of the resource carrying EXACTLY this local id, or None (§4.2) — and
+        None only when the answer PROVES there is none; otherwise `TresSearchUnclear`.
 
         The search parameter is a FHIR `string`: the server answers every resource whose local id
-        STARTS with the value, in any case — `hmn-l-12` finds `hmn-l-120` too (review #3). So the
-        answer is the first entry whose own local-id extension equals the one asked, character
-        for character; another resource's id is never taken for this one's."""
+        STARTS with the value, in any case — `hmn-l-12` finds `hmn-l-120` too (review #3) — and
+        a page at a time: a lab id is a prefix of hundreds of others, so its own record may sit on
+        page 2 (review I1). An entry whose own local-id extension equals the one asked, character
+        for character, is the answer wherever it stands. With none, the answer is None only when
+        the whole answer is in hand and every entry could be compared: a searchset Bundle, no
+        `next` link, a `total` (if any) no more than its entries, a local id on every entry. Else
+        the caller must not POST (`ledger._write`): a page is not the answer. No page is fetched
+        and no `_count` is sent until the sandbox says how it pages (spec §4.2, F6)."""
         response = await self._fhir("GET", resource_type, params={LOCAL_ID_PARAM: local_id})
         _refuse_unless_ok(response)
-        entries = _answer(response).get("entry")
+        data = _answer(response)
+        entries = data.get("entry", [])
+        compared = True
         for entry in entries if isinstance(entries, list) else ():
             resource = entry.get("resource") if isinstance(entry, dict) else None
-            if not isinstance(resource, dict) or local_id_of(resource) != local_id:
-                continue
-            found = resource.get("id")
-            if isinstance(found, str) and found:
-                return found
+            held = local_id_of(resource) if isinstance(resource, dict) else None
+            if held is None:
+                compared = False
+            elif held == local_id:
+                found = resource.get("id")
+                if isinstance(found, str) and found:
+                    return found
+                compared = False                # its own record, with no id to update it by
+        if data.get("resourceType") != "Bundle" or data.get("type") != "searchset" \
+                or not isinstance(entries, list):
+            raise TresSearchUnclear(response.status_code, "the search answer is not a searchset Bundle")
+        links = data.get("link")
+        if any(isinstance(link, dict) and link.get("relation") == "next"
+               for link in (links if isinstance(links, list) else ())):
+            raise TresSearchUnclear(response.status_code, "the search answer has a next page")
+        total = data.get("total")
+        if total is not None and (not isinstance(total, int) or isinstance(total, bool) or total > len(entries)):
+            raise TresSearchUnclear(response.status_code, "the search answer's total exceeds its entries")
+        if not compared:
+            raise TresSearchUnclear(response.status_code, "a search entry carries no local id")
         return None
 
     async def create(self, resource_type: str, resource: dict) -> str:
