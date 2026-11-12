@@ -6,7 +6,7 @@
 // (Decision 18). No patient's name or id anywhere. Read on open, on «Yenile» and every 60 s while visible: G4-02's reads
 // (useSummaryReads) with GET /shift-schedule and /tasks over its shift in the same round; the form reads its own unit
 // and window.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { hhmm } from "../../i18n/dates.js";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -14,7 +14,7 @@ import { useBoard } from "../../data/BoardProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { useSnoozeClock } from "../../data/useSnoozeClock.js";
 import { readErrorText } from "../../apiErrors.js";
-import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/index.js";
+import { Alert, Announce, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/index.js";
 import { WHY, boardReachSource, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import { useShiftEnd } from "./useShiftEnd.js";
@@ -128,7 +128,7 @@ function Unassigned({ t, unassigned }) {
   );
 }
 
-function NursesBox({ t, page, onSelect }) {
+function NursesBox({ t, page, onSelect, locked }) {
   const chosen = page.choices.find((row) => row.key === page.selected);
   let body;
   if (page.cards === null) body = <Note tone="warn">{t("isyuku.nurses.missing", { why: whyText(t, page.cardsWhy) })}</Note>;
@@ -151,7 +151,7 @@ function NursesBox({ t, page, onSelect }) {
       <div className="flex flex-col gap-2" data-nurses>
         {page.choices.length > 0 ? (
           <Field label={t("isyuku.pick.label")} layout="col" className="max-w-[320px]">
-            <Select value={page.selected} onChange={(event) => onSelect(event.target.value)}>
+            <Select value={page.selected} disabled={locked} onChange={(event) => onSelect(event.target.value)}>
               <option value={ALL}>{t("isyuku.pick.all")}</option>
               {page.choices.map((row) => <option key={row.key} value={row.key}>{row.name}</option>)}
             </Select>
@@ -163,21 +163,29 @@ function NursesBox({ t, page, onSelect }) {
   );
 }
 
+const FORM_LOADING = Object.freeze({ phase: "loading", schedule: null, nurses: null, error: null, busy: false });
+
 /** The form's two reads — the unit's rows of the window and the people offered — on open, on a change of window, and on
- *  `reload` (after a save, a 409, «Yeniden dene»). The newest read wins. */
+ *  `reload` (after a save, a 409, «Yeniden dene»). The newest read wins. Another window starts afresh (what is held is
+ *  not its own); the same window read again keeps what it holds on screen, `busy`, until the new answer lands — so the
+ *  form, and the button she pressed, stay where they are (review 10). */
 function useAssignment(store, unitId, which) {
-  const [state, setState] = useState({ phase: "loading", schedule: null, nurses: null, error: null });
+  const [state, setState] = useState(FORM_LOADING);
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => { setAttempt((n) => n + 1); }, []);
+  const readFor = useRef(null);
   useEffect(() => {
     let alive = true;
-    setState({ phase: "loading", schedule: null, nurses: null, error: null });
+    const again = readFor.current === which;
+    readFor.current = which;
+    setState((held) => (again && held.phase === "ok" ? { ...held, busy: true } : FORM_LOADING));
     Promise.all([store.track(() => store.api.shiftSchedule(which, unitId)), store.track(() => store.api.shiftNurses(unitId))])
       .then(([schedule, nurses]) => {
         if (!alive) return;
         setState(isScheduleAnswer(schedule) && isNursesAnswer(nurses)
-          ? { phase: "ok", schedule, nurses, error: null } : { phase: "failed", schedule: null, nurses: null, error: null });
-      }, (error) => { if (alive) setState({ phase: "failed", schedule: null, nurses: null, error }); });
+          ? { phase: "ok", schedule, nurses, error: null, busy: false }
+          : { phase: "failed", schedule: null, nurses: null, error: null, busy: false });
+      }, (error) => { if (alive) setState({ phase: "failed", schedule: null, nurses: null, error, busy: false }); });
     return () => { alive = false; };
   }, [store, unitId, which, attempt]);
   return { ...state, reload };
@@ -186,12 +194,17 @@ function useAssignment(store, unitId, which) {
 function Outcome({ t, outcome }) {
   if (!outcome) return null;
   if (outcome.kind === "saved") {
+    // What she sees: the confirmation and each soft warning in its own tone. What a screen reader says: all of it, once,
+    // politely (review 10) — the boxes are hidden from it, as an info Alert's is, so nothing is read twice.
+    const warnings = outcome.warnings.map((w) => ({ key: w.nurse_id,
+      text: t("isyuku.form.warnUnreached", { name: w.name ?? t("isyuku.form.someone") }) }));
     return (
-      <div className="flex flex-col gap-1">
-        <Note tone="info">{t("isyuku.form.saved")}</Note>
-        {outcome.warnings.map((w) => (
-          <Note key={w.nurse_id} tone="warn">{t("isyuku.form.warnUnreached", { name: w.name ?? t("isyuku.form.someone") })}</Note>
-        ))}
+      <div className="flex flex-col gap-1" data-outcome>
+        <div aria-hidden="true" className="flex flex-col gap-1">
+          <Note tone="info">{t("isyuku.form.saved")}</Note>
+          {warnings.map((w) => <Note key={w.key} tone="warn">{w.text}</Note>)}
+        </div>
+        <Announce text={[t("isyuku.form.saved"), ...warnings.map((w) => w.text)].join(" ")} />
       </div>
     );
   }
@@ -202,20 +215,27 @@ function Outcome({ t, outcome }) {
 
 /** «Nöbet ataması» for one listed unit (the parent keys it by the unit, so another unit starts afresh). Drawn only when
  *  its two reads and the structure have answered (§5 A6); the choices are built from the read once and kept — the poll
- *  does not rebase a form being edited (A7). */
-function AssignmentBox({ t, lang, store, row, structure, onSaved }) {
+ *  does not rebase a form being edited (A7), nor does a change of language (it re-sorts the people only, review 6).
+ *  While a save is on its way, or the form is read again after one, nothing she could change moves: the window, the
+ *  pickers and — through `onLock` — the unit (review 5). */
+function AssignmentBox({ t, lang, store, row, structure, onSaved, onLock }) {
   const [which, setWhich] = useState("current");
   const read = useAssignment(store, row.id, which);
   const [choices, setChoices] = useState(null);       // bed key → nurse id ("": nobody)
   const [saving, setSaving] = useState(false);
   const [outcome, setOutcome] = useState(null);
   const model = useMemo(() => (read.phase === "ok" ? formModel({ row, schedule: read.schedule, nurses: read.nurses, lang }) : null),
-    // Only a new read rebuilds the model: a poll that redraws the beds must not undo what she picked.
+    // A poll that redraws the beds does not rebuild it; a new read or another language (the people's order) does.
     [read.phase, read.schedule, read.nurses, lang]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setChoices(model ? new Map(model.beds.map((bed) => [bed.key, bed.held])) : null); }, [model]);
+  // The picks are reset to what is held only when a new read lands — never by another language's model (review 6).
+  useEffect(() => { setChoices(model ? new Map(model.beds.map((bed) => [bed.key, bed.held])) : null); },
+    [read.phase, read.schedule, read.nurses]); // eslint-disable-line react-hooks/exhaustive-deps
+  const locked = saving || read.busy;
+  useEffect(() => { onLock(saving); }, [onLock, saving]);
+  useEffect(() => () => onLock(false), [onLock]);
 
   const save = async () => {
-    if (saving || !model || !choices) return;
+    if (locked || !model || !choices) return;
     setSaving(true);
     setOutcome(null);
     const names = new Map(model.beds.flatMap((bed) => bed.people).map((person) => [person.key, person.name]));
@@ -261,7 +281,7 @@ function AssignmentBox({ t, lang, store, row, structure, onSaved }) {
         <div className="grid gap-x-3 min-[861px]:grid-cols-2">
           {model.beds.map((bed) => (
             <Field key={bed.key} label={bed.label} layout="col">
-              <Select value={choices.get(bed.key) ?? ""}
+              <Select value={choices.get(bed.key) ?? ""} disabled={locked}
                 onChange={(event) => { const next = new Map(choices); next.set(bed.key, event.target.value); setChoices(next); }}>
                 <option value="">{t("isyuku.form.empty")}</option>
                 {bed.people.map((person) => <option key={person.key} value={person.key}>{`${person.label}${note(person)}`}</option>)}
@@ -269,14 +289,14 @@ function AssignmentBox({ t, lang, store, row, structure, onSaved }) {
             </Field>
           ))}
         </div>
-        <div><Button variant="primary" size="sm" busy={saving} onClick={save}>{t("isyuku.form.save")}</Button></div>
+        <div><Button variant="primary" size="sm" busy={locked} onClick={save}>{t("isyuku.form.save")}</Button></div>
       </>
     );
   }
   const options = [{ value: "current", label: t("isyuku.form.current") }, { value: "next", label: t("isyuku.form.next") }];
   return (
     <Box title={t("isyuku.form.title", { unit: row.name })} icon="edit" level={2}
-      right={<Seg label={t("isyuku.form.which")} options={options} value={which}
+      right={<Seg label={t("isyuku.form.which")} options={options} value={which} disabled={locked}
         onChange={(next) => { setWhich(next); setOutcome(null); }} />}>
       <div className="flex flex-col gap-2" data-form>
         {body}
@@ -299,6 +319,8 @@ export function IsYukuScreen() {
     valid: isWorkAnswer, full: isWholeWork }), [rights.schedule, rights.tasks]);
   const reads = useSummaryReads({ store, rights: summaryRights, reloadStructure: tree.reload, extra });
   const [selected, setSelected] = useState(ALL);
+  // A save on its way holds the unit too: another unit would unmount the form and hide its outcome (review 5).
+  const [formLocked, setFormLocked] = useState(false);
   const occupancy = structureSource(tree, rights.structure);
   // The server decides which shift is current: an answer's end is judged on its clock — this browser's corrected by the
   // board's skew (`useBoardNow`'s rule; unknown is 0) — and the page reads again when it comes (review 7).
@@ -340,10 +362,10 @@ export function IsYukuScreen() {
       </div>
       <p className="m-0 text-13 text-mute">{t("isyuku.intro")}</p>
       <UnitsBox t={t} lang={lang} page={page} />
-      <NursesBox t={t} page={page} onSelect={setSelected} />
+      <NursesBox t={t} page={page} onSelect={setSelected} locked={formLocked} />
       {formable && chosen ? (
         <AssignmentBox key={chosen.key} t={t} lang={lang} store={store} row={chosen} structure={occupancy}
-          onSaved={reads.refresh} />
+          onSaved={reads.refresh} onLock={setFormLocked} />
       ) : null}
       {formable && !chosen ? (
         <Box title={t("isyuku.form.title", { unit: t("isyuku.pick.all") })} icon="edit" level={2}>

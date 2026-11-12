@@ -8,6 +8,7 @@ import React from "react";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { hhmm } from "../../i18n/dates.js";
+import { PREF_PREFIX } from "../../prefs.js";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { StructureProvider } from "../../data/StructureProvider.jsx";
@@ -288,6 +289,64 @@ describe("«Nöbet ataması»", () => {
     await settle();
     expect(document.querySelector("[data-shift]").textContent).toBe("Bu növbə — növbə dəyişdi, yenilənir");
     expect(three()).toHaveValue(NURSE.nigar);
+    act(() => { board.clear(); });
+  });
+
+  // Review 5: nothing she could change moves while a save is on its way — the window, the pickers, the unit.
+  it("locks the window, the pickers and the unit while a save is on its way", async () => {
+    let finish;
+    const { board } = await mountIsYuku({ setup: (a) => a.saveShiftSchedule.mockImplementation(() =>
+      new Promise((resolve) => { finish = resolve; })) });
+    await pick("Reanimasiya");
+    const controls = () => [screen.getByRole("button", { name: "Bu növbə" }), screen.getByRole("button", { name: "Növbəti növbə" }),
+      ...formBox().querySelectorAll("select"), screen.getByLabelText("Şöbə")];
+    expect(controls().every((control) => !control.disabled)).toBe(true);
+    await act(async () => { fireEvent.click(within(formBox()).getByRole("button", { name: "Yadda saxla" })); });
+    expect(controls().map((control) => control.disabled)).toEqual(Array(controls().length).fill(true));
+    await act(async () => { finish({ ...unitSchedule("current", REA), warnings: [] }); });
+    await settle();
+    expect(controls().every((control) => !control.disabled)).toBe(true);
+    act(() => { board.clear(); });
+  });
+
+  // Review 6: a change of language re-sorts the people and keeps what she picked; only a new read resets the picks.
+  it("keeps the picks when the language changes", async () => {
+    const { board } = await mountIsYuku();
+    await pick("Reanimasiya");
+    fireEvent.change(within(formBox()).getByLabelText("3 · Otaq 1 · Reanimasiya"), { target: { value: NURSE.nigar } });
+    await act(async () => { window.dispatchEvent(new StorageEvent("storage", { key: `${PREF_PREFIX}lang`, newValue: "en" })); });
+    await settle();
+    expect(within(formBox()).getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(within(formBox()).getByLabelText("3 · Otaq 1 · Reanimasiya")).toHaveValue(NURSE.nigar);
+    act(() => { board.clear(); });
+  });
+
+  // Review 10: read again after a save, the form stays (busy) so the focused button does not vanish under her; the
+  // outcome — saved, and the soft warning — is said in a polite live region.
+  it("keeps the form and the focused button while it is read again after a save, and says the outcome politely", async () => {
+    const saved = { ...unitSchedule("current", REA), warnings: [{ code: "unit_not_reached", nurse_id: NURSE.nigar }] };
+    const { api, board } = await mountIsYuku({ setup: (a) => a.saveShiftSchedule.mockResolvedValue(saved) });
+    await pick("Reanimasiya");
+    fireEvent.change(within(formBox()).getByLabelText("3 · Otaq 1 · Reanimasiya"), { target: { value: NURSE.nigar } });
+    let land = null;
+    api.shiftSchedule.mockImplementation((shift = "current", unitId = null) => (unitId
+      ? new Promise((resolve) => { land = () => resolve(unitSchedule(shift, unitId)); }) : Promise.resolve(schedule())));
+    const button = within(formBox()).getByRole("button", { name: "Yadda saxla" });
+    button.focus();
+    await act(async () => { fireEvent.click(button); });
+    await settle();
+    expect(land).not.toBeNull();                                          // the form is being read again
+    expect(document.activeElement).toBe(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(bedLabels()).toHaveLength(5);
+    expect(formBox()).not.toHaveTextContent("Təyinat oxunur…");
+    await act(async () => { land(); });
+    await settle();
+    expect(document.activeElement).toBe(button);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 200); }); });
+    const said = screen.getAllByRole("status").map((region) => region.textContent).join(" ");
+    expect(said).toContain("Təyinat yadda saxlanıldı.");
+    expect(said).toContain("Nigar Sentetik bu şöbəni görə bilməz");
     act(() => { board.clear(); });
   });
 
