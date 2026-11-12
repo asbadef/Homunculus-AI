@@ -28,14 +28,14 @@ from homunculus.tres.ledger import (
 )
 from homunculus.tres.models import TresDelivery
 from tests.conftest import requires_db
-from tests.fake_tres import FakeTres
+from tests.fake_tres import UNCHECKED_PROFILE, FakeTres
 
 T0 = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
 LOCAL = "hmn-p-0001"
 
 
 def patient(given: str = "Ayşe", local_id: str = LOCAL) -> dict:
-    return {"resourceType": "Patient", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-patient"]},
+    return {"resourceType": "Patient", "meta": {"profile": [UNCHECKED_PROFILE]},
             "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}],
             "name": [{"family": "Sentetik", "given": [given]}]}
 

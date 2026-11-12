@@ -17,10 +17,10 @@ from homunculus.tres.client import (
     TresSearchUnclear, TresSessionError, is_outage, read_error,
 )
 from homunculus.tres.ledger import _write
-from tests.fake_tres import FakeTres
+from tests.fake_tres import UNCHECKED_PROFILE, FakeTres
 
 ACCOUNT = TresAccount("https://tres.test", "sentetik", "gizli-parola", "PRV-0001")
-PATIENT = {"resourceType": "Patient", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-patient"]},
+PATIENT = {"resourceType": "Patient", "meta": {"profile": [UNCHECKED_PROFILE]},
            "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": "hmn-p-0001"}],
            "name": [{"family": "Sentetik", "given": ["Ayşe"]}]}
 

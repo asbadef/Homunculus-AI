@@ -9,15 +9,12 @@ import pytest
 
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresAccount, TresClient, TresError
 from tests.fake_tres import (
-    BASE_URL, ID_MISMATCH, LOCAL_ID_CHANGED, MALFORMED_REFERENCE, NO_ID, NO_REFERENCE, REFERRED, FakeTres,
-    local_id_of, references_of,
+    BASE_URL, ID_MISMATCH, LOCAL_ID_CHANGED, MALFORMED_REFERENCE, NO_ID, NO_REFERENCE, REFERRED, UNCHECKED_PROFILE,
+    FakeTres, local_id_of, references_of,
 )
 
-PROFILE = "http://fhir.az/StructureDefinition/"
-
-
 def resource(resource_type: str, local_id: str, **elements) -> dict:
-    return {"resourceType": resource_type, "meta": {"profile": [PROFILE + "az-" + resource_type.lower()]},
+    return {"resourceType": resource_type, "meta": {"profile": [UNCHECKED_PROFILE]},
             "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}], **elements}
 
 
@@ -257,3 +254,81 @@ async def test_every_request_is_kept_as_method_and_path(platform):
                              ("POST", "/fhir/Patient/$validate")]
     assert fake.fhir_requests == fake.requests[1:]
     assert remote == "7001"
+
+
+# ---------------------------------------------------------------- the profiles of phase F1 (plan F1, N6)
+def _f1_resources():
+    """Phase F1's four resources as its mappers build them (tests/test_tres_mapping.py's stay)."""
+    from homunculus.tres.mapping.encounter import encounter
+    from homunculus.tres.mapping.patient import patient as map_patient
+    from homunculus.tres.mapping.practitioner import practitioner
+    from homunculus.tres.mapping.vitals import vitals
+    from tests.test_tres_mapping import PERSON, ROOT, stay
+    built = stay()
+    return (map_patient(PERSON, ROOT), practitioner(built.clinicians[0]),
+            encounter(built, patient_id="7001", practitioner_ids=["7002"], organization_id="ORG-0001"),
+            vitals(built, patient_id="7001", encounter_id="7003")[0])
+
+
+def _without(resource: dict, path: str) -> dict:
+    """A deep copy of `resource` with every value at `path` (REQUIRED's syntax) emptied."""
+    import copy
+    from tests.fake_tres import steps
+    copied = copy.deepcopy(resource)
+    *walk, (last, _) = steps(path)
+    nodes = [copied]
+    for name, selector in walk:
+        nodes = [x for node in nodes if isinstance(node, dict)
+                 for x in (node.get(name) if isinstance(node.get(name), list) else [node.get(name)])]
+        if selector is not None:
+            nodes = [x for x in nodes if isinstance(x, dict) and selector in (x.get("url"), x.get("system"))]
+    for node in nodes:
+        if isinstance(node, dict):
+            node.pop(last, None)
+    return copied
+
+
+async def test_phase_f1s_resources_are_taken_and_each_required_element_is_held(platform):
+    from tests.fake_tres import REQUIRED
+    fake, client = platform
+    fake.seed("Patient", "7001")
+    fake.seed("Practitioner", "7002")
+    fake.seed("Encounter", "7003")
+    fake.seed("Organization", "ORG-0001")
+    resources = _f1_resources()
+    assert {r.resource["meta"]["profile"][0] for r in resources} == set(REQUIRED)       # one test per profile
+    for built in resources:
+        await client.validate(built.fhir_type, {**built.resource, "id": built.local_id})
+        for path in REQUIRED[built.resource["meta"]["profile"][0]]:
+            with pytest.raises(TresError) as raised:
+                await client.validate(built.fhir_type, {**_without(built.resource, path), "id": built.local_id})
+            assert (raised.value.status, raised.value.message) == (
+                400, f"{built.fhir_type}.{path}: minimum required = 1"), path
+
+
+async def test_a_sex_code_the_platform_has_not_and_an_inactive_practitioner_are_refused(platform):
+    from tests.fake_tres import ALLOWED
+    _, client = platform
+    patient_, practitioner_, _, _ = _f1_resources()
+    other_sex = {**patient_.resource, "extension": [
+        {**ext, "valueCode": "M"} if ext.get("valueCode") else ext for ext in patient_.resource["extension"]]}
+    inactive = {**practitioner_.resource, "active": False}
+    for built, body in ((patient_, other_sex), (practitioner_, inactive)):
+        (path,) = ALLOWED[built.resource["meta"]["profile"][0]]
+        with pytest.raises(TresError) as raised:
+            await client.create(built.fhir_type, {**body, "id": built.local_id})
+        assert (raised.value.status, raised.value.message) == (400, f"{built.fhir_type}.{path}: value not allowed")
+
+
+def test_values_at_walks_lists_and_selects_by_url_or_system():
+    from tests.fake_tres import values_at
+    body = {"identifier": [{"system": "x", "value": "1"}, {"system": "http://fhir.az/sid/fin", "value": "AB12C3D"}],
+            "name": [{"family": "S", "given": ["A", "B"]}], "extension": [{"url": "u", "valueCode": ""}]}
+    assert values_at(body, "identifier(http://fhir.az/sid/fin).value") == ["AB12C3D"]
+    assert values_at(body, "name.given") == ["A", "B"]
+    assert values_at(body, "extension(u).valueCode") == [] and values_at(body, "missing.path") == []
+
+
+async def test_a_profile_the_table_does_not_name_is_held_to_section_4_alone(platform):
+    _, client = platform
+    assert await client.create("Patient", {**patient(), "id": "hmn-p-0001"}) == "7001"   # UNCHECKED_PROFILE

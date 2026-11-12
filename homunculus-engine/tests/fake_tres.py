@@ -31,8 +31,14 @@ Errors are OperationOutcome JSON with `issue[].diagnostics`. `requests` keeps ev
 `(method, path)`, the token's included. `seed()` plants a resource the server already holds (an
 Organization, say) without a request.
 
-NOT here yet: the per-profile required elements of spec §5 (a Patient's FİN, an Encounter's
-`serviceType`…). Each later phase adds its profile's rules to `REQUIRED` with its mapper.
+* PER PROFILE (`meta.profile[0]`; plan F1, N6): the elements spec §5 and FHIR R4 itself require
+  (`REQUIRED`, «<Type>.<path>: minimum required = 1», 400), and the values a profile fixes or
+  restricts (`ALLOWED`, «<Type>.<path>: value not allowed», 400). Keyed by the profile, not by the
+  FHIR type: a vital sign and a laboratory result are both Observations, under two profiles. A
+  profile the table does not name is held to spec §4 alone — `UNCHECKED_PROFILE` is the one the
+  tests of §4 send. Phase F1 fills in its four profiles; each later phase adds its own with its
+  mapper.
+
 Synthetic account, synthetic resources only."""
 from __future__ import annotations
 
@@ -53,8 +59,47 @@ MALFORMED_REFERENCE = "A reference must be Type/id"
 LOCAL_ID_CHANGED = "The local-system-unique-id differs from the stored resource's"
 _REFERENCE = re.compile(r"^([A-Za-z]+)/([A-Za-z0-9\-.]+)$")
 
-#: Per FHIR type, the elements its profile requires (spec §5) — filled in by F1–F5.
-REQUIRED: dict[str, tuple[str, ...]] = {}
+STRUCTURE = "http://fhir.az/StructureDefinition/"
+#: A profile the stand-in holds no rules for: what the tests of spec §4 alone send.
+UNCHECKED_PROFILE = BASE_URL + "/StructureDefinition/unchecked"
+_SEX = STRUCTURE + "sex"
+_FATHERS_NAME = STRUCTURE + "fathersName"
+_FIN = "http://fhir.az/sid/fin"
+
+#: Per profile, the elements it requires, each a dotted path; a list on the way may hold the next
+#: step in any of its items, and `name(x)` keeps the items whose `url` or `system` is x. From spec
+#: §5 and D16, D17, D20 (second-hand, §2) and from FHIR R4 (4.0.1) itself: Observation.status and
+#: .code, Encounter.status and .class are 1..1 there (hl7.org/fhir/R4, read 2026-11-12).
+REQUIRED: dict[str, tuple[str, ...]] = {
+    STRUCTURE + "az-patient": (f"identifier({_FIN}).value", "name.family", "name.given",   # D20
+                               f"extension({_SEX}).valueCode", f"extension({_FATHERS_NAME}).valueString"),
+    STRUCTURE + "az-practitioner": (f"identifier({_FIN}).value", "active"),                 # D16; §5
+    STRUCTURE + "az-encounter": ("status", "class", "serviceType"),                         # R4; D17
+    STRUCTURE + "az-observation": ("status", "code"),                                       # R4
+}
+#: Per profile, the values an element may take (D20: the platform refuses any other sex code; §5:
+#: the profile fixes a practitioner's `active`).
+ALLOWED: dict[str, dict[str, frozenset]] = {
+    STRUCTURE + "az-patient": {f"extension({_SEX}).valueCode": frozenset({"K", "Q"})},
+    STRUCTURE + "az-practitioner": {"active": frozenset({True})},
+}
+_STEP = re.compile(r"([A-Za-z]+)(?:\(([^)]*)\))?")
+
+
+def steps(path: str) -> list[tuple[str, str | None]]:
+    """A REQUIRED path's steps, each (name, selector or None); a selector may hold dots (a URL)."""
+    return [(match.group(1), match.group(2)) for match in _STEP.finditer(path)]
+
+
+def values_at(node, path: str) -> list:
+    """Every value at `path` in `node` (REQUIRED's syntax), lists walked through."""
+    found = [node]
+    for name, selector in steps(path):
+        found = [item.get(name) for item in found if isinstance(item, dict)]
+        found = [x for value in found for x in (value if isinstance(value, list) else [value])]
+        if selector is not None:
+            found = [x for x in found if isinstance(x, dict) and selector in (x.get("url"), x.get("system"))]
+    return [value for value in found if value not in (None, "", [], {})]
 
 
 def local_id_of(resource: dict) -> str | None:
@@ -211,9 +256,12 @@ class FakeTres:
             return _outcome(400, "meta.profile is required")
         if local_id_of(body) is None:
             return _outcome(400, "The local-system-unique-id extension is required")
-        for element in REQUIRED.get(resource_type, ()):
-            if body.get(element) in (None, "", [], {}):
-                return _outcome(400, f"{resource_type}.{element}: minimum required = 1")
+        for path in REQUIRED.get(profiles[0], ()):
+            if not values_at(body, path):
+                return _outcome(400, f"{resource_type}.{path}: minimum required = 1")
+        for path, allowed in ALLOWED.get(profiles[0], {}).items():
+            if any(value not in allowed for value in values_at(body, path)):
+                return _outcome(400, f"{resource_type}.{path}: value not allowed")
         if any(not isinstance(value, str) or not _REFERENCE.match(value) for value in reference_values(body)):
             return _outcome(400, MALFORMED_REFERENCE)
         for reference in sorted(references_of(body)):

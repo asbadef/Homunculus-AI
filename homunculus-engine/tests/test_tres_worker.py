@@ -33,14 +33,14 @@ from homunculus.tres.worker import (
     MAX_CONSECUTIVE, PACE_S, ROUND_S, THROTTLED_S, RoundReport, no_packages, run_round, tres_loop,
 )
 from tests.conftest import requires_db
-from tests.fake_tres import FakeTres
+from tests.fake_tres import UNCHECKED_PROFILE, FakeTres
 
 T0 = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
 EARLIER = T0 - timedelta(hours=1)
 
 
 def patient(local_id: str, given: str = "Ayşe") -> dict:
-    return {"resourceType": "Patient", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-patient"]},
+    return {"resourceType": "Patient", "meta": {"profile": [UNCHECKED_PROFILE]},
             "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}],
             "name": [{"family": "Sentetik", "given": [given]}]}
 
@@ -374,7 +374,7 @@ async def test_a_dead_line_counts_as_a_failure_and_five_of_them_end_the_round(db
 
 # ---------------------------------------------------------------- the tenant's switches (review #5)
 def practitioner(local_id: str) -> dict:
-    return {"resourceType": "Practitioner", "meta": {"profile": ["http://fhir.az/StructureDefinition/az-practitioner"]},
+    return {"resourceType": "Practitioner", "meta": {"profile": [UNCHECKED_PROFILE]},
             "extension": [{"url": LOCAL_ID_EXTENSION, "valueString": local_id}]}
 
 
