@@ -22,9 +22,14 @@ IT CHANGES DATA, AND THE DOWNGRADE DOES NOT UNDO THAT (spec D8). The downgrade d
 (the end times go with it) and the key from every group (a group the hospital gave it to since included: the code before
 this revision has no such key); it does NOT re-activate the rows steps 3 and 4 ended — it cannot tell them from rows a
 later PUT ended. Deploy notes: before the upgrade, a read-only count of the (bed_id, shift_start) pairs with more than
-one active row, of the rows steps 3 and 4 would end, numbers only. The old image's exception: an api from before this
-revision still has the POST, which could insert a second active row of one bed and window after 0022 and meet the
-index (a 500); no client calls it — no dashboard version ever did.
+one active row, of the rows steps 3 and 4 would end, numbers only.
+
+ROLLBACK. An image from before this revision does not start against it: its start command's `alembic upgrade head`
+refuses the unknown revision ("Can't locate revision identified by '0022'"). A rollback therefore runs `alembic
+downgrade` to this revision's `down_revision` (0020 today) FIRST, in a one-off container of THIS revision's image, and
+only then switches to the old image (as 0016). Only an old api started WITHOUT its start command would meet this schema:
+it still has the retired POST, which could insert a second active row of one bed and window and meet the index (a 500);
+no client calls that POST — no dashboard version ever did.
 ONE STATEMENT PER op.execute (asyncpg).
 
 Revision ID: 0022
