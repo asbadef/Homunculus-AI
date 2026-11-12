@@ -443,7 +443,10 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
                                 .where(Bed.id == stay.bed_id))).scalar_one()
     known = unitscope.reaches(reach, unit_id=unit_id, bed_id=stay.bed_id)
     if earlier.request_digest != digest:
-        extra = _numbers(number, stay.protocol_no) if known else None
+        # Re-read R-2: beside the number, the bed its admission lies on now (an id, which the
+        # screen names from its structure): after a move it is not the bed the form named.
+        extra = {**_numbers(number, stay.protocol_no), "bed_id": str(stay.bed_id)} \
+            if known else None
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
                       "form.", extra=extra).http()
     # Re-read R-1: the stay's row is shown only to a caller whose units hold its bed now. A stay

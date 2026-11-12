@@ -301,6 +301,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     let fieldErrors;
     let apiCode;
     let patientNumber;
+    let bedId;
     let occupied;
     try {
       const body = await res.json();
@@ -323,6 +324,9 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // protocol number), when the detail carries it; else the H-number of an API before it.
         if (typeof body.detail.board_key === "string") patientNumber = body.detail.board_key;
         else if (typeof body.detail.patient_number === "string") patientNumber = body.detail.patient_number;
+        // G2-B1b re-read R-2: `request_conflict` also names the bed its admission lies on now — after a
+        // move not the form's — as an id the screen names from its structure. Read for that code only.
+        if (body.detail.code === "request_conflict" && typeof body.detail.bed_id === "string") bedId = body.detail.bed_id;
         // G2-ESLEME: `bed_occupied` names the occupied beds and, to a board.view holder, the patients'
         // board ids (devicebeds/service.py step 8; spec §4.5's "Extra" column). Read for that code only,
         // and only those two keys are kept — never a name.
@@ -340,6 +344,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     err.status = res.status;
     if (apiCode) err.apiCode = apiCode;
     if (patientNumber !== undefined) err.patientNumber = patientNumber;
+    if (bedId !== undefined) err.bedId = bedId;
     if (occupied !== undefined) err.occupied = occupied;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,

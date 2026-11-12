@@ -385,8 +385,11 @@ export function AdmitTab() {
       // the same patient typed again after «Yeni qəbul» would go out to another bed as a second one.
       const carriers = draft.get().unanswered.filter((x) => x.requestId === sent.requestId);
       // The admission is one of those sends': named after its bed when they share one — never the
-      // form's own bed by default, which may not be it.
-      const earlier = new Set(carriers.map((x) => normId(x.bedId))).size === 1 ? carriers[0].bed : null;
+      // form's own bed by default, which may not be it. When the server names the bed it lies on
+      // now (`bedId`, in her units; G2-B1b re-read R-2) that bed is named — after a move it is not
+      // the bed the send went to — or no bed, when the structure does not hold it.
+      const earlier = typeof err.bedId === "string" ? bedLabel(index, err.bedId)
+        : new Set(carriers.map((x) => normId(x.bedId))).size === 1 ? carriers[0].bed : null;
       draft.update((s) => ({
         unanswered: s.unanswered.map((x) => (x.requestId === sent.requestId ? { ...x, checked: false } : x)),
         held: { bed: earlier, conflict: apiErrorKey(err) },

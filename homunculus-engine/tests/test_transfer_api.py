@@ -966,6 +966,7 @@ async def test_the_kabul_form_sent_again_after_a_move_answers_where_she_lies_now
     detail = r.json()["detail"]
     assert (r.status_code, detail["code"], detail["board_key"]) == (409, "request_conflict",
                                                                     FIRST_PROTOCOL)
+    assert detail["bed_id"] == two          # re-read R-2: the bed it lies on now, not the form's
 
 
 async def test_a_kabul_form_sent_again_after_a_move_out_of_the_nurses_units_shows_nothing_of_the_stay(
@@ -1001,6 +1002,11 @@ async def test_a_kabul_form_sent_again_after_a_move_out_of_the_nurses_units_show
     assert (answer["discharge_disposition"], answer["discharge_note"]) == (None, None)
     assert n1 not in again.text and discharge_note not in again.text
     assert arriving["id"] not in again.text
+    # Another form under the same id: the conflict names no number and no bed out of her units.
+    r = await client.post("/admissions", json=form(w, "3", request_id=uuid.UUID(body["request_id"])),
+                          headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "request_conflict")
+    assert not {"board_key", "patient_number", "bed_id"} & r.json()["detail"].keys()
 
 
 # ---------------------------------------------------------------- the discharge time after a move (final review M-1)

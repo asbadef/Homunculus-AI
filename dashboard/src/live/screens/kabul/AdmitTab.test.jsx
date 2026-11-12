@@ -745,6 +745,30 @@ describe("AdmitTab", () => {
       expect(toasts().queryByText(`${BED1}: ${CONFLICT}`)).toBeNull();
       expect(admitDraftOf(store).get().held).toMatchObject({ conflict: { key: "kabul.err.requestConflictNumber" } });
     });
+
+    // G2-B1b re-read R-2: the server names the bed the earlier admission lies on now (`bed_id`, in
+    // her units). After a move it is not the bed the send went to: the toast names where she lies,
+    // or no bed when the structure does not hold it — never the bed she left.
+    it.each([
+      ["the bed she lies in now", BED(5), "5 · Otaq 2 · Reanimasiya"],
+      ["no bed when the structure does not hold it", BED(42), null],
+    ])("names %s on a request_conflict after a move (R-2)", async (_case, bedId, named) => {
+      const moved = () => refusal(409, "This request id came before with another admission form.",
+        { apiCode: "request_conflict", patientNumber: "H2600042", bedId });
+      const { api } = await mountKabul(<AdmitTab />, {
+        perms: NURSE,
+        setup: (a) => a.admit.mockRejectedValueOnce(timedOut()).mockRejectedValueOnce(moved()),
+      });
+      fillRequired();
+      await press();                                                         // no answer; bed 1 still free
+      fireEvent.change(screen.getByLabelText(/^Qəbul diaqnozu/), { target: { value: "Sentetik tanı, düzəldilmiş" } });
+      await press();                                                         // landed, signed and moved since
+      expect(api.admit).toHaveBeenCalledTimes(2);
+      expect(toasts().queryByText(`${BED1}: ${CONFLICT}`)).toBeNull();
+      expect(toasts().getAllByText(named ? `${named}: ${CONFLICT}` : CONFLICT).length).toBeGreaterThan(0);
+      expect(panel().getByText(CONFLICT)).toBeTruthy();
+      expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    });
   });
 
   // A-37: the server refuses a second OPEN admission of the same person — her name and birth date,
