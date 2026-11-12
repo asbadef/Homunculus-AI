@@ -9,8 +9,10 @@
 //
 // «HASTAYA BAĞLA» walks the page's own two steps before anything is sent (D11): the patient list (the board in this
 // session's scope), then the identity question — name, year of birth, bed — asked over the reading's values. Only
-// «Evet, bağla» sends the link. The engine takes each reading at its own time, with the device as its source: the
-// patient's card and scores change as if the device had sent the right number, and the board reloads.
+// «Evet, bağla» sends the link. The engine keeps each reading's own measurement time and the device as its source,
+// and judges it at the wall clock (spec D12 as amended: a linked value is late, and no clock — the antibiotic hour, an
+// alert's episode — may run backwards for it); the patient's card and scores change, and the board reloads. A set
+// measured before the chosen patient's stay began is refused (`reading_before_stay`), said on the toast.
 // «REDDET» asks for a reason of 10–200 characters; the values stay in the record.
 //
 // THE ENGINE DECIDES: a refusal is said on the toast in the reader's words (apiErrors.js maps its code), named after

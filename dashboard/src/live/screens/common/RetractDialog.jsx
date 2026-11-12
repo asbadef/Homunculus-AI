@@ -1,6 +1,8 @@
-// src/live/screens/common/RetractDialog.jsx — «hatalı giriş» (G3-01, D10, D11): withdraw one hand-entered value,
-// with a reason. Two screens open it — the bedside saved step (bedside/SavedStep.jsx) and the trend dialog's
-// table (patient/trends/TrendModal.jsx) — so it lives here, with the other shared pieces (X15).
+// src/live/screens/common/RetractDialog.jsx — «hatalı giriş» (G3-01, D10, D11): withdraw one value, with a reason —
+// a hand entry, or, since G3-05 (D13), a device reading (the engine withdraws every copy of it). Several screens open
+// it — the bedside saved step (bedside/SavedStep.jsx), the trend dialog's table (patient/trends/TrendModal.jsx), the
+// record box's «Düzelt» (patient/readings/CorrectDialog.jsx) among them — so it lives here, with the other shared
+// pieces (X15).
 //
 // WHAT IT SAYS before anything is sent: which value (its name, the number as entered, when it was measured) and
 // what the withdrawal does — the value leaves every score and alert, the chart keeps it struck through with the
@@ -12,7 +14,7 @@
 //
 // THE ENGINE DECIDES (D11), and its refusal is said on the toast, named after the bed, in its own words. «Already
 // withdrawn» (another desk got there first — by its sentence, RETRACT_ALREADY; the engine's other 409, «discharged»,
-// is NOT it) closes the dialog and the host marks the row; «no such hand entry» and «discharged» close it with no
+// is NOT it) closes the dialog and the host marks the row; «no such entry» and «discharged» close it with no
 // outcome, since nothing was written; a reason the engine finds short keeps it open. A 403 closes it. A withdrawal with no
 // answer may have landed (`mayHaveLanded`): she is told to look at the chart, the host reads again, the dialog
 // closes. A store that dropped its answer (null: the session ended) says nothing. `onDone(outcome)` tells the
