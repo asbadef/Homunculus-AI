@@ -667,6 +667,24 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
      *  response, snoozes, RRT calls and handover countersignatures; the unplaced and the hospital's sums. Counts and
      *  times only: no patient, no person, no free text. */
     qualityIndicators(days = 7) { return authed(`/quality?days=${encodeURIComponent(days)}`); },
+    // ---- G4-04: «İş yükü» (homunculus-engine admission/shifts.py, /shift-schedule) ----
+    /** The window («current» holds now, «next» follows it) and, per unit in my reach (one unit with `unitId`), its
+     *  active nurse–bed rows and the count of another window's overlapping ones: {shift: {start, end, which}, units:
+     *  [{unit_id, unit_name, items: [{bed_id, nurse_id, nurse_name, nurse_username}], other_rows}], generated_at}. Staff
+     *  names, never a patient. */
+    shiftSchedule(shift = "current", unitId = null) {
+      const q = new URLSearchParams({ shift });
+      if (unitId) q.set("unit_id", unitId);
+      return authed(`/shift-schedule?${q}`);
+    },
+    /** [{id, name, username, reaches_unit}] — the people the assignment form offers for that unit: the tenant's active
+     *  nurses and charge nurses, each with whether her own scope reaches the unit. */
+    shiftNurses(unitId) { return authed(`/shift-schedule/nurses?unit_id=${encodeURIComponent(unitId)}`); },
+    /** Replace one unit's assignment for one window: {unit_id, shift_start (the GET's shift.start), items: [{bed_id,
+     *  nurse_id}], expected: [...] (the rows read, required)} → the unit's new state and `warnings` ([{code:
+     *  "unit_not_reached", nurse_id}]). 409 `shift_changed` (`err.apiCode`): the window is no longer current or next;
+     *  409 concurrentChange or `assignment_conflict`: someone saved since `expected` was read. */
+    saveShiftSchedule(body) { return authed("/shift-schedule", { method: "PUT", body }); },
     /** One handover of one admission, OPEN, to the receiver I chose. Nothing is signed yet. */
     openHandover({ unitId, incomingUserId, admissionId }) {
       return authed("/handovers", {
