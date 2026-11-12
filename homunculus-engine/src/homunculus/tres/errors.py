@@ -42,6 +42,7 @@ WORDS = {
 }
 
 
-def refusal(status: int, code: str) -> Refusal:
-    """The refusal of `code`, with its words."""
-    return Refusal(status, code, WORDS[code])
+def refusal(status: int, code: str, extra: dict | None = None) -> Refusal:
+    """The refusal of `code`, with its words — and `extra` keys beside them in the detail (never a
+    value of the record: `tres_host_not_allowed` names the `environment`, test or live)."""
+    return Refusal(status, code, WORDS[code], extra)

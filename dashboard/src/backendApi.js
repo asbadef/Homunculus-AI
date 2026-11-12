@@ -302,6 +302,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     let apiCode;
     let patientNumber;
     let occupied;
+    let apiEnvironment;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -326,6 +327,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         // G2-ESLEME: `bed_occupied` names the occupied beds and, to a board.view holder, the patients'
         // board ids (devicebeds/service.py step 8; spec §4.5's "Extra" column). Read for that code only,
         // and only those two keys are kept — never a name.
+        // TRƏS-01 (review M10): `tres_host_not_allowed` names the account it is about, test or live — that word only.
+        if (body.detail.code === "tres_host_not_allowed" && ["test", "live"].includes(body.detail.environment)) {
+          apiEnvironment = body.detail.environment;
+        }
         if (body.detail.code === "bed_occupied" && Array.isArray(body.detail.occupied)) {
           occupied = body.detail.occupied.filter((o) => typeof o?.bed_id === "string")
             .map((o) => (typeof o.patient_id === "string" ? { bed_id: o.bed_id, patient_id: o.patient_id } : { bed_id: o.bed_id }));
@@ -341,6 +346,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     if (apiCode) err.apiCode = apiCode;
     if (patientNumber !== undefined) err.patientNumber = patientNumber;
     if (occupied !== undefined) err.occupied = occupied;
+    if (apiEnvironment !== undefined) err.apiEnvironment = apiEnvironment;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.

@@ -866,6 +866,14 @@ describe("the national feed's refusals (TRƏS-01)", () => {
       .toBe("Bu quraşdırmada xaricə göndəriş bağlıdır; bağlantı yoxlanılmadı.");
     expect(apiErrorText(t, Object.assign(new Error("x"), { status: 422, apiCode: "tres_host_not_allowed" })))
       .toBe("Bu ünvana bu quraşdırmada icazə verilmir (TRES_HOSTS).");
+    // review M10: the refusal names the account it is about
+    const host = (apiEnvironment) => Object.assign(new Error("x"), { status: 422, apiCode: "tres_host_not_allowed", apiEnvironment });
+    expect(apiErrorKey(host("test")).key).toBe("tres.err.hostNotAllowedTest");
+    expect(apiErrorText(t, host("live"))).toBe("Canlı mühitin hesabının ünvanına bu quraşdırmada icazə verilmir (TRES_HOSTS).");
+    expect(apiErrorKey(host("prod")).key).toBe("tres.err.hostNotAllowed");
+    for (const key of ["tres.err.hostNotAllowedTest", "tres.err.hostNotAllowedLive"]) {
+      for (const lang of LANG_CODES) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toBeTruthy();
+    }
   });
 });
 

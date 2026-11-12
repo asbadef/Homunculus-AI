@@ -1865,6 +1865,15 @@ describe("backendApi — the monitor→bed editor", () => {
     expect(JSON.stringify(Object.entries(err))).not.toContain("Ahmet");
   });
 
+  it("a tres_host_not_allowed refusal carries the account it is about (test or live), and no other code does", async () => {
+    const refuse = (detail) => signedIn(vi.fn().mockResolvedValue(jsonResponse({ detail }, { ok: false, status: 422 })))
+      .saveTresSettings({}).catch((e) => e);
+    const live = await refuse({ code: "tres_host_not_allowed", environment: "live", message: "The base URL's host is not allowed." });
+    expect(live).toMatchObject({ status: 422, apiCode: "tres_host_not_allowed", apiEnvironment: "live" });
+    expect((await refuse({ code: "tres_host_not_allowed", environment: "prod", message: "x" })).apiEnvironment).toBeUndefined();
+    expect((await refuse({ code: "tres_base_url", environment: "test", message: "x" })).apiEnvironment).toBeUndefined();
+  });
+
   it("only a bed_occupied refusal carries err.occupied; any other code leaves it undefined, list or no list", async () => {
     const refuse = (detail) => signedIn(vi.fn().mockResolvedValue(jsonResponse({ detail }, { ok: false, status: 409 })))
       .bindDeviceBed({}).catch((e) => e);

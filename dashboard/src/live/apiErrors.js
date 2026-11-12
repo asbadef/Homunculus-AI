@@ -279,6 +279,12 @@ export const TRES_CODE_KEYS = new Map([
   ["tres_account_incomplete", "tres.err.accountIncomplete"],
   ["tres_host_not_allowed", "tres.err.hostNotAllowed"],
 ]);
+/** TRƏS-01 (review M10): `tres_host_not_allowed` says which account's address, when the refusal names it
+ *  (`err.apiEnvironment`, backendApi.js) — the install narrowed TRES_HOSTS, and the form holds two addresses. */
+const TRES_HOST_BY_ACCOUNT = new Map([
+  ["test", "tres.err.hostNotAllowedTest"],
+  ["live", "tres.err.hostNotAllowedLive"],
+]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card
  *  key of an admission made since migration 0015 — so a protocol is never called a patient number. */
@@ -375,6 +381,9 @@ function admissionCodeKey(err) {
   }
   if (ADMISSION_CODE_KEYS.has(code)) return { key: ADMISSION_CODE_KEYS.get(code), vars: {} };
   if (TASK_CODE_KEYS.has(code)) return { key: TASK_CODE_KEYS.get(code), vars: {} };
+  if (code === "tres_host_not_allowed" && TRES_HOST_BY_ACCOUNT.has(err?.apiEnvironment)) {
+    return { key: TRES_HOST_BY_ACCOUNT.get(err.apiEnvironment), vars: {} };
+  }
   if (TRES_CODE_KEYS.has(code)) return { key: TRES_CODE_KEYS.get(code), vars: {} };
   if (code.startsWith(FIELD_INVALID)) {
     return { key: INVALID_FIELD_KEYS.get(code.slice(FIELD_INVALID.length)) ?? "kabul.invalid.other", vars: {} };

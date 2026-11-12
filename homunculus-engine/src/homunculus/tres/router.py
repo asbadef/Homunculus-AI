@@ -6,10 +6,11 @@ GET /admin/tres/settings — the tenant's row, or the defaults while it has none
 answer carries `egress`, the install's lock (D2 (b)), so the tab can say that nothing leaves the
 server whatever is set here — and NEVER a password: `password_set` only.
 
-PUT /admin/tres/settings — reads the body first (mode, environment, the wait, the types, each
-base URL https with nothing riding along, on a host the install allows (`TRES_HOSTS`,
-egress.py), the lengths: a coded 422, nothing written). Then it makes the tenant's row if there is
-none, locks it and writes what differs. A password omitted or null keeps the stored one — unless
+PUT /admin/tres/settings — makes the tenant's row if there is none and locks it, then reads the
+body against it (mode, environment, the wait, the types, each base URL https with nothing riding
+along, a NEW one on a host the install allows (`TRES_HOSTS`, egress.py) — one sent back as stored
+is not judged against the hosts again (review M10) —, the lengths: a coded 422 that rolls back,
+nothing written; `tres_host_not_allowed` names the `environment`). Then it writes what differs. A password omitted or null keeps the stored one — unless
 that environment's base URL changes, which clears it (review #4: a stored password never follows
 the account to another server); an empty string clears it. A save that changes something also lets a tenant the platform refused
 (`session_refused_at`, worker.py) be tried again. The change is audited `tres.settings`
@@ -47,12 +48,12 @@ from homunculus.auth.models import User
 from homunculus.db import get_db
 from homunculus.tres.client import TresError
 from homunculus.tres.egress import TresEgressRefused, open_client
-from homunculus.tres.errors import EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, refusal
+from homunculus.tres.errors import EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_HOST_NOT_ALLOWED, refusal
 from homunculus.tres.models import (
     ACCOUNT_FIELDS, DEFAULT_SETTLE_HOURS, ENVIRONMENTS, RESOURCE_TYPES, TresSettings, account_of,
 )
 from homunculus.tres.schemas import (
-    TresAccountOut, TresSettingsIn, TresSettingsOut, TresTestOut, settings_refusal,
+    TresAccountOut, TresSettingsIn, TresSettingsOut, TresTestOut, refusal_of,
 )
 
 router = APIRouter(prefix="/admin/tres", tags=["tres"])
@@ -147,16 +148,21 @@ async def write_settings(
     caller_tenant: uuid.UUID = Depends(caller_tenant_id),
     user: User = Depends(require_permission("tres.manage")),
 ) -> TresSettingsOut:
-    refused = settings_refusal(payload, hosts=_hosts(request))
-    if refused is not None:
-        raise refusal(422, refused).http()
-
     actor, user_id = user.username, user.id
     await db.execute(insert(TresSettings).values(tenant_id=caller_tenant)
                      .on_conflict_do_nothing(index_elements=["tenant_id"]))
     row = (await db.execute(
         select(TresSettings).where(TresSettings.tenant_id == caller_tenant)
         .with_for_update().execution_options(populate_existing=True))).scalar_one()
+    # Judged against the row as stored (review M10): an address sent back unchanged is not judged
+    # against the install's hosts again. A refusal writes nothing — not even a new row.
+    refused = refusal_of(payload, hosts=_hosts(request),
+                         stored={prefix: getattr(row, f"{prefix}_base_url") for prefix in ENVIRONMENTS})
+    if refused is not None:
+        await db.rollback()
+        code, environment = refused
+        extra = {"environment": environment} if code == TRES_HOST_NOT_ALLOWED else None
+        raise refusal(422, code, extra).http()
     changed = _apply(row, payload)
     audit: dict = {"actor": actor, "changed": changed}
     hosts = {prefix: _host(getattr(row, f"{prefix}_base_url")) for prefix in ENVIRONMENTS

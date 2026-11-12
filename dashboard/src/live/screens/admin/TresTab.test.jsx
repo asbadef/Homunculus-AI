@@ -142,6 +142,17 @@ describe("TresTab — the form", () => {
     expect(sandbox().getByLabelText(/^Server ünvanı/).value).toBe("https://ehr.example.az");
   });
 
+  it("says which account's address the installation does not allow", async () => {
+    await mounted((a) => {
+      a.tresSettings.mockResolvedValue(UNSET);
+      a.saveTresSettings.mockRejectedValue(refusal(422, "The base URL's host is not allowed on this installation.",
+        { apiCode: "tres_host_not_allowed", apiEnvironment: "live" }));
+    });
+    fireEvent.change(live().getByLabelText(/^Server ünvanı/), { target: { value: "https://ehr.example.az" } });
+    await save();
+    expect(shown(/Canlı mühitin hesabının ünvanına bu quraşdırmada icazə verilmir \(TRES_HOSTS\)\./)).toHaveLength(1);
+  });
+
   it("holds a bad wait and an address that is not https before anything is sent", async () => {
     const { api } = await mounted((a) => a.tresSettings.mockResolvedValue(UNSET));
     for (const typed of ["169", "-1", "2.5", ""]) {

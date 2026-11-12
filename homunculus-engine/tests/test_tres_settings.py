@@ -477,3 +477,37 @@ async def test_a_successful_connection_test_lets_a_parked_tenant_try_again_and_a
     await _park(db_session)
     assert (await client.post(TEST_URL, headers=w.auth["admin"])).json() == {"ok": True, "message": None}
     assert await _parked_at(db_session) is None
+
+
+# ---------------------------------------------------------------- the install narrows its hosts (review M10)
+def test_a_stored_address_sent_back_unchanged_is_not_judged_against_the_hosts_again():
+    stored = {"test": None, "live": "https://ehr.e-health.gov.az"}
+    for unchanged in ("https://ehr.e-health.gov.az", "  https://ehr.e-health.gov.az "):
+        sent = TresSettingsIn(**body(live={**EMPTY, "base_url": unchanged}))
+        assert settings_refusal(sent, hosts=HOSTS, stored=stored) is None
+    moved = TresSettingsIn(**body(live={**EMPTY, "base_url": "https://ehr.e-health.gov.az/fhir"}))
+    assert settings_refusal(moved, hosts=HOSTS, stored=stored) == "tres_host_not_allowed"
+    fresh = TresSettingsIn(**body(live={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}))
+    assert settings_refusal(fresh, hosts=HOSTS) == "tres_host_not_allowed"        # nothing stored: judged
+    bad = TresSettingsIn(**body(live={**EMPTY, "base_url": "http://ehr.e-health.gov.az"}))
+    assert settings_refusal(bad, hosts=HOSTS, stored={"live": "http://ehr.e-health.gov.az"}) == "tres_base_url"
+
+
+@requires_db
+async def test_a_narrowed_install_still_saves_the_form_and_names_the_account_it_refuses(ward, db_session):
+    """The install's TRES_HOSTS no longer holds the live host the tenant saved: the form, sent back
+    as it was, still saves (the client refuses that address at connect); a NEW address elsewhere
+    is refused, and the refusal says which account."""
+    w, client, app = ward
+    db_session.add(TresSettings(tenant_id=w.tenant.id, mode="off", environment="test",
+                                live_base_url="https://ehr.e-health.gov.az"))
+    await db_session.commit()
+    kept = await client.put(URL, json=body(mode="validate", live={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}),
+                            headers=w.auth["admin"])
+    assert (kept.status_code, kept.json()["mode"], kept.json()["live"]["base_url"]) == (
+        200, "validate", "https://ehr.e-health.gov.az"), kept.text
+    moved = await client.put(URL, json=body(live={**EMPTY, "base_url": "https://ehr-sandbox.e-health.gov.az"}),
+                             headers=w.auth["admin"])
+    assert moved.status_code == 422
+    assert moved.json()["detail"] == {"code": "tres_host_not_allowed", "environment": "live",
+                                      "message": WORDS["tres_host_not_allowed"]}

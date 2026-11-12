@@ -10,6 +10,7 @@ only `password_set`. Every other account field is cleared by null or an empty st
 base URL clears the stored password too unless the same body brings a new one (router.py)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 import httpx
@@ -93,28 +94,42 @@ def base_url_ok(value: str) -> bool:
     return bool(url.raw_host) and not url.userinfo and url.port is None
 
 
-def settings_refusal(payload: TresSettingsIn, *, hosts: frozenset[str]) -> str | None:
-    """The code the body is refused with, or None. In the form's order: the first wrong value. A
-    base URL whose host is not among `hosts` — the install's (egress.allowed_hosts) — is
-    `tres_host_not_allowed`: where the data may go is not the tenant administrator's choice."""
+def refusal_of(payload: TresSettingsIn, *, hosts: frozenset[str],
+               stored: Mapping[str, str | None] | None = None) -> tuple[str, str | None] | None:
+    """(the code the body is refused with, the environment it is about or None), or None. In the
+    form's order: the first wrong value.
+
+    A NEW base URL whose host is not among `hosts` — the install's (egress.allowed_hosts) — is
+    `tres_host_not_allowed`: where the data may go is not the tenant administrator's choice. A base
+    URL sent back exactly as `stored` (that environment's saved one) is not judged against the
+    hosts again (review M10): an install that narrows TRES_HOSTS must not lock the whole form;
+    the client refuses that address at connect anyway (egress.open_client). Its shape still is."""
     if payload.mode not in MODES:
-        return TRES_MODE
+        return TRES_MODE, None
     if payload.environment not in ENVIRONMENTS:
-        return TRES_ENVIRONMENT
+        return TRES_ENVIRONMENT, None
     if not 0 <= payload.settle_hours <= SETTLE_MAX:
-        return TRES_SETTLE_HOURS
+        return TRES_SETTLE_HOURS, None
     types = payload.enabled_types
     if len(set(types)) != len(types) or not set(types) <= set(RESOURCE_TYPES):
-        return TRES_TYPES
+        return TRES_TYPES, None
     for prefix in ENVIRONMENTS:
         account = getattr(payload, prefix)
         base_url = (account.base_url or "").strip()
         if base_url and not base_url_ok(base_url):
-            return TRES_BASE_URL
-        if base_url and not address_allowed(base_url, hosts):
-            return TRES_HOST_NOT_ALLOWED
+            return TRES_BASE_URL, prefix
+        unchanged = base_url == ((stored or {}).get(prefix) or "")
+        if base_url and not unchanged and not address_allowed(base_url, hosts):
+            return TRES_HOST_NOT_ALLOWED, prefix
         for name in ACCOUNT_FIELDS:
             value = getattr(account, name)
             if value is not None and len(value) > FIELD_MAX[name]:
-                return TRES_FIELD_LENGTH
+                return TRES_FIELD_LENGTH, prefix
     return None
+
+
+def settings_refusal(payload: TresSettingsIn, *, hosts: frozenset[str],
+                     stored: Mapping[str, str | None] | None = None) -> str | None:
+    """The code alone of `refusal_of`."""
+    refused = refusal_of(payload, hosts=hosts, stored=stored)
+    return refused[0] if refused is not None else None
