@@ -1,0 +1,74 @@
+# homunculus-engine/src/homunculus/tres/az.py
+"""The platform's rules for a person (TRƏS-01, spec D20, D16) — pure functions, no I/O.
+
+What the `az-patient` profile requires — the FİN, the family and the given name, the father's
+name and the sex — is either here in the platform's form, or the reason it is not, as a catalogue
+code the tab shows so the ward can complete the record. Nothing here guesses: a value that does
+not fit is a skip, never a correction.
+
+* FİN: trimmed and upper-cased, then exactly seven Latin capitals or digits. Never transliterated
+  (an `Ə` typed in it is `fin_format`, not an `E`).
+* Name: the admission form writes «Soyad Ad» (family first), so the first word is the family name
+  and the rest the given names; a single word cannot be split (`name_single`).
+* Sex: `male` → `K`, `female` → `Q` (the platform's own codes); `other` and `unknown` have none.
+* Phone: `+994` and the nine digits of the national number, from `+994…`, `994…`, the domestic
+  form with its leading `0`, or the nine digits alone — spaces, dashes, dots and brackets dropped.
+  Anything else is not sent (a phone is not required: no skip)."""
+from __future__ import annotations
+
+import re
+from datetime import date
+
+FIN_MISSING = "fin_missing"
+FIN_FORMAT = "fin_format"
+NAME_SINGLE = "name_single"
+FATHER_NAME_MISSING = "father_name_missing"
+SEX_UNMAPPED = "sex_unmapped"
+BIRTH_DATE_INVALID = "birth_date_invalid"
+
+_FIN = re.compile(r"[A-Z0-9]{7}")
+SEX_CODES = {"male": "K", "female": "Q"}
+_PHONE_PUNCTUATION = re.compile(r"[\s\-.()]")
+_PHONE_FORMS = (re.compile(r"\+994(\d{9})"), re.compile(r"994(\d{9})"), re.compile(r"0(\d{9})"),
+                re.compile(r"(\d{9})"))
+
+
+def normal_fin(value: str | None) -> tuple[str | None, str | None]:
+    """(the FİN in the platform's form, None) or (None, the skip reason)."""
+    fin = (value or "").strip().upper()
+    if not fin:
+        return None, FIN_MISSING
+    if not _FIN.fullmatch(fin):
+        return None, FIN_FORMAT
+    return fin, None
+
+
+def split_name(display_name: str | None) -> tuple[tuple[str, list[str]] | None, str | None]:
+    """((family, [given…]), None) from «Soyad Ad …», or (None, the skip reason)."""
+    words = (display_name or "").split()
+    if len(words) < 2:
+        return None, NAME_SINGLE
+    return (words[0], words[1:]), None
+
+
+def sex_code(sex: str | None) -> tuple[str | None, str | None]:
+    code = SEX_CODES.get((sex or "").strip().lower())
+    return (code, None) if code else (None, SEX_UNMAPPED)
+
+
+def phone(value: str | None) -> str | None:
+    """`+994` and nine digits, or None (not sent)."""
+    bare = _PHONE_PUNCTUATION.sub("", value or "")
+    for form in _PHONE_FORMS:
+        match = form.fullmatch(bare)
+        if match:
+            return "+994" + match.group(1)
+    return None
+
+
+def birth_date(value: str | None) -> tuple[str | None, str | None]:
+    """The stored ISO date as the platform's `date`, or (None, `birth_date_invalid`)."""
+    try:
+        return date.fromisoformat((value or "").strip()).isoformat(), None
+    except ValueError:
+        return None, BIRTH_DATE_INVALID
