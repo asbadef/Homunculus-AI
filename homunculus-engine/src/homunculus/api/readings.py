@@ -80,6 +80,13 @@ UNMATCHED_WINDOW = timedelta(days=7)
 LINK_MAX_AGE = timedelta(hours=24)
 #: The most readings one link or rejection names: a set is one round's values of one patient.
 SET_MAX = 50
+#: The most sets the list answers: the newest arrivals; `count` still says how many there are, and `truncated`
+#: that the answer is short of them (B6 review). A monitor left on a discharged number lists a set per round,
+#: and the list is polled every minute by every nurse.
+LIST_MAX = 200
+#: A reading id is a 64-bit signed integer in the table: a larger one names no reading, and is refused as a
+#: malformed body rather than left to the database.
+ID_MAX = 2**63 - 1
 REJECT_MIN_REASON_CHARS = 10
 REJECT_MAX_REASON_CHARS = 200
 
@@ -375,14 +382,46 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     def _ids(body: dict) -> list[int]:
         raw = body.get("readings")
         if (not isinstance(raw, list) or not 1 <= len(raw) <= SET_MAX or len(set(map(repr, raw))) != len(raw)
-                or any(not isinstance(i, int) or isinstance(i, bool) or i < 1 for i in raw)):
+                or any(not isinstance(i, int) or isinstance(i, bool) or not 1 <= i <= ID_MAX for i in raw)):
             raise HTTPException(status_code=422, detail=READING_BODY)
         return sorted(raw)
+
+    def _once_per_number(visible: Callable[[str], bool]) -> Callable[[str], bool]:
+        """`visible` asked once per number within one request (B6 review): the decision is an identity read — a
+        synchronous SELECT and a decrypt on the event loop — and a monitor left on a discharged number lists
+        thousands of rows under one number."""
+        known: dict[str, bool] = {}
+
+        def check(key: str) -> bool:
+            if key not in known:
+                known[key] = visible(key)
+            return known[key]
+        return check
+
+    def _assigned_event(hospital: str, patient_id: str, first: Reading, ids: list[int], actor: str) -> AuditEvent:
+        """The one row of a link: the readings of the set that went in, under the patient they went in for."""
+        return AuditEvent(hospital, READING_ASSIGNED, patient_id, "reading", {
+            "readings": ids, "received_key": first.received_key, "reason": first.unmatched_reason,
+            "device": first.source, "obs_ts": _iso(first.observed_at), "actor": actor})
+
+    def _note_partial(hospital: str, patient_id: str, first: Reading, linked: list[int], actor: str) -> None:
+        """A set that stopped part-way (a raise, or a discharge between two readings) is audited for what DID go
+        in: one `reading_assigned` row listing only the readings linked, if there is one. The readings are in the
+        engine with their `ingest` rows; this row says who linked them. Best effort — the request is already
+        failing, and the answer it gives must not change: a failed append is logged with its class only, never
+        the number or a value."""
+        if not linked:
+            return
+        try:
+            audit.append(_assigned_event(hospital, patient_id, first, linked, actor))
+        except Exception as exc:
+            log.error("vital_readings: kısmen bağlanan kümenin denetim satırı yazılamadı (hastane %s, %d ölçüm, %s)",
+                      hospital, len(linked), type(exc).__name__)
 
     async def _one_set(who: Caller, authorization: str | None, ids: list[int]) -> list[Reading]:
         """The rows named, when every one is waiting, visible to this caller (D11) and of one set — else the
         refusal. A row the caller may not see answers as one that is not there."""
-        visible = await sees(who, authorization)
+        visible = _once_per_number(await sees(who, authorization))
         rows = [r for r in store.get(who.hospital, ids)
                 if r.state == STATE_UNMATCHED
                 and (r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key))]
@@ -412,11 +451,13 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     async def list_unmatched(authorization: str | None = Header(default=None)):
         who = await caller(authorization)
         _person(who)
-        visible = await sees(who, authorization)
+        visible = _once_per_number(await sees(who, authorization))
         now = clock()
         rows = [r for r in store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW)
                 if r.unmatched_reason != REASON_DISCHARGED or visible(r.received_key)]
         sets = unmatched_sets(rows, now)
+        if len(sets) > LIST_MAX:                         # the newest LIST_MAX; `count` stays the true number
+            return {"count": len(sets), "sets": sets[:LIST_MAX], "truncated": True}
         return {"count": len(sets), "sets": sets}
 
     @router.post("/readings/unmatched/assign")
@@ -445,13 +486,15 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         # second `ingest` row — replayed twice, or under two patients. It stays CLAIMED (`assigned`, no
         # `patient_key`) and `reconcile` (Task B10) finalizes it from its `ingest` row, or releases it when
         # CLAIM_STALE has passed with none (the B3 review). Readings of the set already applied stay linked.
-        # Only the readings not yet attempted go back to the list; the failure goes up (500).
+        # Only the readings not yet attempted go back to the list; the failure goes up (500). A set that stops
+        # part-way is audited for the readings that DID go in (`linked`: applied and filed — B6 review).
         #
         # The target is read again before EACH reading (the B3 review): `apply` awaits, and a discharge between
         # two readings of a set must not put the discharged patient back in the engine, publish a card or notify
         # (D4: no alert for a discharged number). The read is synchronous and the check immediately precedes the
         # `apply`, so a discharge can only land between two readings, never inside the decision.
         waiting = [r.id for r in claimed]
+        linked: list[int] = []
         alerts: list = []
         discharged = False
         try:
@@ -466,18 +509,18 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                                   timestamp=row.observed_at, source_device=row.source)
                 alerts, written = await apply(hospital, obs, record, now, reading=row.id)
                 store.finalize(hospital, row.id, patient_key=patient_id, admission_id=admission, entry_id=written.id)
+                linked.append(row.id)
         except Exception:
             _release(hospital, waiting)
+            _note_partial(hospital, patient_id, claimed[0], linked, actor)
             raise
         if discharged:
-            # What was applied stays applied and finalized; nothing more is written for this set (no
-            # `reading_assigned` row), and the rest return to the list.
+            # What was applied stays applied and finalized and is audited as the part of the set that went in; the
+            # rest return to the list; nothing more reaches the engine.
             _release(hospital, waiting)
+            _note_partial(hospital, patient_id, claimed[0], linked, actor)
             raise reading_refusal(409, READING_TARGET_DISCHARGED)
-        first = claimed[0]
-        audit.append(AuditEvent(hospital, READING_ASSIGNED, patient_id, "reading", {
-            "readings": ids, "received_key": first.received_key, "reason": first.unmatched_reason,
-            "device": first.source, "obs_ts": _iso(first.observed_at), "actor": actor}))
+        audit.append(_assigned_event(hospital, patient_id, claimed[0], ids, actor))
         return {"assigned": ids, "patient_id": patient_id, "alerts": [a.kind for a in alerts]}
 
     @router.post("/readings/unmatched/reject")

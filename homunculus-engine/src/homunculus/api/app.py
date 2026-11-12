@@ -896,7 +896,8 @@ def create_app(
         target=lambda who, authorization, patient_id: _link_target(who, authorization, patient_id),
         identity=lambda hospital, patient_id: identities.get(hospital, patient_id),
         admission_for=lambda hospital, record: _admission_for(hospital, record),
-        apply=lambda hospital, obs, record, now, reading: _apply_reading(hospital, obs, record, now, reading=reading),
+        apply=lambda hospital, obs, record, now, reading: _apply_reading(hospital, obs, record, now, reading=reading,
+                                                                         judge_at=now),   # a link is judged now
         audit=audit, store=readings))
 
     app.state.broadcaster = broadcaster
@@ -1578,19 +1579,29 @@ def create_app(
         return {"patient_id": obs.patient_id, "dropped": dropped}
 
     async def _apply_reading(hospital: str, obs, record, wall_now: datetime, *,
-                             reading: int | None = None) -> tuple[list, AuditRecord]:
-        """One reading into the real engine, as the device door does it (G3-05, spec D12): the evaluation at the
-        reading's own time, the lifecycle hook, the shadow mirror, the `ingest` row, the alert, clear and
-        first-seen rows, the card's frame, the nurse's notification. `/ingest` runs it for a matched reading;
+                             reading: int | None = None, judge_at: datetime | None = None) -> tuple[list, AuditRecord]:
+        """One reading into the real engine, as the device door does it (G3-05, spec D12): the evaluation, the
+        lifecycle hook, the shadow mirror, the `ingest` row, the alert, clear and first-seen rows, the card's
+        frame, the nurse's notification. `/ingest` runs it for a matched reading;
         the link of an unmatched one (api/readings.py) runs it for each reading of the set, with `reading` — the
         `vital_readings` row linked — written into the `ingest` payload. `record` is the identity the caller
-        already read; `wall_now` the request's one instant. Answers the evaluation's alerts and the `ingest` row."""
+        already read; `wall_now` the request's one instant. Answers the evaluation's alerts and the `ingest` row.
+
+        WHEN THE RULES JUDGE. `judge_at` None (the door, as ever): at the reading's own time, never past the wall
+        clock. A LINKED reading passes `judge_at=wall_now` (B6 review): it is judged NOW and keeps its own
+        timestamp — stored, audited as `obs_ts`, drawn at its time in the trends. A link is always back-dated
+        (up to 24 h), and the antibiotic clock, the sepsis and shock rules and the alerts' episodes all measure
+        from the evaluation's `now`: judged at the old measurement time, a linked SpO₂ from six hours ago would
+        replace an `antibiotic_overdue` with an `antibiotic_due` («300 min remaining» — false reassurance) and
+        end an acknowledged overdue's episode. Judged now, a stale value simply does not count for NEWS2's
+        freshness, and no clock goes backwards. The replay agrees: an `ingest` row naming a `reading` is
+        replayed at the row's write time (rehydrate `_replay_ingest`)."""
         engine = _engine(hospital)
         store = _store(hospital)
         # The rules judge at the reading's own time but never past the wall clock (G2-A2, X10): judged at a
         # stamp in the future, every other input would be aged to it. The audit row keeps the stamp; the replay
-        # judges at min(the stamp, the row's write time) (rehydrate, X10b).
-        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now))
+        # judges at min(the stamp, the row's write time) (rehydrate, X10b). A linked reading: at `judge_at`.
+        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now) if judge_at is None else judge_at)
         # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
         # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
         # if the audit fails from here on, an unacknowledged critical is still on the board.

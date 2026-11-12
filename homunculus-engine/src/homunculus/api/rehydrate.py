@@ -106,11 +106,17 @@ def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
     Judged where the door judged it (G2-A2, X10b): at the reading's own stamp, never past the wall
     clock (X10), with the row's write time standing for that wall clock, to within the request.
     Judged at a stamp in the future, as the replay did, every other input was aged to it — a NEWS2
-    the ward saw firing came back held, and the antibiotic anchor moved to the future stamp."""
+    the ward saw firing came back held, and the antibiotic anchor moved to the future stamp.
+
+    A LINKED reading (G3-05; its `ingest` row names the `reading` it was linked from) was judged where the link
+    ran, at the wall clock: back-dated up to 24 h, judged at its measurement it would have replaced an overdue
+    antibiotic alert with a due one. It is replayed at the row's write time, so a restart agrees with the live
+    board."""
     obs = observation_of(rec)
     if obs is None:
         return False  # unknown signal slug — skip rather than fail the whole replay
-    engine.ingest(obs, now=min(obs.timestamp, written))
+    linked = rec.event_type == "ingest" and "reading" in rec.payload
+    engine.ingest(obs, now=written if linked else min(obs.timestamp, written))
     return True
 
 
