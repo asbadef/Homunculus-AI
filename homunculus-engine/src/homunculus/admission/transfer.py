@@ -9,6 +9,9 @@
                  followed forward (the bed release's question, §5.5, and the kabul form's resend,
                  final review I-1), answered as its id, its state, its board key and its H-number —
                  no name is read, no column decrypted;
+* `stay_began`   when the stay an admission belongs to began: its first row's kabul, reached back
+                 along `source_admission_id` by G3-02's walk (X18) — the discharge time's lower
+                 bound (final review M-1);
 * `move_card`    the card moved to the bed she now lies in, the old place told first
                  (`BoardLink.move`, T8): `ok` or `failed`, never raising.
 
@@ -20,16 +23,18 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 from typing import NamedTuple
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.boardlink import board_link_of, card_record
 from homunculus.admission.models import Admission, AdmissionState, Patient
 from homunculus.admission.schemas import EngineWrite
+from homunculus.api.tasks_postgres import STAY_WALK_BACK
 from homunculus.tenant.models import Bed, Room
 
 log = logging.getLogger(__name__)
@@ -105,6 +110,26 @@ async def where_now(db: AsyncSession, admission_id: uuid.UUID, *,
                             found.patient_number)
         current = found.id
     return None
+
+
+async def stay_began(db: AsyncSession, admission_id: uuid.UUID, *,
+                     tenant_id: uuid.UUID) -> datetime | None:
+    """When the stay this admission belongs to began: the `admission_datetime` of its first row,
+    reached back along `source_admission_id` — G3-02's walk (X18, `tasks_postgres.STAY_WALK_BACK`:
+    one walker, at most `_MOST_MOVES` steps, inside the tenant), started from this row. A row no
+    move opened answers its own time. None when the row is not the tenant's.
+
+    The discharge time's lower bound (final review M-1). The arriving row's own time is the move's
+    record (T6), and the ward moves the patient before it records the move (D1): a patient who
+    died on her new bed before the move was recorded is given that time. The arriving row's own
+    time is not changed: the screens and X18's task store read it as the move's."""
+    return (await db.execute(
+        text("WITH RECURSIVE open_row AS (SELECT a.id FROM admissions a "
+             "WHERE a.id = :start AND a.tenant_id = :tenant), " + STAY_WALK_BACK)
+        .bindparams(bindparam("start", type_=Admission.__table__.c.id.type),
+                    bindparam("tenant", type_=Admission.__table__.c.tenant_id.type))
+        .columns(admission_datetime=Admission.__table__.c.admission_datetime.type),
+        {"start": admission_id, "tenant": tenant_id, "most": _MOST_MOVES})).scalar_one_or_none()
 
 
 async def move_card(request: Request, hospital: str, card: dict, *,

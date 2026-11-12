@@ -931,3 +931,32 @@ async def test_the_kabul_form_sent_again_after_a_move_answers_where_she_lies_now
     detail = r.json()["detail"]
     assert (r.status_code, detail["code"], detail["board_key"]) == (409, "request_conflict",
                                                                     FIRST_PROTOCOL)
+
+
+# ---------------------------------------------------------------- the discharge time after a move (final review M-1)
+async def test_a_discharge_after_moves_may_be_timed_back_to_the_stays_first_kabul_never_before(
+        ward, db_session):
+    """Final review M-1 (D1: the ward moves the patient, then records it). The arriving row's
+    `admission_datetime` is the move's record time (T6), so a patient who died on her new bed
+    before the move was recorded could not be given her exitus time. The discharge time's lower
+    bound is the stay's first kabul, reached back along `source_admission_id` (X18's walk), over
+    two moves here: a time between the first kabul and the moves' record is taken, one before the
+    first kabul is still refused. The arriving row's own time stays the move's."""
+    w, client, _ = ward
+    source = await signed(w, client)
+    now = datetime.now(timezone.utc)
+    first_kabul, died = now - timedelta(hours=3), now - timedelta(hours=1)
+    await _set(db_session, Admission, uuid.UUID(source["id"]), admission_datetime=first_kabul)
+    second = await moved(w, client, source)
+    arriving = await moved(w, client, second, "10")
+    assert datetime.fromisoformat(arriving["admission_datetime"]) > now - timedelta(minutes=1)
+    url = f"/admissions/{arriving['id']}/discharge/initiate"
+    r = await client.post(url, json={"disposition": "EXITUS",
+                                     "discharge_at": (first_kabul - timedelta(minutes=5)).isoformat()},
+                          headers=w.auth["doctor"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "field_invalid:discharge_at")
+    r = await client.post(url, json={"disposition": "EXITUS", "discharge_at": died.isoformat()},
+                          headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    assert datetime.fromisoformat(r.json()["discharge_at"]) == died
+    assert r.json()["admission_datetime"] == arriving["admission_datetime"]

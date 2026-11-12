@@ -1376,9 +1376,13 @@ async def discharge_initiate(
     written. Audited `admission.discharge_start` (the disposition; never the note)."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
+    # G2-B1b (final review M-1, D1): the time is not before the stay's first kabul — reached back
+    # through the moves (`transfer.stay_began`, X18's walk) — not before the arriving row's own
+    # time, which is the move's record: the ward moves the patient, then records it.
+    began = await transfer.stay_began(db, admission.id, tenant_id=caller_tenant)
     try:
         form.check_discharge(payload, now=datetime.now(timezone.utc),
-                             admitted_at=admission.admission_datetime)
+                             admitted_at=began or admission.admission_datetime)
     except Refusal as exc:
         raise exc.http() from None
     admission = await _locked(db, admission)

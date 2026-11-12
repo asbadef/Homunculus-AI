@@ -595,12 +595,12 @@ describe("the discharge time's default (A-30)", () => {
   const micro = (ms) => new Date(ms).toISOString().replace(/Z$/, "456Z");
   /** Open the dialog for an admission made at `admitted` (ms, or the server's own string), the
    *  clock at `nowMs`. */
-  async function dialogAt(nowMs, admitted) {
+  async function dialogAt(nowMs, admitted, over = {}) {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(nowMs);
     const written = typeof admitted === "string" ? admitted : new Date(admitted).toISOString();
     const mounted = await open(DOCTOR, (a) => {
-      a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: written }, ROWS[1], ROWS[2]]);
+      a.admissions.mockResolvedValue([{ ...ROWS[0], admission_datetime: written, ...over }, ROWS[1], ROWS[2]]);
       a.startDischarge.mockResolvedValue({ id: "a-1", state: "PENDING_DISCHARGE" });
     });
     fireEvent.click(screen.getByRole("button", { name: START_ROW }));
@@ -685,6 +685,35 @@ describe("the discharge time's default (A-30)", () => {
       const { api, dialog } = await dialogAt(at(10, 30, 20), at(8, 0));
       await send(dialog);
       expect(sentAt(api)).toBe(at(10, 30, 20));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // G2-B1b, final review M-1 (D1: the ward moves the patient, then records it): a moved row's own
+  // time is the move's record. The bound is the stay's first kabul, which the server reaches back
+  // to and the row does not carry: a time before the row's own is sent as chosen, and the server
+  // answers it — the dialog refuses nothing the server takes.
+  it("sends a time before a moved row's own — the move's record — as chosen, and leaves the bound to the server", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 30), at(10, 20, 30), { source_admission_id: "a-0" });
+      const field = dialog.getByLabelText(/^Çıxış vaxtı/);
+      expect(field.getAttribute("min")).toBeNull();
+      fireEvent.change(field, { target: { value: "2026-10-25T10:05" } });
+      await send(dialog);
+      expect(api.startDischarge).toHaveBeenCalledTimes(1);
+      expect(sentAt(api)).toBe(at(10, 5));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends a minute chosen within a moved row's own as that minute, not as the move's record", async () => {
+    try {
+      const { api, dialog } = await dialogAt(at(10, 30), at(10, 20, 30), { source_admission_id: "a-0" });
+      fireEvent.change(dialog.getByLabelText(/^Çıxış vaxtı/), { target: { value: "2026-10-25T10:20" } });
+      await send(dialog);
+      expect(sentAt(api)).toBe(at(10, 20));
     } finally {
       vi.useRealTimers();
     }
