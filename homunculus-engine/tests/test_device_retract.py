@@ -19,9 +19,11 @@ from homunculus.api.clinical import (
     RETRACT, RETRACT_ALREADY, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_UNKNOWN,
 )
 from homunculus.api.identity import Caller
-from homunculus.api.readings import ORIGIN_DEVICE, InMemoryReadingStore, Reading
+from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
+from homunculus.api.readings import ORIGIN_DEVICE, POLICY_UNMATCHED, InMemoryReadingStore, Reading
 from homunculus.api.rehydrate import (
-    device_key_of, observation_of, rebuild_patient, rehydrate, retracted_device_readings, retracted_entries,
+    device_key, device_key_of, observation_of, rebuild_patient, rehydrate, retracted_device_readings,
+    retracted_entries,
 )
 from homunculus.api.ackstore import AckStore
 from homunculus.canonical import Observation, SignalCode
@@ -32,8 +34,11 @@ from tests.test_ingest_apply import obs
 TOKEN = "tok"
 DEVICE = {"Authorization": f"Bearer {TOKEN}"}
 NURSE = {"Authorization": "Bearer nurse-jwt"}
+NURSE2 = {"Authorization": "Bearer nurse2-jwt"}
 PEOPLE = {"nurse-jwt": Caller(hospital="h1", actor="hem.ayse", groups=("nurse",),
-                              perms=frozenset({"board.view", "clinical.chart", "alerts.ack"}))}
+                              perms=frozenset({"board.view", "clinical.chart", "alerts.ack"})),
+          "nurse2-jwt": Caller(hospital="h1", actor="hem.fatma", groups=("nurse",),
+                               perms=frozenset({"board.view", "clinical.chart", "alerts.ack"}))}
 KEY = "202600000001"
 WHY = "manşet yanlış koldaydı, yeniden ölçüldü"
 # Respiration 26, SpO₂ 91, systolic 88: NEWS2 9, the immediate band (tests/test_bedside_retract.py RISKY).
@@ -640,3 +645,202 @@ class TestTwoAuditRowsForOneReading:
         junk = audit.append(AuditEvent("h1", "ingest", KEY, "heart_rate", {
             "value": {"x": [1]}, "unit": "/min", "obs_ts": ["not", "a", "time"], "device": ["d"]}))
         hash(device_key_of(junk))                                         # a row nobody could have written: no crash
+
+    def test_a_retry_finishes_the_record_row_a_failed_mark_left(self):
+        """The withdrawal's trail row committed, its table mark failed (the first `void` raised), and the nurse tries
+        again — another person, another reason. The «already» answer still finishes the record: the rows are marked,
+        as the trail's `chart_retract` row says (its person, its reason), not as the retry does."""
+        audit, first, second, _ = self._trail()
+        calls: list[int] = []
+
+        class _FirstMarkFailsOnce(InMemoryReadingStore):
+            def void(self, tenant, entry_id, **kw):
+                calls.append(entry_id)
+                if len(calls) == 1:
+                    raise RuntimeError("readings down")
+                return super().void(tenant, entry_id, **kw)
+
+        store = _FirstMarkFailsOnce()
+        self._filed(store, first, second)
+        app, _, _ = _app(audit=audit, store=store)
+        with TestClient(app) as client:
+            assert _retract(client, first.id).status_code == 200
+            assert self._voided(store, first, second) == [False, True]       # the first copy's mark failed
+            r = _retract(client, second.id, reason="ikinci hemşire de aynı değeri yanlış buldu", headers=NURSE2)
+            assert (r.status_code, r.json()["detail"]) == (409, RETRACT_ALREADY)
+            assert len(_rows(audit, RETRACT)) == 1                           # a refusal writes no row
+        assert self._voided(store, first, second) == [True, True]
+        for row in store.for_patient("h1", KEY, since=datetime.min.replace(tzinfo=timezone.utc),
+                                     until=datetime.max.replace(tzinfo=timezone.utc)):
+            assert (row.voided_by, row.void_reason) == ("hem.ayse", WHY)     # the withdrawal's, kept by the retry
+
+    def test_a_retry_of_a_hand_entrys_withdrawal_finishes_its_row_too(self):
+        calls: list[int] = []
+
+        class _FirstMarkFailsOnce(InMemoryReadingStore):
+            def void(self, tenant, entry_id, **kw):
+                calls.append(entry_id)
+                if len(calls) == 1:
+                    raise RuntimeError("readings down")
+                return super().void(tenant, entry_id, **kw)
+
+        store, when = _FirstMarkFailsOnce(), _ago(5)
+        app, _, _ = _app(store=store)
+        with TestClient(app) as client:
+            r = client.post(f"/clinical/{KEY}", json={"entries": [{"code": "resp_rate", "value": 26}],
+                                                      "recorded_at": when.isoformat()}, headers=NURSE)
+            entry = r.json()["entries"][0]["entry"]
+            assert _retract(client, entry).status_code == 200
+            [row] = store.for_patient("h1", KEY, since=when - timedelta(hours=1), until=when + timedelta(hours=1))
+            assert row.voided_at is None                                      # the mark failed
+            assert _retract(client, entry, headers=NURSE2).status_code == 409
+            [row] = store.for_patient("h1", KEY, since=when - timedelta(hours=1), until=when + timedelta(hours=1))
+            assert (row.voided_by, row.void_reason) == ("hem.ayse", WHY)
+
+    def test_a_long_device_name_is_one_key_with_its_cut_copy(self):
+        """The table keeps the device cut to 64 characters, and a linked reading enters the engine under that name;
+        a direct copy carries the name as sent. One reading, one key — and a nameless device is "" either way."""
+        at = "2026-11-12T10:00:00+00:00"
+        long_name = "CONNEX-" + "X" * 80
+        assert device_key("p", "heart_rate", at, long_name, 140.0) == device_key("p", "heart_rate", at, long_name[:64], 140)
+        assert device_key("p", "heart_rate", at, None, 140.0) == device_key("p", "heart_rate", at, "", 140.0)
+        assert device_key("p", "heart_rate", at, long_name, 140.0) != device_key("p", "heart_rate", at, "CONNEX-3A", 140.0)
+        assert device_key("p", "heart_rate", at, long_name[:63] + "Y", 140.0) != device_key("p", "heart_rate", at, long_name, 140.0)
+
+    def test_a_long_named_copy_and_its_cut_copy_are_withdrawn_together(self):
+        audit, when = InMemoryAuditLog(), _ago(10)
+        long_name = "CONNEX-" + "X" * 80
+        direct = _row(audit, "ingest", when, 140.0, device=long_name)               # as the door wrote it
+        linked = _row(audit, "ingest", when, 140.0, device=long_name[:64])          # as a link wrote it
+        _row(audit, "ingest", when, 150.0, device=long_name)
+        app, _, _ = _app(audit=audit)
+        with TestClient(app) as client:
+            assert _held(client) == [140.0, 140.0, 150.0]
+            assert _retract(client, linked.id).status_code == 200
+            assert _held(client) == [150.0]
+            assert _retract(client, direct.id).status_code == 409                   # the other copy: already
+        with TestClient(self._restarted(audit)) as client:
+            assert _held(client) == [150.0]
+            # ...and a re-send under the full name is the withdrawn reading, found by the cut key.
+            again = client.post("/ingest", json=obs("heart_rate", 140, KEY, when, device=long_name), headers=DEVICE)
+            assert again.json() == {"patient_id": KEY, "duplicate": True}
+            assert _held(client) == [150.0]
+
+
+class _SeenDown(InMemoryReadingStore):
+    """A readings store whose duplicate check cannot answer: `/ingest` fails OPEN (D14) and ingests."""
+
+    def seen(self, *args, **kw):
+        raise RuntimeError("readings down")
+
+
+class TestAWithdrawnReadingDoesNotComeBack:
+    """B7 review: a re-send of a withdrawn device reading is a duplicate at the door, asked before the store — which
+    can fail open, and in memory forgets at a restart. Nothing enters the engine, no row is written, and the
+    board does not move."""
+
+    def _again(self, client, when, value=26, code="resp_rate"):
+        return client.post("/ingest", json=obs(code, value, KEY, when), headers=DEVICE)
+
+    def test_a_re_send_while_the_store_fails_open_is_a_duplicate_live_and_after_a_restart(self):
+        audit, store, when = InMemoryAuditLog(), _SeenDown(), _ago(5)
+        app, _, _ = _app(audit=audit, store=store)
+        with TestClient(app) as client:
+            ids = _send(client, RISKY, when)                          # fails open: every reading is ingested
+            assert _retract(client, ids["resp_rate"]).status_code == 200
+            rows = len(audit.records(tenant="h1", limit=10_000))
+            assert self._again(client, when).json() == {"patient_id": KEY, "duplicate": True}
+            assert _held(client, code=SignalCode.RESP_RATE) == [] and _card(client)["latest"]["resp_rate"] is None
+            assert len(audit.records(tenant="h1", limit=10_000)) == rows           # no row of any kind
+        app2, _, _ = _app(audit=audit, store=_SeenDown())
+        with TestClient(app2) as client:                              # the re-send is the first request after it
+            assert self._again(client, when).json() == {"patient_id": KEY, "duplicate": True}
+            assert _held(client, code=SignalCode.RESP_RATE) == [] and _card(client)["latest"]["resp_rate"] is None
+            assert len(audit.records(tenant="h1", limit=10_000)) == rows
+
+    def test_a_re_send_after_a_restart_with_an_empty_memory_store_is_a_duplicate(self):
+        audit, when = InMemoryAuditLog(), _ago(5)
+        app, _, _ = _app(audit=audit)
+        with TestClient(app) as client:
+            ids = _send(client, RISKY, when)
+            assert _retract(client, ids["resp_rate"]).status_code == 200
+        app2, _, _ = _app(audit=audit, store=InMemoryReadingStore())            # the rows vanished with the process
+        with TestClient(app2) as client:
+            assert self._again(client, when).json() == {"patient_id": KEY, "duplicate": True}
+            assert _held(client, code=SignalCode.RESP_RATE) == []
+
+    def test_another_reading_is_still_ingested(self):
+        """The key is the whole reading: another value, another time, another device or another patient enters."""
+        audit, store, when = InMemoryAuditLog(), _SeenDown(), _ago(5)
+        app, _, _ = _app(audit=audit, store=store)
+        with TestClient(app) as client:
+            ids = _send(client, RISKY, when)
+            assert _retract(client, ids["resp_rate"]).status_code == 200
+            for body in (obs("resp_rate", 27, KEY, when), obs("resp_rate", 26, KEY, when + timedelta(minutes=1)),
+                         obs("resp_rate", 26, KEY, when, device="CONNEX-3B"), obs("resp_rate", 26, "202600000002", when)):
+                r = client.post("/ingest", json=body, headers=DEVICE)
+                assert r.status_code == 200 and "alerts" in r.json(), body
+            assert _held(client, code=SignalCode.RESP_RATE) == [26.0, 26.0, 27.0]
+
+
+def _linked_app(audit, store, identities):
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, audit=audit,
+                     identities=identities, readings=store, unknown_readings=POLICY_UNMATCHED)
+    return app
+
+
+class TestAWithdrawnLinkedReading:
+    """A reading linked from the unmatched list enters the engine at the wall clock (not at its measurement) with its
+    own `ingest` row, which names the `reading` it came from; the record's row is finalized under that row's id. Its
+    withdrawal is the device reading's: the same rebuild — the linked row replayed at its write time, as a restart
+    does — the same mark, one shadow-lane removal."""
+
+    ADMISSION = "11111111-1111-4111-8111-111111111111"          # a synthetic admission id
+    TYPO = "202600000010"                                       # the number the monitor sent: nobody's
+
+    def _world(self):
+        identities = InMemoryIdentityStore()
+        identities.apply("h1", IdentityRecord(KEY, family="Hasta", given="Test", state="admitted", source=KABUL,
+                                              unit_id="u-1", bed_id="b-1", updated_at=_ago(180)))
+        return InMemoryAuditLog(), InMemoryReadingStore(admitted={("h1", KEY): self.ADMISSION}), identities
+
+    def _link(self, client, when):
+        for code, value in (("heart_rate", 140), ("resp_rate", 26)):
+            r = client.post("/ingest", json=obs(code, value, self.TYPO, when), headers=DEVICE)
+            assert r.json() == {"patient_id": self.TYPO, "dropped": "unmatched"}, r.text
+        sets = client.get("/readings/unmatched", headers=NURSE).json()["sets"]
+        ids = sorted(reading["id"] for s in sets for reading in s["readings"])
+        r = client.post("/readings/unmatched/assign", json={"readings": ids, "patient_id": KEY}, headers=NURSE)
+        assert r.status_code == 200, r.text
+        rows = {r.subject: r for r in client.app.state.audit.records(tenant="h1", patient_id=KEY, event_type="ingest",
+                                                                     limit=10)}
+        assert all("reading" in row.payload for row in rows.values()), "the link's rows name their reading"
+        return rows
+
+    def test_the_withdrawal_scores_marks_and_mirrors_as_a_device_readings_does(self, monkeypatch):
+        audit, store, identities = self._world()
+        when = _ago(5)
+        with TestClient(_linked_app(audit, store, identities)) as client:
+            rows = self._link(client, when)
+            assert _held(client) == [140.0] and _held(client, code=SignalCode.RESP_RATE) == [26.0]
+            removed = []
+            monkeypatch.setattr(client.app.state.shadow_lane, "retract_observation",
+                                lambda hospital, observation: removed.append(observation))
+            r = _retract(client, rows["heart_rate"].id)
+            assert r.status_code == 200, r.text
+            assert (r.json()["retracted"], r.json()["code"]) == (rows["heart_rate"].id, "heart_rate")
+            assert _held(client) == [] and _held(client, code=SignalCode.RESP_RATE) == [26.0]
+            [row] = _rows(audit, RETRACT)
+            assert (row.payload["entry"], row.payload["origin"], row.payload["device"]) == (
+                rows["heart_rate"].id, "device", "CONNEX-3A")
+            assert [o.value for o in removed] == [140.0]                       # one removal: one copy
+            filed = {r.code: r for r in store.for_patient("h1", KEY, since=when - timedelta(hours=1),
+                                                          until=when + timedelta(hours=1))}
+            assert filed["heart_rate"].entry_id == rows["heart_rate"].id       # filed by the link's `finalize`
+            assert (filed["heart_rate"].voided_by, filed["heart_rate"].void_reason) == ("hem.ayse", WHY)
+            assert filed["resp_rate"].voided_at is None
+            live = _card(client)
+        with TestClient(_linked_app(audit, store, identities)) as client:      # the restart judges the same
+            again = _card(client)
+            assert _news2(again) == _news2(live) and _alerts(again) == _alerts(live)
+            assert _held(client) == [] and _held(client, code=SignalCode.RESP_RATE) == [26.0]

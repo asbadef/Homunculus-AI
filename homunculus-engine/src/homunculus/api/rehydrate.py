@@ -40,6 +40,7 @@ from homunculus.api.alert_lifecycle import (
 from homunculus.api.audit import AuditRecord
 from homunculus.api.clinical import RETRACT, profile_from_payload
 from homunculus.api.identity import bounded_role
+from homunculus.api.readings import SOURCE_MAX   # G3-05: the column's width, which a device key is cut to
 from homunculus.api.snooze import clean_reason, minutes_ok, worse   # G2-B5b
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
@@ -288,19 +289,26 @@ def _hashable(value: object) -> object:
 
 def device_key(patient_id: str, code: str, obs_ts: object, device: object, value: object) -> tuple:
     """One device reading as the trail names it (G3-05, D13; B4 review): the patient, the code, the instant, the
-    device as sent and the number — D14's tuple. Two `ingest` rows with one key are ONE reading written twice
+    device and the number — D14's tuple. Two `ingest` rows with one key are ONE reading written twice
     (a `seen` that failed open; data from before it existed), and a withdrawal that names either withdraws the
     reading. The instant is compared as an instant and the number as a number, so a copy that spells either
-    differently is still the copy; what cannot be read is compared as it stands."""
-    try:
-        at = datetime.fromisoformat(obs_ts)                                   # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        at = obs_ts
+    differently is still the copy; what cannot be read is compared as it stands.
+
+    The device is normalised as the table keeps it (`readings.device_source`: nothing is "", cut to the column's
+    SOURCE_MAX), because a linked reading enters the engine under the table's name for its device and a direct
+    copy under the name as sent: for a device name longer than the column they are one reading, and one key."""
+    if isinstance(obs_ts, datetime):
+        at: object = obs_ts
+    else:
+        try:
+            at = datetime.fromisoformat(obs_ts)                               # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            at = obs_ts
     try:
         number = float(value)                                                 # type: ignore[arg-type]
     except (TypeError, ValueError, OverflowError):
         number = value
-    return (patient_id, code, _hashable(at), _hashable(device), _hashable(number))
+    return (patient_id, code, _hashable(at), str(device or "")[:SOURCE_MAX], _hashable(number))
 
 
 def device_key_of(rec: AuditRecord) -> tuple:
@@ -309,17 +317,26 @@ def device_key_of(rec: AuditRecord) -> tuple:
     return device_key(rec.patient_id, rec.subject, p.get("obs_ts"), p.get("device"), p.get("value"))
 
 
+def observation_key(obs: Observation) -> tuple:
+    """`device_key` of a reading arriving at the door: what its `ingest` row will say, were it entered."""
+    return device_key(obs.patient_id, obs.code.value, obs.timestamp, obs.source_device, obs.value)
+
+
+def withdrawal_key(rec: AuditRecord) -> tuple | None:
+    """`device_key` of the device reading a `chart_retract` row withdrew, or None for any other row — a hand
+    entry's withdrawal names no device reading. The row carries the key's parts itself (the code as its subject,
+    `value`, `obs_ts`, `device`)."""
+    if rec.event_type != RETRACT or rec.payload.get("origin") != "device":
+        return None
+    p = rec.payload
+    return device_key(rec.patient_id, rec.subject, p.get("obs_ts"), p.get("device"), p.get("value"))
+
+
 def retracted_device_readings(records: Iterable[AuditRecord]) -> frozenset[tuple]:
     """The device readings (`device_key`) the `chart_retract` rows in `records` withdrew — the rows that say
     `"origin": "device"` (G3-05, D13); a hand entry's withdrawal names none. The withdrawal row carries the key's
     parts itself (code as its subject, `value`, `obs_ts`, `device`), so a restart reads only the withdrawals."""
-    out: set[tuple] = set()
-    for rec in records:
-        if rec.event_type != RETRACT or rec.payload.get("origin") != "device":
-            continue
-        p = rec.payload
-        out.add(device_key(rec.patient_id, rec.subject, p.get("obs_ts"), p.get("device"), p.get("value")))
-    return frozenset(out)
+    return frozenset(key for key in map(withdrawal_key, records) if key is not None)
 
 
 def _withdrawn(rec: AuditRecord, skip: frozenset[int], skip_device: frozenset[tuple]) -> bool:

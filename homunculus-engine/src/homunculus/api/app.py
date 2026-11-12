@@ -62,8 +62,8 @@ from homunculus.api.infinity_shadow import (
 from homunculus.api.monitor_samples import InMemorySamples, SampleStore, is_missing_table, retention_bound
 from homunculus.api.notify import NotificationHub, Notifier
 from homunculus.api.rehydrate import (
-    REBUILD_EVENTS, device_key_of, observation_of, rebuild_patient, rehydrate, retracted_device_readings,
-    retracted_entries,
+    REBUILD_EVENTS, device_key_of, observation_key, observation_of, rebuild_patient, rehydrate,
+    retracted_device_readings, retracted_entries, withdrawal_key,
 )
 from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
@@ -498,6 +498,10 @@ def create_app(
         return admitted
 
     rehydrated: set[str] = set()
+    #: G3-05 (D13, B7 review): per hospital, the device readings (`device_key`) a «hatalı giriş» withdrew — read from
+    #: the trail when the tenant is rehydrated, added to by each withdrawal. `/ingest` answers a re-send of one as a
+    #: duplicate before it asks the readings store, which can fail open (and, in memory, forgets on a restart).
+    withdrawn_readings: dict[str, set[tuple]] = {}
 
     def _ensure(hospital: str) -> None:
         """Build a tenant's engine + store, rehydrating once from the audit log (event sourcing).
@@ -529,6 +533,7 @@ def create_app(
                 retire_state(engine, store, pid)
         engines[hospital] = engine
         stores[hospital] = store
+        withdrawn_readings[hospital] = set(withdrawn_device)
         rehydrated.add(hospital)
         # Aşama B (D9, D10), after the real engine is installed and never in its way (guarded):
         # with the stage `rules`, the shadow engine is the real one's copy plus the last 24 h of
@@ -1283,6 +1288,33 @@ def create_app(
             return 0
         return engine.state(patient_id).history(observation.code).count(observation)
 
+    def _void_record(hospital: str, entries: list[int], *, by: str, at: datetime, reason: str) -> None:
+        """G3-05 (D7, B7 review): the record's row of each withdrawn entry marked (`readings.void`), AFTER the trail's
+        `chart_retract` row. Never raises, and one failing mark does not skip the others: the withdrawal is written,
+        and `reconcile` marks a row this could not. Logged by class only — a driver's message may carry a value."""
+        for entry_id in entries:
+            try:
+                readings.void(hospital, entry_id, by=by, at=at, reason=reason)
+            except Exception as exc:
+                log.error("vital_readings: hatalı giriş işareti yazılamadı (hastane %s, %s); reconcile tamamlar",
+                          hospital, type(exc).__name__)
+
+    def _original_withdrawal(rows, entry: int, own: tuple | None, by: str, at: datetime,
+                             reason: str) -> tuple[str, datetime, str]:
+        """Who withdrew the entry, when and why — the `chart_retract` row that names it, or (a device reading the
+        trail holds twice) the one that names its other copy. The retry's own person, time and reason when no such
+        row can be read: a mark written for a withdrawal should say what the trail says of it."""
+        row = next((r for r in rows if r.event_type == RETRACT and (
+            r.payload.get("entry") == entry or (own is not None and withdrawal_key(r) == own))), None)
+        if row is None:
+            return by, at, reason
+        who, why = row.payload.get("retracted_by"), row.payload.get("reason")
+        try:
+            when = datetime.fromisoformat(row.ts)
+        except (TypeError, ValueError):
+            when = at
+        return (who if isinstance(who, str) and who else by, when, why if isinstance(why, str) and why else reason)
+
     async def _publish_current(hospital: str, patient_id: str, record, engine: Engine, store: AckStore,
                                now: datetime) -> None:
         """The patient's card after a «hatalı giriş», as a restart would build it (G3-01, review of Task 5): sent by
@@ -1445,6 +1477,14 @@ def create_app(
         copies = len(taken)
         now = datetime.now(timezone.utc)
         if already:
+            # G3-05 (B7 review): the retry also finishes the record's half — a mark that failed after the row was
+            # written left the value unstruck there. Before the repair below, which may raise: the marks never do.
+            # By the withdrawal's own person, time and reason (the trail's row), not the retry's; `void` touches
+            # only a row not marked yet, so a retry of a finished withdrawal changes nothing.
+            marked_by, marked_at, marked_why = _original_withdrawal(rows, target.id, own, caller.actor, now, reason)
+            _void_record(hospital, taken, by=marked_by, at=marked_at, reason=marked_why)
+            if own is not None:
+                withdrawn_readings.setdefault(hospital, set()).add(own)
             # Review of Task 5: an append whose row committed and which still raised (a bounded write that timed
             # out after its commit) answered 500 and left memory counting the value; the retry finds the row and
             # is refused here. If the engine holds the reading more often than the trail without it does, memory
@@ -1471,15 +1511,12 @@ def create_app(
             # G3-05 (D13): the same event — every reader of withdrawals honours it — saying what it withdrew.
             withdrawal |= {"origin": "device", "device": target.payload.get("device")}
         audit.append(AuditEvent(hospital, RETRACT, patient_id, target.subject, withdrawal))
+        if own is not None:
+            # From here a re-send of the reading is a duplicate at the door, whatever the readings store answers.
+            withdrawn_readings.setdefault(hospital, set()).add(own)
         # G3-05 (D7): the record's row is marked after the trail's row, once per copy (the one table row may be
-        # filed under either). Never raises, and one failing mark does not skip the others: the withdrawal is
-        # written, and `reconcile` marks a row this could not. Logged by class only — a message may carry a value.
-        for entry_id in taken:
-            try:
-                readings.void(hospital, entry_id, by=caller.actor, at=now, reason=reason)
-            except Exception as exc:
-                log.error("vital_readings: hatalı giriş işareti yazılamadı (hastane %s, %s); reconcile tamamlar",
-                          hospital, type(exc).__name__)
+        # filed under either).
+        _void_record(hospital, taken, by=caller.actor, at=now, reason=reason)
         await _adopt_rebuilt(hospital, patient_id, record, engine, store, scratch, observation, now, copies=copies)
         return {"retracted": target.id, "code": target.subject,
                 "alerts": [a.kind for a in engine.active_alerts(patient_id)]}
@@ -1555,6 +1592,15 @@ def create_app(
             # number and the value, as `_file_unmatched` already knows (B6 review).
             log.error("vital_readings: %d satır yazılamadı (hastane %s, %s); reconcile tamamlar",
                       len(rows), hospital, type(exc).__name__)
+
+    def _withdrawn_again(hospital: str, obs) -> bool:
+        """G3-05 (D13, B7 review): is this the reading — the same number, code, time, device and value — that a
+        «hatalı giriş» withdrew? Answered from memory (`withdrawn_readings`, read from the trail when the tenant
+        is rehydrated, which is done here first so a restart's first request knows them), so it holds when the
+        readings store cannot answer and when it is in memory and empty after a restart."""
+        _ensure(hospital)
+        keys = withdrawn_readings.get(hospital)
+        return bool(keys) and observation_key(obs) in keys
 
     def _resent(hospital: str, obs) -> bool:
         """G3-05 (D14): has the record this very reading already — the same number, code, time, device and
@@ -1802,6 +1848,11 @@ def create_app(
         record = identities.get(hospital, obs.patient_id)
         # G3-05 (D14): a reading the record already holds is recognised before the engine — no engine entry, no
         # audit row, no frame. 200, as every answer of this door: the bridge's uplink never blocks (D18).
+        # G3-05 (D13, B7 review): a re-send of a reading a nurse withdrew is a duplicate too — asked BEFORE the
+        # store, which can fail open or (in memory) have forgotten it at a restart, and the value would score
+        # again until the next restart. No engine entry, no row, no frame: nothing of it is finished or repeated.
+        if _withdrawn_again(hospital, obs):
+            return {"patient_id": obs.patient_id, "duplicate": True}
         if _resent(hospital, obs):
             await _finish_resent(hospital, record, obs.patient_id)       # what a failed first tail left undone
             return {"patient_id": obs.patient_id, "duplicate": True}
