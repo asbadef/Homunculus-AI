@@ -60,7 +60,37 @@ def linked(store, code="temperature", value=37.1, *, audit_id, entry_id=40) -> R
 
 
 class ReadingStoreContract:
-    """Inherit, and provide `store`: an empty ReadingStore."""
+    """Inherit, and provide `store`: an empty ReadingStore; and `admitted_store`: a factory that answers a store
+    holding open admissions of tenant h1 — `admitted_store({key: (kabul, move or None)})` → `(store, {key: the open
+    row's admission id})`; a stay with a move is two rows, the first closed by the move (G2-B1b, T6)."""
+
+    # ------------------------------------------------------------------ the stay a card key belongs to
+    def test_a_key_with_no_open_admission_has_no_stay(self, admitted_store):
+        store, _ = admitted_store({})
+        assert store.stay_start("h1", KEY) is None
+        assert store.open_stays("h1") == {} and store.open_admissions("h1") == {}
+
+    def test_a_stays_start_is_its_kabul(self, admitted_store):
+        """Final review (I-1): the link's guard and the list's scope read when the stay of the number's open
+        admission began."""
+        began = T0 - timedelta(hours=5)
+        store, admissions = admitted_store({KEY: (began, None)})
+        assert store.stay_start("h1", KEY) == began and store.stay_start("h1", KEY).utcoffset() == timedelta(0)
+        assert store.stay_start("h1", TYPO) is None and store.stay_start("h2", KEY) is None
+        assert store.open_stays("h1") == {KEY: began} == store.open_admissions("h1")
+        assert store.open_stays("h2") == {} and store.open_admissions("h2") == {}
+        assert store.admission_of("h1", KEY) == admissions[KEY]
+
+    def test_a_moved_stay_starts_at_its_first_kabul_and_its_open_row_at_the_move(self, admitted_store):
+        """Final review (minor 6): the stay is walked back along the move to its first kabul — `stay_start` and
+        `open_stays` (the backfill's bound) — while the open row, which the readings are stamped with, began at the
+        move (`open_admissions`)."""
+        began, moved = T0 - timedelta(hours=30), T0 - timedelta(hours=2)
+        store, admissions = admitted_store({KEY: (began, moved)})
+        assert store.stay_start("h1", KEY) == began
+        assert store.open_stays("h1") == {KEY: began}
+        assert store.open_admissions("h1") == {KEY: moved}
+        assert store.admission_of("h1", KEY) == admissions[KEY]                     # the arriving row
 
     # ------------------------------------------------------------------ add, seen, have
     def test_add_gives_the_row_an_id_and_keeps_every_field(self, store):

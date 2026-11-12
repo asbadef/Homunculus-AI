@@ -28,14 +28,24 @@ def test_both_stores_read_the_one_fragment():
                                           + admission_keys.NEWEST_FIRST + "), " + tasks_postgres.STAY_WALK_BACK)
     assert readings_postgres.ADMISSION_OF == ("SELECT CAST(a.id AS text) " + admission_keys.OPEN_ADMISSION_OF_KEY
                                               + admission_keys.NEWEST_FIRST)
-    assert readings_postgres.OPEN_STAYS == admission_keys.OPEN_STAYS
-    assert admission_keys.OPEN_STAYS.startswith("SELECT COALESCE(a.protocol_no, p.patient_number), a.admission_datetime ")
+    assert readings_postgres.OPEN_ADMISSIONS == admission_keys.OPEN_ADMISSIONS
+    assert admission_keys.OPEN_ADMISSIONS.startswith(
+        "SELECT COALESCE(a.protocol_no, p.patient_number), a.admission_datetime ")
+    assert not hasattr(admission_keys, "OPEN_STAYS")            # renamed: it dates the ROW, a moved one at the move
 
 
-def test_the_stays_come_oldest_first_so_a_shared_key_keeps_the_newest():
-    """Two open legacy admissions of one patient share the H-number as their key: `open_stays` builds a dict
+def test_the_readings_store_walks_a_stay_back_with_the_task_stores_own_statement():
+    """G3-05 final review (I-1, minor 6): a stay's start is the task store's walk (G2-B1b X18) — the readings store
+    imports that statement, it keeps no copy of it."""
+    assert readings_postgres.ADMITTED_AT is tasks_postgres.ADMITTED_AT
+    assert readings_postgres.MOST_MOVES is tasks_postgres.MOST_MOVES
+    assert "WITH RECURSIVE" not in open(readings_postgres.__file__, encoding="utf-8").read()
+
+
+def test_the_admissions_come_oldest_first_so_a_shared_key_keeps_the_newest():
+    """Two open legacy admissions of one patient share the H-number as their key: `open_admissions` builds a dict
     from these rows, the last write wins, so the order must end with the newest start (and `admission_of` takes
     the newest too: NEWEST_FIRST)."""
-    sql = admission_keys.OPEN_STAYS
+    sql = admission_keys.OPEN_ADMISSIONS
     assert sql.endswith(" ORDER BY a.admission_datetime") and "DESC" not in sql
     assert admission_keys.OPEN_STATES in sql and "t.slug = :tenant" in sql

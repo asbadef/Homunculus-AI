@@ -633,13 +633,13 @@ class TestTheStayStampsItsOwnReadings:
         assert stamps == {"spo2": None, "heart_rate": ADMISSION, "temperature": ADMISSION,
                           "resp_rate": None, "sbp": ADMISSION}
 
-    def test_the_open_stays_are_read_once_a_pass_and_only_when_a_row_is_filed(self):
+    def test_the_open_admissions_are_read_once_a_pass_and_only_when_a_row_is_filed(self):
         class _Counting(InMemoryReadingStore):
             reads = 0
 
-            def open_stays(self, tenant):
+            def open_admissions(self, tenant):
                 self.reads += 1
-                return super().open_stays(tenant)
+                return super().open_admissions(tenant)
         audit, store = InMemoryAuditLog(), _Counting(admitted={("h1", KEY): ADMISSION})
         assert _run(store, audit) == NOTHING and store.reads == 0
         for minute in range(4):
@@ -654,6 +654,79 @@ class TestTheStayStampsItsOwnReadings:
         _ingest_row(audit, "spo2", 97)
         _run(store, audit)
         assert [r.admission_id for r in store.for_patient("h1", KEY, **ALL)] == [None]
+
+
+class TestATransferredStay:
+    """Final review (minor 6): a transfer closes the stay's row and opens another at the move (G2-B1b, T6). The
+    backfill's stays are walked back to the first kabul (`open_stays`), so a moved patient's readings from before the
+    move are filed; the stamp stays the open ROW's (`open_admissions`): a reading from before the move was the source
+    row's, which reconcile does not look up — it is filed with none, never with a row that did not exist yet."""
+
+    BEGAN = WHEN - timedelta(hours=6)
+    MOVED = WHEN - timedelta(hours=2)
+
+    def _store(self):
+        return InMemoryReadingStore(admitted={("h1", KEY): ADMISSION}, admitted_at={("h1", KEY): self.BEGAN},
+                                    moved_at={("h1", KEY): self.MOVED})
+
+    def _trail(self):
+        audit = InMemoryAuditLog()
+        _ingest_row(audit, "spo2", 95, when=self.BEGAN - timedelta(hours=1))       # before the stay: no stay's
+        _ingest_row(audit, "heart_rate", 80, when=self.BEGAN + timedelta(hours=1))  # this stay, before the move
+        _chart_row(audit, "resp_rate", 16, when=self.MOVED - timedelta(minutes=1))  # a hand value just before it
+        _ingest_row(audit, "temperature", 37.2, when=self.MOVED)                     # the move's own instant
+        _ingest_row(audit, "sbp", 120, when=WHEN)                                    # after the move
+        return audit
+
+    def test_the_stay_starts_at_the_first_kabul_and_its_open_row_at_the_move(self):
+        store = self._store()
+        assert store.open_stays("h1") == {KEY: self.BEGAN} and store.stay_start("h1", KEY) == self.BEGAN
+        assert store.open_admissions("h1") == {KEY: self.MOVED}
+
+    def test_the_hourly_pass_stamps_only_the_readings_since_the_move(self):
+        store, audit = self._store(), self._trail()
+        assert _run(store, audit) == {**NOTHING, "recorded": 5}
+        stamps = {r.code: r.admission_id for r in store.for_patient("h1", KEY, **ALL)}
+        assert stamps == {"spo2": None, "heart_rate": None, "resp_rate": None, "temperature": ADMISSION,
+                          "sbp": ADMISSION}
+
+    def test_the_backfill_files_the_readings_from_before_the_move_and_stamps_them_with_none(self):
+        store, audit = self._store(), self._trail()
+        assert _run(store, audit, stays=store.open_stays("h1")) == {**NOTHING, "recorded": 4}
+        stamps = {r.code: r.admission_id for r in store.for_patient("h1", KEY, **ALL)}
+        assert stamps == {"heart_rate": None, "resp_rate": None, "temperature": ADMISSION, "sbp": ADMISSION}
+
+
+class TestARowTheTableRefuses:
+    """Final review (minor 4): one audit row the table cannot take — a `chart` row under a path id wider than the
+    column, written before the door was bounded — must not stop the pass, which is the only repair of the table:
+    it would fail every hour for the 48 hours the row stays in the window."""
+
+    class _Narrow(InMemoryReadingStore):
+        """A table whose `received_key` column is 128 wide, as migration 0021's: a wider one is a driver error."""
+
+        def add(self, row):
+            if len(row.received_key) > 128:
+                raise RuntimeError(f"value too long: Failing row contains ({row.received_key}, {row.value})")
+            return super().add(row)
+
+    def test_the_row_is_skipped_and_every_other_row_is_filed(self, caplog):
+        audit, store = InMemoryAuditLog(), self._Narrow()
+        wide = "9" * 129
+        _chart_row(audit, "resp_rate", 16, key=wide)
+        _ingest_row(audit, "spo2", 97)
+        _chart_row(audit, "resp_rate", 17.5, key=wide)
+        _unmatched_row(audit, "heart_rate", 88)
+        with caplog.at_level(logging.ERROR, logger="homunculus.api.readings"):
+            counts = _run(store, audit)
+        assert counts == {**NOTHING, "recorded": 1, "unmatched": 1, "skipped": 2}
+        assert len(store.for_patient("h1", KEY, **ALL)) == 1 and len(store.unmatched("h1", since=NOW - timedelta(days=7))) == 1
+        [logged] = [r for r in caplog.records if r.name == "homunculus.api.readings"]      # once a pass
+        assert "RuntimeError" in logged.getMessage() and "h1" in logged.getMessage() and logged.exc_info is None
+        assert wide not in caplog.text and "17.5" not in caplog.text and "Failing row" not in caplog.text
+        with caplog.at_level(logging.ERROR, logger="homunculus.api.readings"):
+            assert _run(store, audit) == {**NOTHING, "skipped": 2}                             # and the next pass too
+        assert len([r for r in caplog.records if r.name == "homunculus.api.readings"]) == 2
 
 
 class TestTheAppRunsIt:

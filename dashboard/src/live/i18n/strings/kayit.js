@@ -90,6 +90,7 @@ export default {
       reasonLength: "Gerekçe 10–200 karakter olmalı.",
       hours: "Dönem 24 saat, 72 saat ya da 7 gün olmalı.",
       person: "Bu işi bir kişi yapar; bu kimlik bir kişiyi göstermiyor.",
+      beforeStay: "Ölçüm, hastanın bu yatışı başlamadan önce alınmış: bu yatışa bağlanamaz.",
     },
   },
   az: {
@@ -168,6 +169,7 @@ export default {
       reasonLength: "Səbəb 10–200 simvol olmalıdır.",
       hours: "Dövr 24 saat, 72 saat və ya 7 gün olmalıdır.",
       person: "Bu işi bir şəxs görür; bu kimlik bir şəxsi göstərmir.",
+      beforeStay: "Ölçmə xəstənin bu yatışı başlamazdan əvvəl aparılıb: bu yatışa bağlana bilməz.",
     },
   },
   ru: {
@@ -246,6 +248,7 @@ export default {
       reasonLength: "Причина — от 10 до 200 знаков.",
       hours: "Период — 24 часа, 72 часа или 7 дней.",
       person: "Это действие выполняет человек; эта учётная запись не указывает на человека.",
+      beforeStay: "Измерение сделано до начала этой госпитализации пациента: его нельзя привязать к ней.",
     },
   },
   en: {
@@ -324,6 +327,7 @@ export default {
       reasonLength: "The reason is 10–200 characters.",
       hours: "The period is 24 hours, 72 hours or 7 days.",
       person: "A person does this; this credential names no person.",
+      beforeStay: "The reading was measured before the patient's stay began: it cannot be linked to this stay.",
     },
   },
 };

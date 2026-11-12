@@ -11,8 +11,8 @@ const kayit = (lang) => Object.entries(DICTIONARIES[lang]).filter(([key]) => key
 
 describe("the measurement record's words (kayit)", () => {
   // The sweeps below read every key of the namespace: on an empty namespace they would pass having read nothing.
-  it("has its 76 keys in every language", () => {
-    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(76);
+  it("has its 77 keys in every language", () => {
+    for (const lang of LANG_CODES) expect(kayit(lang), lang).toHaveLength(77);
   });
 
   it("says in every language that the oldest entries' source is not shown when the read was cut", () => {
@@ -104,10 +104,13 @@ describe("the measurement record's words (kayit)", () => {
 
   it("the unmatched list's refusals have their texts by code", () => {
     for (const lang of LANG_CODES) {
-      for (const key of ["notUnmatched", "setMixed", "tooOld", "targetDischarged", "reasonLength", "hours", "person"]) {
+      for (const key of ["notUnmatched", "setMixed", "tooOld", "targetDischarged", "reasonLength", "hours", "person",
+        "beforeStay"]) {
         expect(DICTIONARIES[lang][`kayit.err.${key}`], `${lang} ${key}`).toBeTruthy();
       }
     }
+    // Final review (I-1): the refusal says the reading predates the stay — it judges no value.
+    expect(DICTIONARIES.tr["kayit.err.beforeStay"]).toBe("Ölçüm, hastanın bu yatışı başlamadan önce alınmış: bu yatışa bağlanamaz.");
   });
 
   // W1 review: a 403 on a link or a rejection is not «you may not correct measurements» (kayit.noRight).

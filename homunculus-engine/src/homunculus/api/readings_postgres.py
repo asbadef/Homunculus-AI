@@ -1,6 +1,7 @@
 # homunculus-engine/src/homunculus/api/readings_postgres.py
 """The readings store in the managed database (G3-05): `vital_readings` from migration 0021, and the admission a
-card key belongs to from `admissions` + `patients` (api/admission_keys.py). A sync engine and `text()` SQL,
+card key belongs to from `admissions` + `patients` (api/admission_keys.py), and when its stay began through the task
+store's walk back along a transfer's moves (api/tasks_postgres.py `ADMITTED_AT`). A sync engine and `text()` SQL,
 bounded like the task store, so a silent database fails the request in seconds. `add` leaves a row the table
 already holds to the table: `ON CONFLICT DO NOTHING` on both unique indexes (spec D7, D14)."""
 from __future__ import annotations
@@ -10,9 +11,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
-from homunculus.api.admission_keys import NEWEST_FIRST, OPEN_ADMISSION_OF_KEY, OPEN_STAYS
+from homunculus.api.admission_keys import NEWEST_FIRST, OPEN_ADMISSION_OF_KEY, OPEN_ADMISSIONS
 from homunculus.api.audit_postgres import POOL_TIMEOUT_S, bounded_connect_args, to_sync_url
 from homunculus.api.readings import Reading, ReadingNotUnmatched
+# The stay's start: the task store's one walker (G2-B1b X18) — a card key's open row, then back along its moves.
+from homunculus.api.tasks_postgres import ADMITTED_AT, MOST_MOVES
 
 STATEMENT_TIMEOUT_MS = 2000
 _COLUMNS = ("id, tenant, received_key, patient_key, CAST(admission_id AS text) AS admission_id, code, value, unit, "
@@ -186,9 +189,29 @@ class PostgresReadingStore:
         with self._engine.connect() as conn:
             return conn.execute(text(ADMISSION_OF), {"tenant": tenant, "key": key}).scalar_one_or_none()
 
-    def open_stays(self, tenant: str) -> dict[str, datetime]:
+    @staticmethod
+    def _stay_start(conn, tenant: str, key: str) -> datetime | None:
+        began = conn.execute(text(ADMITTED_AT), {"tenant": tenant, "key": key, "most": MOST_MOVES}).scalar_one_or_none()
+        return None if began is None else began.astimezone(timezone.utc)
+
+    def stay_start(self, tenant: str, key: str) -> datetime | None:
+        """When the stay of the key's open admission began: the task store's statement (`ADMITTED_AT`) — the open
+        row, then back along `source_admission_id` to the stay's first kabul, at most MOST_MOVES steps."""
         with self._engine.connect() as conn:
-            return {r[0]: r[1].astimezone(timezone.utc) for r in conn.execute(text(OPEN_STAYS), {"tenant": tenant})}
+            return self._stay_start(conn, tenant, key)
+
+    def open_stays(self, tenant: str) -> dict[str, datetime]:
+        """Every open admission's card key with its STAY's start (`stay_start`'s walk). One statement per key, on one
+        connection: the backfill's read (D19), run once per deploy, never a request's."""
+        with self._engine.connect() as conn:
+            keys = dict.fromkeys(r[0] for r in conn.execute(text(OPEN_ADMISSIONS), {"tenant": tenant}))
+            stays = {key: self._stay_start(conn, tenant, key) for key in keys}
+        return {key: began for key, began in stays.items() if began is not None}
+
+    def open_admissions(self, tenant: str) -> dict[str, datetime]:
+        with self._engine.connect() as conn:
+            return {r[0]: r[1].astimezone(timezone.utc)
+                    for r in conn.execute(text(OPEN_ADMISSIONS), {"tenant": tenant})}
 
     def close(self) -> None:
         self._engine.dispose()

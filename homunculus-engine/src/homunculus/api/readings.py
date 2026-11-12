@@ -17,6 +17,7 @@ name, no free text but the two reasons a person typed (≤ 200 characters): a pa
 the audit."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
@@ -26,7 +27,7 @@ from typing import Protocol
 from fastapi import APIRouter, Body, Header, HTTPException
 
 from homunculus.api.audit import AuditEvent, AuditLog, AuditRecord
-from homunculus.api.clinical import FLUID_CODES, RETRACT, RETRACTABLE_CODES
+from homunculus.api.clinical import BEDSIDE_SKEW, FLUID_CODES, RETRACT, RETRACTABLE_CODES
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import is_tombstone
 from homunculus.auth.permissions import validate_permissions
@@ -123,6 +124,7 @@ READING_TOO_OLD = "reading_too_old"
 READING_TARGET_DISCHARGED = "reading_target_discharged"
 READING_REASON_LENGTH = "reading_reason_length"
 READING_HOURS = "reading_hours"
+READING_BEFORE_STAY = "reading_before_stay"
 #: The server's words. The dashboard maps each code in `apiErrors.js` (Task W1).
 WORDS = {
     READING_NOT_UNMATCHED: "The reading is no longer waiting: it was linked or rejected already.",
@@ -131,6 +133,7 @@ WORDS = {
     READING_TARGET_DISCHARGED: "The patient is discharged: a reading cannot be linked to a closed stay.",
     READING_REASON_LENGTH: "The reason is 10–200 characters.",
     READING_HOURS: "The window is 24, 72 or 168 hours.",
+    READING_BEFORE_STAY: "The reading was measured before the patient's stay began: it cannot be linked to this stay.",
 }
 READING_NEEDS_PERSON = "a person links or rejects a reading: this credential names no actor"
 READING_BODY = "`readings` is a list of 1–50 reading ids"
@@ -140,6 +143,18 @@ READING_TARGET = "`patient_id` is required"
 def reading_refusal(status: int, code: str) -> HTTPException:
     """A refusal with its code beside its words (`{"code", "message"}`), as the task queue answers one."""
     return HTTPException(status_code=status, detail={"code": code, "message": WORDS[code]})
+
+
+def before_stay(observed_at: datetime, began: datetime | None) -> bool:
+    """Was a reading measured before the stay that began at `began` (final review, I-1)? Protocol numbers are
+    handed out in order, so a mistyped number is often the NEXT one — given to a new patient hours after the round
+    typed with it was measured. A reading measured before the stay of the patient who holds its number now is no
+    value of that patient: it is never linked to that stay (READING_BEFORE_STAY), and its set is nobody's scope by
+    that patient (`_reading_visibility`, api/app.py). The tolerance is `BEDSIDE_SKEW`, the clock difference the
+    bedside door already allows (G3-01 D7): a round measured as the patient arrived, by a device clock a little
+    behind, is still hers. An engineering bound, not a clinical one. `began` None — a patient whose stay start this
+    deployment does not hold (a HIS-fed one, a number with no open admission) — is never «before»."""
+    return began is not None and observed_at < began - BEDSIDE_SKEW
 
 
 @dataclass(frozen=True)
@@ -196,8 +211,13 @@ class ReadingStore(Protocol):
     `patient_key` still None) or none of them: ReadingNotUnmatched. `release` puts a claim back; `finalize` files
     one under a patient; `reject` closes claims as `rejected`. The three touch claims only, so each is safe to
     repeat. `void` marks the row of an engine entry once: True when it did. `admission_of` is the open
-    admission a card key belongs to (spec D8); `open_stays` every open admission's card key with the time the
-    stay began (the backfill's bound, D19)."""
+    admission a card key belongs to (spec D8). A transfer closes a stay's row and opens another at the move, the
+    new row naming its source (G2-B1b, T6), so a stay's start and its open row's start differ: `stay_start` is when
+    the stay of a key's open admission began — its first row's kabul, walked back along the moves (the task store's
+    walk, api/tasks_postgres.py `ADMITTED_AT`; X18) — or None when the key has no open admission (final review, I-1:
+    a reading measured before it is never linked to that stay); `open_stays` is that start for every open
+    admission's card key (the backfill's bound, D19); `open_admissions` every open admission ROW's card key with
+    the time that row began — a moved stay's at the move: the stamp's bound (`reconcile`)."""
     durable: bool
 
     def add(self, row: Reading) -> Reading | None: ...
@@ -218,7 +238,9 @@ class ReadingStore(Protocol):
     def reject(self, tenant: str, ids: Iterable[int], *, reason: str) -> None: ...
     def void(self, tenant: str, entry_id: int, *, by: str, at: datetime, reason: str) -> bool: ...
     def admission_of(self, tenant: str, key: str) -> str | None: ...
+    def stay_start(self, tenant: str, key: str) -> datetime | None: ...
     def open_stays(self, tenant: str) -> dict[str, datetime]: ...
+    def open_admissions(self, tenant: str) -> dict[str, datetime]: ...
     def close(self) -> None: ...
 
 
@@ -245,16 +267,20 @@ def _is_claim(row: Reading) -> bool:
 
 class InMemoryReadingStore:
     """For tests and for a deployment without Postgres (rows vanish on restart). `admitted` lets a test say
-    what the admissions table would — `{(tenant, key): admission id}` — and `admitted_at` when each of those
-    stays began (EPOCH when the test does not say)."""
+    what the admissions table would — `{(tenant, key): admission id}` — `admitted_at` when each of those STAYS
+    began (the walked-back start, as the in-memory task store's `admitted_at` is told it; EPOCH when the test does
+    not say), and `moved_at` when a move opened the key's open row (a transfer); a key not named there opened its
+    row with its stay."""
     durable = False
 
     def __init__(self, *, admitted: dict[tuple[str, str], str] | None = None,
-                 admitted_at: dict[tuple[str, str], datetime] | None = None) -> None:
+                 admitted_at: dict[tuple[str, str], datetime] | None = None,
+                 moved_at: dict[tuple[str, str], datetime] | None = None) -> None:
         self._rows: dict[int, Reading] = {}
         self._next = 1
         self._admitted = dict(admitted or {})
         self._admitted_at = dict(admitted_at or {})
+        self._moved_at = dict(moved_at or {})
 
     def _of(self, tenant: str) -> list[Reading]:
         return [r for r in self._rows.values() if r.tenant == tenant]
@@ -337,8 +363,17 @@ class InMemoryReadingStore:
     def admission_of(self, tenant: str, key: str) -> str | None:
         return self._admitted.get((tenant, key))
 
+    def stay_start(self, tenant: str, key: str) -> datetime | None:
+        if (tenant, key) not in self._admitted:
+            return None
+        return self._admitted_at.get((tenant, key), EPOCH)
+
     def open_stays(self, tenant: str) -> dict[str, datetime]:
         return {key: self._admitted_at.get((t, key), EPOCH) for (t, key) in self._admitted if t == tenant}
+
+    def open_admissions(self, tenant: str) -> dict[str, datetime]:
+        return {key: self._moved_at.get((t, key), self._admitted_at.get((t, key), EPOCH))
+                for (t, key) in self._admitted if t == tenant}
 
     def close(self) -> None:
         return None
@@ -485,23 +520,29 @@ def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, no
 # ----------------------------------------------------------------------------- the router
 
 def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
-                    sees: Callable[[Caller, str | None], Awaitable[Callable[[str], bool]]],
+                    sees: Callable[[Caller, str | None], Awaitable[Callable[[str, datetime], bool]]],
                     target: Callable[[Caller, str | None, str], Awaitable[object]],
                     identity: Callable[[str, str], object],
                     admission_for: Callable[[str, object], str | None],
+                    stay_start: Callable[[str, object], datetime | None],
+                    withdrawn: Callable[[str, Observation], bool],
                     apply: Callable[..., Awaitable[tuple[list, object]]],
                     audit: AuditLog, store: ReadingStore,
                     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> APIRouter:
     """«Eşleşmeyen ölçümler» (spec §4, D10–D12), bound to the app as the task queue is: `caller` resolves the
     credential; `sees(caller, authorization)` resolves the caller's scope once (503 when it cannot be read) and
-    answers «may this caller see the patient under this number» (D11); `target(caller, authorization, patient_id)`
-    is the link's target check — in scope (404), not discharged (409), on the board (404) — answering the
-    identity record; `identity(hospital, patient_id)` reads that record again, synchronously, before each reading
-    of a set goes in (the target may be discharged between two of them — see `assign`); `admission_for(hospital,
-    record)` is the stay a reading is stamped with (D8); `apply(hospital, obs, record, now, reading=id, actor=name,
-    on_written=callback)` is the device door's own tail (`_apply_reading`): it names the reading and the person who
-    linked it in the `ingest` row, and calls `on_written(row)` right after that row is written, so the table's row
-    is filed before the rest of the tail can fail (B6 review)."""
+    answers «may this caller see the set under this number, measured at this time» (D11; final review I-1: a set
+    measured before the stay of the patient who holds the number now is nobody's scope by that patient);
+    `target(caller, authorization, patient_id)` is the link's target check — in scope (404), not discharged (409),
+    on the board (404) — answering the identity record; `identity(hospital, patient_id)` reads that record again,
+    synchronously, before each reading of a set goes in (the target may be discharged between two of them — see
+    `assign`); `admission_for(hospital, record)` is the stay a reading is stamped with (D8); `stay_start(hospital,
+    record)` when that stay began, walked back along its moves (None when the deployment does not hold it: see
+    `before_stay`); `withdrawn(hospital, obs)` says whether «hatalı giriş» withdrew this very reading of the
+    target (D13, answered from memory as the door asks it); `apply(hospital, obs, record, now, reading=id,
+    actor=name, on_written=callback)` is the device door's own tail (`_apply_reading`): it names the reading and the
+    person who linked it in the `ingest` row, and calls `on_written(row)` right after that row is written, so the
+    table's row is filed before the rest of the tail can fail (B6 review)."""
     router = APIRouter(tags=["readings"])
 
     def _person(who: Caller) -> str:
@@ -520,15 +561,17 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             raise HTTPException(status_code=422, detail=READING_BODY)
         return sorted(raw)
 
-    def _once_per_number(visible: Callable[[str], bool]) -> Callable[[str], bool]:
-        """`visible` asked once per number within one request (B6 review): the decision is an identity read — a
-        synchronous SELECT and a decrypt on the event loop — and a monitor left on a discharged number lists
-        thousands of rows under one number."""
-        known: dict[str, bool] = {}
+    def _once_per_set(visible: Callable[[str, datetime], bool]) -> Callable[[Reading], bool]:
+        """`visible` asked once per set — one number, one time — within one request (B6 review): the decision is an
+        identity read — a synchronous SELECT and a decrypt on the event loop — and a monitor left on a discharged
+        number lists thousands of rows under one number. (The app's `visible` reads each number's record once per
+        request whatever the time; the time only decides between the patient's scope and everybody's.)"""
+        known: dict[tuple[str, datetime], bool] = {}
 
-        def check(key: str) -> bool:
+        def check(row: Reading) -> bool:
+            key = (row.received_key, row.observed_at)
             if key not in known:
-                known[key] = visible(key)
+                known[key] = visible(row.received_key, row.observed_at)
             return known[key]
         return check
 
@@ -558,13 +601,22 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
             log.error("vital_readings: kısmen bağlanan kümenin denetim satırı yazılamadı (hastane %s, %d ölçüm, %s)",
                       hospital, len(linked), type(exc).__name__)
 
-    def _already_held(hospital: str, patient_id: str, row: Reading) -> bool:
+    def _already_held(hospital: str, patient_id: str, row: Reading, obs: Observation) -> bool:
         """Does the target's record hold this very reading — the same code, time, device and value FILED under
         the patient (a recorded row: the device re-sent it under the corrected number; or a finalized link)? Not
         `seen`: that also matches a row merely RECEIVED under the number, and when the target is the very number
         the set arrived under (listed as unknown, admitted since, linked to itself) the claimed row would match
         itself and every reading would be closed as already held and lost. A store that cannot answer fails
-        OPEN, as the door's does: the reading is linked."""
+        OPEN, as the door's does: the reading is linked.
+
+        A reading the target's record holds WITHDRAWN («hatalı giriş», D13) is held too (final review, minor 3):
+        a link must not put back into the scores a value a nurse struck out — the door turns its re-send away
+        (`_withdrawn_again`) for the same reason. Asked first, of memory (`withdrawn`), so it holds when the store
+        fails open or, in memory, forgot the row at a restart. Closed as an already-held one is: `rejected` with
+        RESOLVE_ALREADY_HELD, the value kept, named under the link's `already_held`; it was entered once, and its
+        withdrawal stands."""
+        if withdrawn(hospital, obs):
+            return True
         try:
             return store.filed_under(hospital, patient_id, row.code, row.observed_at, row.source, row.value)
         except Exception as exc:
@@ -591,8 +643,8 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     async def _one_set(who: Caller, authorization: str | None, ids: list[int]) -> list[Reading]:
         """The rows named, when every one is waiting, visible to this caller (D11) and of one set — else the
         refusal. A row the caller may not see answers as one that is not there."""
-        visible = _once_per_number(await sees(who, authorization))
-        rows = [r for r in store.get(who.hospital, ids) if r.state == STATE_UNMATCHED and visible(r.received_key)]
+        visible = _once_per_set(await sees(who, authorization))
+        rows = [r for r in store.get(who.hospital, ids) if r.state == STATE_UNMATCHED and visible(r)]
         if len(rows) != len(ids):
             raise reading_refusal(409, READING_NOT_UNMATCHED)
         if len({set_key(r) for r in rows}) != 1:
@@ -645,11 +697,16 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
     async def list_unmatched(authorization: str | None = Header(default=None)):
         who = await caller(authorization)
         _person(who)
-        visible = _once_per_number(await sees(who, authorization))
+        visible = _once_per_set(await sees(who, authorization))
         now = clock()
-        fetched = store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW, limit=UNMATCHED_ROWS_MAX + 1)
+        # A durable store's read — up to UNMATCHED_ROWS_MAX rows, polled every minute by every nurse — runs off the
+        # event loop (final review, minor 8): a read only, so no check-then-write is split by it. One in memory reads
+        # inline, where the doors write.
+        def read() -> list[Reading]:
+            return store.unmatched(who.hospital, since=now - UNMATCHED_WINDOW, limit=UNMATCHED_ROWS_MAX + 1)
+        fetched = await asyncio.to_thread(read) if store.durable else read()
         cut = len(fetched) > UNMATCHED_ROWS_MAX          # the database held more than it was asked for
-        rows = [r for r in (fetched[1:] if cut else fetched) if visible(r.received_key)]
+        rows = [r for r in (fetched[1:] if cut else fetched) if visible(r)]
         sets = unmatched_sets(rows, now)
         if cut or len(sets) > LIST_MAX:                  # the newest LIST_MAX sets; `count` is what was read
             return {"count": len(sets), "sets": sets[:LIST_MAX], "truncated": True}
@@ -669,6 +726,11 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         now = clock()
         if now - rows[0].observed_at > LINK_MAX_AGE:
             raise reading_refusal(409, READING_TOO_OLD)
+        # Final review (I-1): a set measured before the target's stay began is no value of that stay — the typo
+        # that is the next protocol number, handed to a new patient since; a discharged patient's round, linked to
+        # the next patient in that bed. Refused before anything is claimed. Any reading of the set decides.
+        if before_stay(min(r.observed_at for r in rows), stay_start(hospital, record)):
+            raise reading_refusal(409, READING_BEFORE_STAY)
         claimed = _claim(hospital, ids, actor, now)
         # From here the rows are ours. Each reading goes into the engine as the device door would have put it
         # (D12): its own time, the device as its source, an ordinary `ingest` row that names it.
@@ -692,7 +754,8 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
         # The target's record may already hold a reading of the set (B6 review): the device sent it again under the
         # corrected number, or the order was the other way round. Linking it would put it in the engine twice —
         # two `ingest` rows, both replayed. It is not applied: its row is closed (`rejected`, RESOLVE_ALREADY_HELD,
-        # the value kept) and the link's audit row names it under `already_held`. The check precedes each
+        # the value kept) and the link's audit row names it under `already_held`. So is a reading the target's record
+        # holds withdrawn («hatalı giriş»): linked, it would score again (`_already_held`). The check precedes each
         # `apply` with no await between, as the door's `_resent` does.
         #
         # The table's row is filed by `apply` itself the moment the `ingest` row exists (`_filer`), so a failure
@@ -721,12 +784,12 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                     lost = True
                     break
                 waiting.remove(row.id)
-                if _already_held(hospital, patient_id, row):
+                obs = Observation(patient_id=patient_id, code=SignalCode(row.code), value=row.value, unit=row.unit,
+                                  timestamp=row.observed_at, source_device=row.source)
+                if _already_held(hospital, patient_id, row, obs):
                     store.reject(hospital, [row.id], reason=RESOLVE_ALREADY_HELD)
                     held.append(row.id)
                     continue
-                obs = Observation(patient_id=patient_id, code=SignalCode(row.code), value=row.value, unit=row.unit,
-                                  timestamp=row.observed_at, source_device=row.source)
                 alerts, _ = await apply(hospital, obs, record, now, reading=row.id, actor=actor,
                                         on_written=_filer(hospital, patient_id, admission, row, linked))
         except Exception:
@@ -846,11 +909,12 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
     What it files, from the rows of the trail in id order:
     * an `ingest` row, or a `chart` row of the bedside codes (`MANUAL_CODES`) → the `recorded` row with that
       `audit_id`, stamped with the stay by the store's rule (`admission_of`: an open admission of the key, so a HIS-fed
-      number has none) — but only a reading measured since that stay began (`open_stays`): an earlier one belongs to
-      an earlier stay under the same key (a readmission, a transfer) or to the days before the admission, and is
-      stamped with none, as is every row of a first pass over history; a `reading_unmatched` row → the `unmatched`
-      row (the door answers 200 when its own add fails, so this is the only repair of that row). Built with the
-      doors' own builders, so the widths agree.
+      number has none) — but only a reading measured since that admission ROW began (`open_admissions`): an earlier
+      one belongs to an earlier stay under the same key (a readmission), to the row a transfer closed, or to the days
+      before the admission, and is stamped with none, as is every row of a first pass over history; a row the table
+      refuses (`add` raises) is passed over as `skipped`, logged once a pass; a `reading_unmatched` row → the
+      `unmatched` row (the door answers 200 when its own add fails, so this is the only repair of that row). Built
+      with the doors' own builders, so the widths agree.
     * a `chart_retract` row → the mark on the row of the entry it names — and, for a device reading, on every row
       of the same reading (`_withdrawn_entries`).
     * an `ingest` row naming a `reading` (a link) → the link finished (`finalize`) when that reading is still a
@@ -875,13 +939,15 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
     want of a row the pass did not read would go back to the list while the engine holds the reading (the link
     cannot be made again — LINK_MAX_AGE — but the reading would be there to see, unlinked).
     `stays`, when given (the backfill, D19), keeps the run to those card keys and, for each, to the readings
-    measured since its stay began; the unmatched list and the claims are then left alone — they are nobody's
+    measured since its stay began (`open_stays`: walked back along a transfer's moves, so a moved patient's readings
+    from before the move are filed too — stamped by the rule above, with none); the unmatched list and the claims
+    are then left alone — they are nobody's
     stay. `dry_run` counts what a run would add or finish and writes nothing; a mark (`voided`) and a release are
     not predicted in a dry run, since they need the rows they touch, and a twin `add` would turn away is counted.
 
     It answers what it did: `recorded` / `unmatched` rows added, entries `voided`, links `finalized`, claims
     `rejected`, orphaned claims `released`, and audit rows it passed over (`skipped`: one that cannot be read,
-    or one the table holds already)."""
+    one the table holds already, or one the table refused)."""
     counts = dict.fromkeys(_COUNTS, 0)
     whole = stays is None
     claim_rows = store.claims(tenant) if whole else []
@@ -892,7 +958,8 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
     if since is not None and oldest is not None and oldest < since:
         lower = oldest
     admissions: dict[str, str | None] = {}
-    began_at: dict[str, datetime] | None = stays          # an open stay's start, per key; the whole run asks once
+    began_at: dict[str, datetime] | None = None          # an open admission ROW's start, per key; asked once a pass
+    failed: list[str] = []                               # the class of the first row the table refused, this pass
 
     def admission_of(key: str) -> str | None:
         if key not in admissions:
@@ -900,12 +967,30 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
         return admissions[key]
 
     def stay_of(key: str, observed_at: datetime) -> str | None:
-        """The open admission of `key` — for a reading measured since it began, and for none that came before."""
+        """The open admission of `key` — for a reading measured since that ROW began, and for none that came before.
+        A transferred stay's open row began at the move (`open_admissions`): a reading of the same stay measured
+        before the move was the source row's, which this pass does not look up — it is filed with none rather than
+        with a row that did not exist yet (final review, minor 6). The door stamps such a reading with the row open
+        when it ARRIVED (`_admission_for`), so only a row this pass files is affected."""
         nonlocal began_at
         if began_at is None:
-            began_at = store.open_stays(tenant)
+            began_at = store.open_admissions(tenant)
         began = began_at.get(key)
         return admission_of(key) if began is not None and observed_at >= began else None
+
+    def filed(row: Reading) -> bool | None:
+        """`store.add`, one row at a time (final review, minor 4): a row the table cannot take — a value too wide for
+        its column, written to the trail before the doors were bounded — is passed over (`skipped`, None here) and
+        the pass goes on; else one bad row would stop every repair for the 48 hours it stays in the window. Logged
+        once a pass, by class only: the driver's text carries the number and the value."""
+        try:
+            return store.add(row) is not None
+        except Exception as exc:
+            if not failed:
+                failed.append(type(exc).__name__)
+                log.error("vital_readings: reconcile bir satırı dosyalayamadı (hastane %s, %s); geçildi, sonraki "
+                          "geçişte yeniden denenir", tenant, failed[0])
+            return None
 
     def wanted(rec: AuditRecord, obs: Observation) -> bool:
         return whole or (rec.patient_id in stays and obs.timestamp >= stays[rec.patient_id])
@@ -985,10 +1070,11 @@ def reconcile(store: ReadingStore, audit: AuditLog, *, tenant: str, now: datetim
                                              recorded_by=str(rec.payload.get("charted_by") or "")[:_PERSON_MAX]),
                               admission_id=stay_of(rec.patient_id, obs.timestamp))
                 label = "recorded"
-            if dry_run or store.add(row) is not None:
+            if dry_run or filed(row):
                 counts[label] += 1
             else:
-                counts["skipped"] += 1               # the table holds it already (D14's tuple): present, not a failure
+                # The table holds it already (D14's tuple): present, not a failure — or it refused the row (`filed`).
+                counts["skipped"] += 1
         if len(page) < RECONCILE_PAGE:
             break
         after = page[-1].id

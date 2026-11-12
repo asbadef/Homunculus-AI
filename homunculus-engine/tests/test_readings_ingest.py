@@ -268,3 +268,19 @@ def test_the_store_is_released_at_shutdown():
     with TestClient(create_app({TOKEN: "h1"}, run_escalation_loop=False, readings=store)):
         assert store.closed is False
     assert store.closed is True
+
+
+@pytest.mark.parametrize("path", ["/clinical/{}", "/clinical/{}/preview"])
+def test_the_chart_doors_path_id_is_capped_as_a_bodys_is(world, path):
+    """Final review (minor 4): a `chart` row under a wider id is a row the table's `received_key` (PATIENT_ID_MAX)
+    can never take, and `reconcile` met it every hour. The door refuses it as it refuses a body's id: 400, nothing
+    charted. The longest id still charts."""
+    from homunculus.gateway.fhir import PATIENT_ID_MAX
+    client, store, audit, _ = world
+    body = {"entries": [{"code": "resp_rate", "value": 16}], "recorded_at": WHEN.isoformat()}
+    wide = "9" * (PATIENT_ID_MAX + 1)
+    r = client.post(path.format(wide), json=body, headers=NURSE)
+    assert (r.status_code, r.json()["detail"]) == (400, "geçersiz patient_id")
+    assert audit.records(tenant="h1", event_type="chart", limit=10) == []
+    longest = "9" * PATIENT_ID_MAX
+    assert client.post(path.format(longest), json=body, headers=NURSE).status_code == 200

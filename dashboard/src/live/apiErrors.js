@@ -279,6 +279,7 @@ export const READING_CODE_KEYS = new Map([
   ["reading_target_discharged", "kayit.err.targetDischarged"],
   ["reading_reason_length", "kayit.err.reasonLength"],
   ["reading_hours", "kayit.err.hours"],
+  ["reading_before_stay", "kayit.err.beforeStay"],
 ]);
 
 /** G2-B1d (E6): the same three sentences when the number is a protocol — twelve digits, the card

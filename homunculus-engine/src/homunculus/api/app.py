@@ -71,8 +71,8 @@ from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
     MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_HOURS, READING_TARGET_DISCHARGED, READING_UNMATCHED,
     READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, RECONCILE_WINDOW, RECORD_ROWS_MAX, UNKNOWN_POLICIES,
-    InMemoryReadingStore, Reading, ReadingStore, device_reading, device_source, manual_reading, patient_readings,
-    reading_refusal, readings_router, reconcile,
+    InMemoryReadingStore, Reading, ReadingStore, before_stay, device_reading, device_source, manual_reading,
+    patient_readings, reading_refusal, readings_router, reconcile,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -955,6 +955,10 @@ def create_app(
         target=lambda who, authorization, patient_id: _link_target(who, authorization, patient_id),
         identity=lambda hospital, patient_id: identities.get(hospital, patient_id),
         admission_for=lambda hospital, record: _admission_for(hospital, record),
+        # Final review: the target's stay start (I-1: no set measured before it is linked to it), and the door's own
+        # memory of «hatalı giriş» (minor 3: a link never puts a withdrawn device value back into the scores).
+        stay_start=lambda hospital, record: _stay_start(hospital, record),
+        withdrawn=lambda hospital, obs: _withdrawn_again(hospital, obs),
         # A link is judged NOW (`judge_at=now`, see `_apply_reading`). Not covered: the shadow lane's
         # `mirror_observation` still judges a linked reading at its measurement time, inside its own engine — the
         # shadow lane is non-clinical, and that is left as it is (B6 re-review).
@@ -1228,6 +1232,13 @@ def create_app(
             raise HTTPException(status_code=400, detail="geçersiz patient_id")
         return value
 
+    def _path_patient_id(patient_id: str) -> None:
+        """The chart door's path id, capped as a body's is (G3-05 final review, minor 4): its `chart` rows are filed
+        into the readings table (`received_key`, PATIENT_ID_MAX wide), and a wider id written to the trail would be
+        a row the table can never take. The same refusal as `_body_patient_id`'s: 400."""
+        if not patient_id.strip() or len(patient_id) > PATIENT_ID_MAX:
+            raise HTTPException(status_code=400, detail="geçersiz patient_id")
+
     def _charted_by(caller: Caller) -> str:
         """Who charted this, for the audit record.
 
@@ -1248,6 +1259,7 @@ def create_app(
         """
         caller = await _caller(authorization)
         _require(caller, CLINICAL_CHART)
+        _path_patient_id(patient_id)
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
         recorded_at = _recorded_at(body)
@@ -1312,6 +1324,7 @@ def create_app(
         A discharged number answers as the door drops it (`dropped`), with nothing scored."""
         caller = await _caller(authorization)
         _require(caller, CLINICAL_CHART)
+        _path_patient_id(patient_id)                  # the door's refusals: a preview says what the door would
         hospital = caller.hospital
         await _require_patient(caller, authorization, patient_id)
         recorded_at = _recorded_at(body)
@@ -1628,6 +1641,14 @@ def create_app(
             return None
         return readings.admission_of(hospital, record.patient_id)
 
+    def _stay_start(hospital: str, record) -> datetime | None:
+        """G3-05 (final review, I-1): when the stay of an admission made here began — its first kabul, walked back
+        along a transfer's moves (the store's `stay_start`, the task store's walk). The same records as
+        `_admission_for`: a HIS-fed patient, a discharged one and a number with no record have none here."""
+        if record is None or record.source != KABUL or is_tombstone(record):
+            return None
+        return readings.stay_start(hospital, record.patient_id)
+
     def _file_recorded(hospital: str, record, rows: list[Reading]) -> None:
         """G3-05 (D6, D7): the table rows of values the engine has taken, written AFTER their audit rows, each
         stamped with the stay (D8). Never raises: the audit row is written and the engine holds the value, so a
@@ -1672,37 +1693,62 @@ def create_app(
                       hospital, type(exc).__name__)
             return False
 
-    async def _reading_visibility(caller: Caller, authorization: str | None) -> Callable[[str], bool]:
-        """G3-05 (D11): «may this caller see the patient under this number» — for the unmatched sets of a
-        number a patient is, or was, admitted under: shown only where the caller's scope reaches that patient —
-        a discharged one at the last unit the tombstone keeps (`_scope_card` reads it there), one admitted AFTER
-        its readings arrived at the unit it lies in (B6 review: the set keeps `unknown` as its reason, but the
+    async def _reading_visibility(caller: Caller, authorization: str | None) -> Callable[[str, datetime], bool]:
+        """G3-05 (D11): «may this caller see the set under this number, measured at this time» — for the unmatched
+        sets of a number a patient is, or was, admitted under: shown only where the caller's scope reaches that
+        patient — a discharged one at the last unit the tombstone keeps (`_scope_card` reads it there), one admitted
+        AFTER its readings arrived at the unit it lies in (B6 review: the set keeps `unknown` as its reason, but the
         number is a patient's now, and its values are not another ward's to see, reject or link elsewhere). A
-        number nobody is admitted under has no patient and no unit: every holder of the right sees it. The
-        scope is resolved once per request; one that cannot be read is 503, never an empty list (G2-A2, D13).
-        The scope card is built uncounted: a list that polls every minute is no bed-access event."""
+        number nobody is admitted under has no patient and no unit: every holder of the right sees it.
+
+        A set measured BEFORE the stay of the patient who holds the number now (final review, I-1; `before_stay`) is
+        no value of that patient: the number was a typo then — often the next protocol number, handed out since — and
+        the round is another patient's, of another ward. It is everybody's, as an unknown number's set is, so the ward
+        it was measured on still sees it, and can link it to its own patient or reject it. The stay's start is read
+        only for a caller whose scope does not reach the patient: one who sees the patient sees the set either way.
+
+        The scope is resolved once per request; one that cannot be read is 503, never an empty list (G2-A2, D13).
+        Each number's record (and stay start) is read once per request. The scope card is built uncounted: a list
+        that polls every minute is no bed-access event."""
         scope = _readable(await _scope(authorization))
         if scope.unrestricted:
-            return lambda key: True
+            return lambda key, observed_at: True
         hospital = caller.hospital
+        # Per number: does the caller's scope reach its patient, and — when it does not — when that patient's stay
+        # began (None: the number's record is not an open admission made here, or the store does not hold one).
+        verdicts: dict[str, tuple[bool, datetime | None]] = {}
 
-        def visible(key: str) -> bool:
-            record = identities.get(hospital, key)
-            if record is None:
-                return True
-            return sees_patient(_scope_card(hospital, key, record, counted=False), scope)
+        def verdict(key: str) -> tuple[bool, datetime | None]:
+            if key not in verdicts:
+                record = identities.get(hospital, key)
+                if record is None:
+                    verdicts[key] = (True, None)
+                elif sees_patient(_scope_card(hospital, key, record, counted=False), scope):
+                    verdicts[key] = (True, None)
+                else:
+                    verdicts[key] = (False, _stay_start(hospital, record))
+            return verdicts[key]
+
+        def visible(key: str, observed_at: datetime) -> bool:
+            seen, began = verdict(key)
+            return seen or before_stay(observed_at, began)
         return visible
 
     async def _link_target(caller: Caller, authorization: str | None, patient_id: str):
         """G3-05 (D11): the patient an unmatched reading may be linked to — in the caller's scope
         (`_require_patient`: 404, audited), not discharged (409: linking to a closed stay is out of this slice),
         and on the board: an identity record or a patient the engine has measured (404 otherwise — a link must
-        never create a card). Answers the identity record, None for a measured patient nobody named."""
+        never create a card). Answers the identity record, None for a measured patient nobody named.
+
+        Under the policy `unmatched` (D9: the hospital) a card with no identity record is no target either (final
+        review, minor 5): a number nobody is admitted under is listed there, never applied, so such a card is a
+        leftover — of the policy `card`, or of a number whose record is gone — and a link would feed it."""
         await _require_patient(caller, authorization, patient_id)
         record = identities.get(caller.hospital, patient_id)
         if is_tombstone(record):
             raise reading_refusal(409, READING_TARGET_DISCHARGED)
-        if record is None and patient_id not in set(_engine(caller.hospital).patient_ids()):
+        if record is None and (unknown_readings == POLICY_UNMATCHED
+                               or patient_id not in set(_engine(caller.hospital).patient_ids())):
             raise HTTPException(status_code=404, detail="hasta bulunamadı")
         return record
 
@@ -1719,7 +1765,13 @@ def create_app(
         does not hold (a listed or discharged one) has no tail. Unlike the `_file_*` writers this may raise: a
         failure here is the same failure the first request had, and the bridge sending again is how it heals.
         What stays lost is the failed request's own `alert` rows (the engine and the board hold the alert), and
-        the `first_seen` row if the append after a stamp is what failed."""
+        the `first_seen` row if the append after a stamp is what failed.
+
+        Under the policy `unmatched` a number with no identity record has no tail either (final review, minor 5):
+        its readings are listed, never applied, so a card the engine still holds under it is a leftover (the
+        policy `card`'s), and the re-send of a listed reading must not stamp, tell or frame it."""
+        if record is None and unknown_readings == POLICY_UNMATCHED:
+            return
         engine = _engine(hospital)
         if is_tombstone(record) or patient_id not in set(engine.patient_ids()):
             return
@@ -2203,9 +2255,13 @@ def create_app(
         now = datetime.now(timezone.utc)
         # Read to `now`, the answer's own `until`, as the trends read does: a value stamped ahead of it is in
         # neither, and the two lists agree. Bounded: the newest RECORD_ROWS_MAX rows, one more asked for to tell
-        # a cut from an exact fit (as the unmatched list).
-        fetched = readings.for_patient(caller.hospital, patient_id, since=now - timedelta(hours=int(hours)),
-                                       until=now, limit=RECORD_ROWS_MAX + 1)
+        # a cut from an exact fit (as the unmatched list). A durable store's read runs off the event loop (final
+        # review, minor 8): up to RECORD_ROWS_MAX rows, polled every minute per open patient screen, and a read
+        # only — no check-then-write is split by it. One in memory reads inline.
+        def read() -> list[Reading]:
+            return readings.for_patient(caller.hospital, patient_id, since=now - timedelta(hours=int(hours)),
+                                        until=now, limit=RECORD_ROWS_MAX + 1)
+        fetched = await asyncio.to_thread(read) if readings.durable else read()
         cut = len(fetched) > RECORD_ROWS_MAX
         return patient_readings(fetched[1:] if cut else fetched, patient_id=patient_id, hours=int(hours), now=now,
                                 truncated=cut)

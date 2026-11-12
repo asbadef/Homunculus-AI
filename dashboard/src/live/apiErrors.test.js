@@ -849,7 +849,7 @@ describe("the task queue's refusals (G3-02)", () => {
 // G3-05 — «Eşleşmeyen ölçümler» and «Ölçüm kaydı»: the readings' refusals, by code (err.apiCode) and by the server's words.
 describe("the readings' refusals (G3-05)", () => {
   const CODES = ["reading_not_unmatched", "reading_set_mixed", "reading_too_old", "reading_target_discharged",
-    "reading_reason_length", "reading_hours"];
+    "reading_reason_length", "reading_hours", "reading_before_stay"];
   it("maps every coded refusal to its text in the four languages", () => {
     for (const code of CODES) {
       const hit = apiErrorKey(Object.assign(new Error("x"), { status: 409, apiCode: code }));
@@ -857,6 +857,8 @@ describe("the readings' refusals (G3-05)", () => {
       for (const lang of LANG_CODES) expect(DICTIONARIES[lang][hit.key], `${lang} ${hit.key}`).toBeTruthy();
     }
     expect(apiErrorKey(Object.assign(new Error("x"), { status: 409, apiCode: "reading_too_old" })).key).toBe("kayit.err.tooOld");
+    // Final review (I-1): a set measured before the target's stay began is never linked to it.
+    expect(apiErrorKey(Object.assign(new Error("x"), { status: 409, apiCode: "reading_before_stay" })).key).toBe("kayit.err.beforeStay");
   });
   it("holds the codes to the engine's own (api/readings.py WORDS), read as text", () => {
     const source = py("api/readings.py");

@@ -2,8 +2,9 @@
 
 Migration 0021 is schema-only: on the deploy day the table is empty, and the patient screen's «Ölçüm kaydı» box
 would show nothing measured before the deploy. This optional step runs `reconcile` (api/readings.py) with no
-48-hour bound, for the card keys admitted now, each from the time its stay began — so the patients in bed keep
-their record. Idempotent: a second run files nothing. Run on the VM in a one-off container of the NEW api image,
+48-hour bound, for the card keys admitted now, each from the time its stay began (its first kabul, walked back
+along a transfer's moves; a reading from before the move is filed with no admission row) — so the patients in bed
+keep their record. Idempotent: a second run files nothing. Run on the VM in a one-off container of the NEW api image,
 after `alembic upgrade head`:
 
     docker compose run --rm --no-deps -T api python scripts/backfill_vital_readings.py --tenant <slug> --open-only --dry-run </dev/null

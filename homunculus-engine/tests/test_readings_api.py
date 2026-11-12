@@ -16,8 +16,8 @@ from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
 from homunculus.api.readings import (
-    LIST_MAX, POLICY_UNMATCHED, READING_ASSIGNED, READING_NEEDS_PERSON, READING_REJECTED, REASON_UNKNOWN,
-    RESOLVE_ALREADY_HELD, STATE_ASSIGNED, STATE_REJECTED, STATE_UNMATCHED, device_reading,
+    LIST_MAX, POLICY_CARD, POLICY_UNMATCHED, READING_ASSIGNED, READING_NEEDS_PERSON, READING_REJECTED,
+    REASON_UNKNOWN, RESOLVE_ALREADY_HELD, STATE_ASSIGNED, STATE_REJECTED, STATE_UNMATCHED, device_reading,
 )
 from homunculus.canonical import Observation, SignalCode
 from homunculus.scope import Scope, ScopeReason
@@ -95,12 +95,12 @@ def _identities(store: InMemoryIdentityStore | None = None) -> InMemoryIdentityS
     return store
 
 
-def _app(audit=None, store=None, identities=None):
+def _app(audit=None, store=None, identities=None, policy=POLICY_UNMATCHED):
     audit = audit if audit is not None else InMemoryAuditLog()
     store = store if store is not None else _Flaky(admitted={("h1", KEY): ADMISSION})
     identities = identities if identities is not None else _identities()
     app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_resolve, resolve_scope=_resolve_scope,
-                     audit=audit, identities=identities, readings=store, unknown_readings=POLICY_UNMATCHED)
+                     audit=audit, identities=identities, readings=store, unknown_readings=policy)
     return app, store, audit
 
 
@@ -459,21 +459,38 @@ class TestLinking:
         _send(client, [("spo2", 97)])
         assert _assign(client, _ids(client, headers=WARD1), KEY, WARD1).status_code == 200
 
-    def test_a_target_the_engine_has_measured_but_no_identity_names_can_be_linked(self, world):
+    def test_a_target_the_engine_has_measured_but_no_identity_names_can_be_linked_under_the_policy_card(self):
         """E-5, the positive path: «an identity record or a patient the engine has measured». A bedside value
-        charted for a number nobody admitted puts it on the board; a reading may then be linked to it. The reading
-        carries no stay (no admission record), and the link makes no second card."""
-        client, store, _ = world
+        charted for a number nobody admitted puts it on the board; a reading may then be linked to it — under the
+        policy `card` (D9), where such a card is what a number nobody admitted makes. The reading carries no stay
+        (no admission record), and the link makes no second card. (A discharged number's set: under `card` an
+        unknown number's reading is applied, never listed.)"""
+        app, store, _ = _app(policy=POLICY_CARD)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            nobody = "202600000077"
+            _chart(client, [{"code": "heart_rate", "value": 80}], _ago(minutes=20), nobody)
+            _send(client, [("spo2", 97)], key=GONE)
+            ids = _ids(client, GONE)
+            r = _assign(client, ids, nobody)
+            assert r.status_code == 200, r.text
+            [row] = store.get("h1", ids)
+            assert (row.state, row.patient_key, row.admission_id) == (STATE_ASSIGNED, nobody, None)
+            patients = [p["patient_id"] for p in client.get("/patients", headers=DEVICE).json()["patients"]]
+            assert patients.count(nobody) == 1
+
+    def test_under_the_policy_unmatched_a_nameless_card_is_no_target(self, world):
+        """Final review (minor 5): in the hospital (policy `unmatched`) a number nobody is admitted under is listed,
+        never applied — a card with no identity record is a leftover, and a link must not feed it. 404, as for a
+        patient who is not on the board; nothing is claimed."""
+        client, store, audit = world
         nobody = "202600000077"
-        _chart(client, [{"code": "heart_rate", "value": 80}], _ago(minutes=20), nobody)
+        _chart(client, [{"code": "heart_rate", "value": 80}], _ago(minutes=20), nobody)   # a card, no identity
         _send(client, [("spo2", 97)])
         ids = _ids(client)
         r = _assign(client, ids, nobody)
-        assert r.status_code == 200, r.text
-        [row] = store.get("h1", ids)
-        assert (row.state, row.patient_key, row.admission_id) == (STATE_ASSIGNED, nobody, None)
-        patients = [p["patient_id"] for p in client.get("/patients", headers=DEVICE).json()["patients"]]
-        assert patients.count(nobody) == 1
+        assert (r.status_code, r.json()["detail"]) == (404, "hasta bulunamadı")
+        assert store.get("h1", ids)[0].state == STATE_UNMATCHED
+        assert audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10) == []
 
     def test_a_first_reading_whose_write_fails_stays_claimed_and_the_rest_go_back_to_be_linked_by_a_retry(self):
         """The first reading's `ingest` append fails — nothing reached the audit trail for it, but the engine took
@@ -1295,3 +1312,212 @@ class TestTheLogsCarryNoNumberOrValue:
         assert "RuntimeError" in logged.getMessage() and "h1" in logged.getMessage()
         assert logged.exc_info is None
         assert KEY not in caplog.text and "91.5" not in caplog.text and "Failing row" not in caplog.text
+
+
+# ----------------------------------------------------------------------------- the final review's findings
+
+NEXT = "202600000004"                    # the next patient in a discharged patient's bed
+Q_ADMISSION = "33333333-3333-4333-8333-333333333333"
+
+
+class TestAReadingFromBeforeTheTargetsStay:
+    """Final review (I-1): protocols are handed out in order, so a mistyped number is often the NEXT one. P's round
+    under it, measured hours ago, is listed «unknown»; then the number is given to a new patient Q in another unit.
+    The set must not leave P's ward for Q's, and must never be linked to Q — P's values would score as Q's. The same
+    path: a discharged patient's buffered round, linked to the next patient in that bed."""
+
+    @staticmethod
+    def _world(**stays):
+        """KEY (P, unit u-1) admitted six hours ago; TYPO handed to Q ten minutes ago (her record is applied by
+        `_give_typo_to_q`, unit u-2)."""
+        store = _Flaky(admitted={("h1", KEY): ADMISSION, ("h1", TYPO): Q_ADMISSION},
+                       admitted_at={("h1", KEY): _ago(hours=6), ("h1", TYPO): _ago(minutes=10)}, **stays)
+        identities = _identities()
+        app, _, audit = _app(store=store, identities=identities)
+        return app, store, audit, identities
+
+    @staticmethod
+    def _give_typo_to_q(identities):
+        identities.apply("h1", IdentityRecord(TYPO, family="Yeni", given="Hasta", state="admitted", source=KABUL,
+                                              unit_id="u-2", bed_id="b-9", updated_at=_ago(minutes=10)))
+
+    def test_the_round_stays_on_ps_ward_cannot_be_linked_to_q_and_links_to_p(self):
+        """The reviewer's scenario: before the fix the set left u-1 for u-2, and linking it to Q put P's values
+        under Q."""
+        app, store, audit, identities = self._world()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 88), ("sbp", 85)], key=TYPO, when=_ago(hours=3))      # P's round, typo
+            assert _ids(client, TYPO, WARD1)
+            self._give_typo_to_q(identities)
+            ids = _ids(client, TYPO, WARD1)
+            assert len(ids) == 2, "P's ward no longer sees P's round"
+            assert _ids(client, TYPO, WARD2) == ids                       # everybody's, as an unknown number's
+            r = _assign(client, ids, TYPO, WARD2)
+            assert (r.status_code, _code(r)) == (409, "reading_before_stay")
+            assert r.json()["detail"]["message"].startswith("The reading was measured before the patient's stay")
+            assert [row.state for row in store.get("h1", ids)] == [STATE_UNMATCHED] * 2      # nothing claimed
+            assert _ingest_rows(audit, TYPO) == [] and audit.records(tenant="h1", event_type=READING_ASSIGNED,
+                                                                     limit=10) == []
+            linked = _assign(client, ids, KEY, WARD1)                     # P's ward links it to P
+            assert linked.status_code == 200, linked.text
+            assert [(row.state, row.patient_key) for row in store.get("h1", ids)] == [(STATE_ASSIGNED, KEY)] * 2
+
+    def test_p_s_ward_may_reject_it_too(self):
+        app, store, _, identities = self._world()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 88)], key=TYPO, when=_ago(hours=3))
+            self._give_typo_to_q(identities)
+            ids = _ids(client, TYPO, WARD1)
+            assert _reject(client, ids, headers=WARD1).status_code == 200
+            assert store.get("h1", ids)[0].state == STATE_REJECTED
+
+    def test_a_round_measured_since_her_stay_began_is_still_her_scope_and_links_to_her(self):
+        """The complement — B6 review I-3 stands: measured after Q's stay began, the set arrived before her record
+        did; it is shown where the scope reaches Q, and links to her. A round measured a minute before the stay
+        began is within the clock tolerance (BEDSIDE_SKEW) and is hers too."""
+        app, store, _, identities = self._world()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 88)], key=TYPO, when=_ago(minutes=5))
+            _send(client, [("spo2", 89)], key=TYPO, when=_ago(minutes=11))
+            self._give_typo_to_q(identities)
+            assert _ids(client, TYPO, WARD1) == []
+            for s in _list(client, WARD2)["sets"]:
+                ids = [x["id"] for x in s["readings"]]
+                r = _assign(client, ids, TYPO, WARD2)
+                assert r.status_code == 200, r.text
+            assert _list(client, WARD2)["count"] == 0
+
+    def test_a_discharged_patients_round_cannot_be_linked_to_the_next_patient_in_that_bed(self):
+        """GONE lay in u-1, bed b-3, and was discharged; her monitor's buffered round, measured three hours ago, is
+        listed «taburcu». NEXT was admitted to that bed ten minutes ago: the round is not hers."""
+        store = _Flaky(admitted={("h1", KEY): ADMISSION, ("h1", NEXT): Q_ADMISSION},
+                       admitted_at={("h1", KEY): _ago(hours=6), ("h1", NEXT): _ago(minutes=10)})
+        identities = _identities()
+        identities.apply("h1", IdentityRecord(NEXT, family="Yeni", given="Hasta", state="admitted", source=KABUL,
+                                              unit_id="u-1", bed_id="b-3", updated_at=_ago(minutes=10)))
+        app, _, audit = _app(store=store, identities=identities)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("heart_rate", 131)], key=GONE, when=_ago(hours=3))
+            [listed] = _list(client, WARD1)["sets"]
+            assert listed["reason"] == "discharged"
+            ids = _ids(client, GONE, WARD1)
+            r = _assign(client, ids, NEXT, WARD1)
+            assert (r.status_code, _code(r)) == (409, "reading_before_stay")
+            assert store.get("h1", ids)[0].state == STATE_UNMATCHED and _ingest_rows(audit, NEXT) == []
+            assert _reject(client, ids, headers=WARD1).status_code == 200      # closed with a reason, value kept
+
+    def test_a_transferred_patients_round_from_before_the_move_can_be_linked(self):
+        """KEY's stay began six hours ago and moved here an hour ago: the move opened a new admission row, but the
+        stay is one, walked back to its kabul (`stay_start`). A round measured between the kabul and the move is
+        hers; one measured before the kabul is not."""
+        store = _Flaky(admitted={("h1", KEY): ADMISSION}, admitted_at={("h1", KEY): _ago(hours=6)},
+                       moved_at={("h1", KEY): _ago(hours=1)})
+        app, _, _ = _app(store=store)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 95)], key=TYPO, when=_ago(hours=3))
+            ids = _ids(client)
+            r = _assign(client, ids, KEY)
+            assert r.status_code == 200, r.text
+            assert [(row.state, row.patient_key) for row in store.get("h1", ids)] == [(STATE_ASSIGNED, KEY)]
+            _send(client, [("spo2", 94)], key=TYPO, when=_ago(hours=7))
+            early = _ids(client)
+            assert _code(_assign(client, early, KEY)) == "reading_before_stay"
+
+    def test_a_target_whose_stay_this_deployment_does_not_hold_is_not_refused(self, world):
+        """A patient with no open admission here (a HIS-fed one, or a key the store does not know) has no stay start:
+        the guard has nothing to compare with and the link goes as before."""
+        client, store, _ = world
+        _send(client, [("spo2", 97)], when=_ago(hours=20))
+        r = _assign(client, _ids(client), OTHER)                      # OTHER: a kabul record, no open admission row
+        assert r.status_code == 200, r.text
+
+
+class TestAWithdrawnReadingIsNotLinkedBack:
+    """Final review (minor 3): the link did not ask whether «hatalı giriş» withdrew the reading under the target. The
+    device re-sent its round under the corrected number, a nurse withdrew a wrong value of it, and the typo's set
+    still waits; linking it put the struck-out value back into the scores whenever the store could not answer."""
+
+    def test_the_withdrawn_reading_is_closed_as_held_and_never_entered_again(self):
+        store = _Leaky(admitted={("h1", KEY): ADMISSION})
+        app, _, audit = _app(store=store)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("sbp", 180), ("spo2", 97)])                    # under the typo: listed
+            ids = _ids(client)
+            assert "alerts" in client.post("/ingest", json=obs("sbp", 180, KEY, WHEN), headers=DEVICE).json()
+            [direct] = _ingest_rows(audit)
+            w = client.post(f"/clinical/{KEY}/entries/{direct.id}/retract", json={"reason": "manşet gevşekti, yanlış"},
+                            headers=NURSE)
+            assert w.status_code == 200, w.text
+            store.fail = {"filed_under"}                                   # the store cannot answer: it fails open
+            r = _assign(client, ids)
+            assert r.status_code == 200, r.text
+            assert sorted(x.subject for x in _ingest_rows(audit)) == ["sbp", "spo2"]     # no second sbp row
+            assert _history(client, "sbp") == []                            # not back in the scores
+            by_code = {row.code: row for row in store.get("h1", ids)}
+            assert (by_code["sbp"].state, by_code["sbp"].resolve_reason) == (STATE_REJECTED, RESOLVE_ALREADY_HELD)
+            assert (by_code["spo2"].state, by_code["spo2"].patient_key) == (STATE_ASSIGNED, KEY)
+            [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+            assert assigned.payload["already_held"] == [by_code["sbp"].id]
+
+
+class TestANamelessCardUnderThePolicyUnmatched:
+    """Final review (minor 5): under the policy `unmatched` a number with no identity record is listed, never applied.
+    A card the engine still holds under such a number is a leftover: the re-send of a listed reading must not finish
+    its tail (stamp, tell, frame)."""
+
+    def test_the_re_send_of_a_listed_reading_stamps_tells_and_publishes_nothing(self, world):
+        client, _, audit = world
+        nobody = "202600000077"
+        _chart(client, [{"code": code, "value": value} for code, value in IMMEDIATE], _ago(minutes=20), nobody)
+        _send(client, [("spo2", 97)], key=nobody)                            # no identity: listed, not applied
+        # What a failed first tail would have left: the card's alerts unstamped and untold.
+        client.app.state.ack_stores["h1"].first_seen.clear()
+        client.app.state.notifier.prune("h1", set())
+        trail = len(audit.records(tenant="h1", limit=1000))
+        queue = client.app.state.broadcaster.subscribe("h1")
+        told = client.app.state.notification_hub.subscribe("h1", "nurse")
+        again = client.post("/ingest", json=obs("spo2", 97, nobody, WHEN), headers=DEVICE)
+        assert again.json() == {"patient_id": nobody, "duplicate": True}
+        assert len(audit.records(tenant="h1", limit=1000)) == trail          # no first_seen, no notification row
+        assert _frames(queue, nobody) == [] and told.empty()
+
+
+class TestTheListReadsOffTheLoop:
+    def test_a_durable_stores_list_is_read_in_a_worker_thread(self):
+        """Final review (minor 8): up to UNMATCHED_ROWS_MAX rows, polled every minute by every nurse — a durable
+        store's read runs in a thread, not on the event loop (as the hourly reconcile does)."""
+        import threading
+
+        class _Durable(_Flaky):
+            durable = True
+            threads: set = set()
+
+            def unmatched(self, tenant, **kw):
+                self.threads.add(threading.current_thread())
+                return super().unmatched(tenant, **kw)
+        store = _Durable(admitted={("h1", KEY): ADMISSION})
+        app, _, _ = _app(store=store)
+
+        async def loop_thread():
+            return threading.current_thread()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 97)])
+            assert _list(client)["count"] == 1
+            on_the_loop = client.portal.call(loop_thread)
+        assert store.threads and on_the_loop not in store.threads
+
+    def test_a_store_in_memory_is_read_on_the_loop(self, world):
+        import threading
+        client, store, _ = world
+        seen = []
+        real = store.unmatched
+
+        def unmatched(tenant, **kw):
+            seen.append(threading.current_thread())
+            return real(tenant, **kw)
+        store.unmatched = unmatched
+
+        async def loop_thread():
+            return threading.current_thread()
+        _list(client)
+        assert seen == [client.portal.call(loop_thread)]

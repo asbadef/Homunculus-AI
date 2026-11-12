@@ -68,12 +68,52 @@ def _admission(conn, tenant: uuid.UUID, patient: uuid.UUID, state: str, *, proto
     return str(admission)
 
 
+def _admission_at(conn, tenant: uuid.UUID, patient: uuid.UUID, state: str, *, protocol: str | None,
+                  at: datetime, source: str | None = None) -> str:
+    """One admission begun at `at` (an instant, not «hours ago»), naming the row a move closed (`source`)."""
+    assert state in STATES                                  # written into the statement
+    unit, bed = _bed(conn, tenant)
+    admission = uuid.uuid4()
+    conn.execute(text(
+        "INSERT INTO admissions (id, patient_id, tenant_id, state, admission_datetime, admitting_unit_id, bed_id, "
+        f"admission_diagnosis_free_text, protocol_no, source_admission_id) VALUES (:id, :p, :t, '{state}', :at, :u, "
+        ":b, 'Sentetik tanı', :protocol, CAST(:source AS uuid))"),
+        {"id": admission, "p": patient, "t": tenant, "at": at, "u": unit, "b": bed, "protocol": protocol,
+         "source": source})
+    return str(admission)
+
+
 class TestPostgresReadingStore(ReadingStoreContract):
     @pytest.fixture()
     def store(self, migrated):
         store = PostgresReadingStore(TEST_DATABASE_URL)
         yield store
         store.close()
+
+    @pytest.fixture()
+    def admitted_store(self, migrated):
+        """The stays written into `admissions`: one ACTIVE row keyed by its protocol — or, for a moved stay, the
+        TRANSFERRED row of the kabul and the ACTIVE arriving row that names it, as admission/service.py writes them."""
+        opened = []
+
+        def make(stays):
+            ids = {}
+            with migrated.begin() as conn:
+                tenant = _tenant(conn, "h1")
+                for i, (key, (began, moved)) in enumerate(stays.items()):
+                    patient = _patient(conn, tenant, f"H-{i + 1:07d}")
+                    if moved is None:
+                        ids[key] = _admission_at(conn, tenant, patient, "ACTIVE", protocol=key, at=began)
+                    else:
+                        source = _admission_at(conn, tenant, patient, "TRANSFERRED", protocol=None, at=began)
+                        ids[key] = _admission_at(conn, tenant, patient, "ACTIVE", protocol=key, at=moved,
+                                                 source=source)
+            store = PostgresReadingStore(TEST_DATABASE_URL)
+            opened.append(store)
+            return store, ids
+        yield make
+        for store in opened:
+            store.close()
 
 
 def test_the_postgres_store_is_durable(migrated):
@@ -167,8 +207,9 @@ def test_after_a_transfer_the_key_names_the_arriving_admission(migrated):
     """O8: the arriving row takes the protocol over and the source row, TRANSFERRED, gives it up — so a reading
     that arrives after the transfer is stamped with the new stay's row, and `patient_key` spans both. The arriving
     row names its source (G2-B1b, spec T6) as admission/service.py `transfer_patient` writes it: the readings store
-    still stamps by the open row — its start is the move (`open_stays`), so a reading from before the move is not
-    this row's — while the task store walks back to the stay's first kabul (X18, `tasks_postgres.STAY_WALK_BACK`)."""
+    still stamps by the open row — its start is the move (`open_admissions`), so a reading from before the move is
+    not this row's — while the stay walks back to its first kabul (X18, `tasks_postgres.STAY_WALK_BACK`), in the task
+    store and, since the final review (I-1, minor 6), in the readings store's `stay_start` and `open_stays`."""
     from homunculus.api.tasks_postgres import PostgresTaskStore
     with migrated.begin() as conn:
         tenant = _tenant(conn, "h1")
@@ -181,10 +222,11 @@ def test_after_a_transfer_the_key_names_the_arriving_admission(migrated):
     try:
         assert store.admission_of("h1", KEY) == arriving != source
         assert store.admission_of("h1", "H-0000001") is None       # the open row has a protocol: the H-number is no key
-        [(key, began)] = store.open_stays("h1").items()
+        [(key, opened)] = store.open_admissions("h1").items()
         now = datetime.now(timezone.utc)
-        assert key == KEY and timedelta(minutes=110) < now - began < timedelta(minutes=130)       # the move
+        assert key == KEY and timedelta(minutes=110) < now - opened < timedelta(minutes=130)      # the move
         assert timedelta(hours=29) < now - tasks.admitted_at("h1", KEY) < timedelta(hours=31)     # the first kabul
+        assert store.stay_start("h1", KEY) == tasks.admitted_at("h1", KEY) == store.open_stays("h1")[KEY]
     finally:
         store.close()
         tasks.close()
@@ -371,6 +413,40 @@ def test_the_backfill_files_an_open_stays_readings_on_the_real_tables(migrated, 
         assert (row.value, row.admission_id) == (97.0, admission)
         assert script.run(["--tenant", "h1", "--open-only"], audit=audit, store=store) == 0
         assert json.loads(capsys.readouterr().out.split(" ", 1)[1])["recorded"] == 0
+    finally:
+        audit.dispose()
+        store.close()
+
+
+def test_the_backfill_covers_a_transferred_stay_from_its_first_kabul_on_the_real_tables(migrated, capsys):
+    """Final review (minor 6): the stay began 30 hours ago and moved two hours ago. `open_stays` walks back along the
+    move, so the readings since the first kabul are filed — those from before the move with no admission (the source
+    row's, which reconcile does not look up), those since with the arriving row — and none from before the kabul."""
+    import importlib.util
+    import json
+    from homunculus.api.audit import AuditEvent
+    from homunculus.api.audit_postgres import PostgresAuditLog
+    from tests.conftest import ENGINE_ROOT
+    spec = importlib.util.spec_from_file_location("backfill_vital_readings", ENGINE_ROOT / "scripts" / "backfill_vital_readings.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    with migrated.begin() as conn:
+        tenant = _tenant(conn, "h1")
+        patient = _patient(conn, tenant, "H-0000001")
+        source = _admission(conn, tenant, patient, "TRANSFERRED", protocol=None, hours_ago=30)
+        arriving = _admission(conn, tenant, patient, "ACTIVE", protocol=KEY, hours_ago=2)
+        conn.execute(text("UPDATE admissions SET source_admission_id = CAST(:source AS uuid) "
+                          "WHERE id = CAST(:arriving AS uuid)"), {"source": source, "arriving": arriving})
+    now = datetime.now(timezone.utc)
+    audit, store = PostgresAuditLog(TEST_DATABASE_URL), PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        for hours, value in ((40, 94.0), (10, 95.0), (1, 97.0)):       # before the kabul, before the move, after it
+            audit.append(AuditEvent("h1", "ingest", KEY, "spo2", {
+                "value": value, "unit": "%", "obs_ts": (now - timedelta(hours=hours)).isoformat(), "device": "CONNEX-3A"}))
+        assert script.run(["--tenant", "h1", "--open-only"], audit=audit, store=store) == 0
+        assert json.loads(capsys.readouterr().out.split(" ", 1)[1])["recorded"] == 2
+        rows = store.for_patient("h1", KEY, since=now - timedelta(days=3), until=now)
+        assert [(row.value, row.admission_id) for row in rows] == [(95.0, None), (97.0, arriving)]
     finally:
         audit.dispose()
         store.close()

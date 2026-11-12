@@ -527,3 +527,28 @@ class TestTheRecordRead:
         assert [v["value"] for s in record["sets"] for v in s["readings"]] == [118.0]
         assert [d["value"] for d in _channel(client, "sbp")["device"]] == [118.0]
         assert datetime.fromisoformat(record["until"]) < datetime.now(timezone.utc) + timedelta(seconds=1)
+
+    def test_a_durable_stores_record_is_read_in_a_worker_thread(self):
+        """Final review (minor 8): up to RECORD_ROWS_MAX rows, polled every minute per open patient screen — a durable
+        store's read runs in a thread, not on the event loop (as the hourly reconcile does); one in memory reads
+        inline."""
+        import threading
+
+        class _Durable(InMemoryReadingStore):
+            durable = True
+            threads: list = []
+
+            def for_patient(self, tenant, patient_key, **kw):
+                self.threads.append(threading.current_thread())
+                return super().for_patient(tenant, patient_key, **kw)
+
+        async def loop_thread():
+            return threading.current_thread()
+        for store, off_the_loop in ((_Durable(), True), (type("_Inline", (_Durable,), {"durable": False})(), False)):
+            store.threads = []
+            with TestClient(_app(store)) as c:
+                _send(c, [("spo2", 97)], _ago(10))
+                r = _read(c)
+                assert r.status_code == 200 and len(r.json()["sets"]) == 1
+                on_the_loop = c.portal.call(loop_thread)
+            assert store.threads and (on_the_loop not in store.threads) is off_the_loop
