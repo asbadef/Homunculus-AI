@@ -990,6 +990,52 @@ async def test_the_kabul_form_sent_again_after_a_move_answers_where_she_lies_now
     assert detail["bed_id"] == two          # re-read R-2: the bed it lies on now, not the form's
 
 
+async def _kabul_signed(w, client) -> tuple[dict, dict]:
+    """The nurse's kabul form for bed 1 under a request id, and the admission it made, signed."""
+    body = form(w, "1", request_id=uuid.uuid4())
+    r = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert r.status_code == 201, r.text
+    r2 = await client.post(f"/admissions/{r.json()['id']}/sign-off", headers=w.auth["doctor"])
+    assert r2.status_code == 200, r2.text
+    return body, r.json()
+
+
+async def test_a_kabul_form_sent_again_after_two_moves_answers_the_bed_she_lies_in_last(ward):
+    """Re-read test gap (I-1): A → B → C. The resend follows the chain past B and answers C: the
+    open row, its bed, the protocol both moves carried."""
+    w, client, _ = ward
+    ten = str(w.beds["10"].id)
+    body, source = await _kabul_signed(w, client)
+    third = await moved(w, client, await moved(w, client, source, "2"), "10")
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.status_code == 200, again.text
+    answer = again.json()
+    assert (answer["id"], answer["bed_id"], answer["state"]) == (third["id"], ten, "ACTIVE")
+    assert (answer["protocol_no"], answer["board_key"]) == (FIRST_PROTOCOL, FIRST_PROTOCOL)
+
+
+async def test_a_kabul_form_sent_again_after_the_moved_stay_ended_answers_its_discharged_row(ward):
+    """Re-read test gap (I-1): moved to bed 2, in the nurse's units, then discharged there. The
+    resend answers the stay's last row — DISCHARGED, on bed 2 — with the protocol it kept, the
+    number its card stood under."""
+    w, client, _ = ward
+    two = str(w.beds["2"].id)
+    body, source = await _kabul_signed(w, client)
+    arriving = await moved(w, client, source)
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/initiate",
+                          json={"disposition": "HOME"}, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/confirm",
+                          headers=w.auth["charge"])
+    assert r.status_code == 200, r.text
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.status_code == 200, again.text
+    answer = again.json()
+    assert (answer["id"], answer["bed_id"], answer["state"]) == (arriving["id"], two, "DISCHARGED")
+    assert (answer["protocol_no"], answer["board_key"]) == (FIRST_PROTOCOL, FIRST_PROTOCOL)
+    assert answer["discharge_disposition"] == "HOME"
+
+
 async def test_a_kabul_form_sent_again_after_a_move_out_of_the_nurses_units_shows_nothing_of_the_stay(
         ward):
     """Re-read R-1 (I-1's scope): the stay was moved to a unit the nurse who sent the form does not
