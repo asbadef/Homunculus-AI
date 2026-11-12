@@ -1215,12 +1215,15 @@ görünür. İmza yetkisi olan hekim şeritten "Kabulü imzala" der ve kabulün 
 İmzalanmamış kabul taburcu edilemez; Taburcu listesinde "Önce kabul imzalanmalı (hasta ekranı)"
 yazar. Sunucunun yanıtı gelmezse ekran kabulün kaydedilip kaydedilmediğini bilmediğini söyler ve
 yeniden göndermeden önce listeye bakmanızı ister; aynı form yeniden gönderilse de sunucu ikinci
-bir hasta ya da numara açmaz.
+bir hasta ya da numara açmaz. Hasta bu arada imzalanıp başka yatağa nakledildiyse (3.20), yeniden
+gönderilen form hastanın şimdi yattığı yatağı ve protokol numarasını söyler; o yatak sizin
+birimlerinizin dışındaysa yalnız protokol numarası söylenir, yatak söylenmez.
 
 **Taburcu iki adımdır** (D7):
 1. **Hekim başlatır:** "Taburcuyu başlat" der ve çıkış şeklini seçer — Eve taburcu, Başka kuruma
    sevk (kurumun adıyla) ya da Vefat (exitus; bildiren hekim, boş bırakılırsa kendisi) — çıkış
-   zamanı (gelecekte ya da kabulden önce olamaz) ve not. Hasta "Taburcusu başlatılan" listesine
+   zamanı (gelecekte ya da yatışın ilk kabulünden önce olamaz; nakledilmiş hastada sınır nakil anı
+   değil, ilk kabul saatidir, 3.20) ve not. Hasta "Taburcusu başlatılan" listesine
    geçer, yatak "Taburcu bekliyor" olur.
 2. **Sorumlu hemşire onaylar:** hasta servisten çıkınca "Hasta çıktı · onayla". Bu geri alınamaz:
    kart bütün ekranlardan kalkar, yatak temizliğe alınır.
@@ -2071,7 +2074,9 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
 - **Tek adım.** «Nakil et» denince tek bir işlemde eski kabul kapanır (`TRANSFERRED`), eski yatak
   temizliğe geçer («Temizlikte»), yeni yatakta yeni bir kabul kaydı açılır (`ACTIVE`) ve yeni yatak
   dolar. Arada bekleyen bir durum yazılmaz. Yeni kayıt eskisinin kimlik ve kabul bilgilerini aynen
-  taşır; kabul saati nakil anıdır, taburcu alanları eski kayıtta kalır. Yalnız imzalı (`ACTIVE`) hasta
+  taşır; kabul saati nakil anıdır, taburcu alanları eski kayıtta kalır. Koğuş hastayı önce taşır,
+  sonra kaydeder: bu yüzden taburcu (exitus da) zamanı nakil anından önceye, yatışın ilk kabul
+  saatine dek yazılabilir; ilk kabulden önceye yazılamaz. Yalnız imzalı (`ACTIVE`) hasta
   taşınır: taslak önce bir hekimce imzalanır (3.19), taburcusu başlatılmış hasta taşınmaz (409
   `invalid_transition`). Hastanın kendi yatağı hedef olamaz (422 `field_invalid:target_bed_id`);
   kapalı yatak 409 `bed_closed`, boş olmayan yatak 409 `bed_not_available` verir.
@@ -2126,6 +2131,9 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     gerçekleşmiş olabileceğini söyler; düğme aynı nakli bir kez daha gönderir, bu arada yeniden okunan
     liste başka bir yatak gösterse de. Gerçekleşmişse sunucu ikinci bir nakil yapmaz, kartı yeniden
     taşır; gerçekleşmemişse nakli yapar. Sunucudan gelen bir ret kilidi bitirir.
+  - Tekrar, aynı istektir: aynı yatak, aynı neden, aynı not. Başka bir hekim ya da hemşire aynı
+    hastayı aynı yatağa kendi nedeni ya da notuyla taşımak isterse bu ayrı bir karardır ve reddedilir
+    (409 `invalid_transition`); nedeni ve notu sessizce yok sayılmaz.
   - Nakil bitince liste yeniden okunur, eski hastanın satırı gider ve odak hastanın yeni satırına
     gider (listede yoksa taburcusu başlatılanlar listesine).
 - **Kart taşınamazsa.** Kayıt yine de yapılmıştır. Kart, işlem kaydedildikten sonra taşınır: önce eski
