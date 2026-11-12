@@ -61,10 +61,11 @@ def test_only_an_open_row_changes():
 
 
 def test_the_stores_walk_back_and_the_transfers_walk_forward_share_one_bound():
-    """G2-B1b (X18, Task 5a review): `PostgresTaskStore.admitted_at` follows `source_admission_id`
-    back at most `_MOST_MOVES` steps, a number it keeps for itself so the api's store imports
-    nothing of the admission routes at runtime (admission/transfer.py: `where_now`'s forward
-    bound). A test may import both: it keeps the two in step."""
+    """G2-B1b (X18; re-read R-5): `PostgresTaskStore.admitted_at` and `transfer.stay_began` follow
+    `source_admission_id` back, and `transfer.where_now` forward, at most `MOST_MOVES` steps — one
+    number, kept by the api's store (which imports nothing of the admission routes) and imported by
+    admission/transfer.py. No second copy that could drift."""
     from homunculus.admission import transfer
     from homunculus.api import tasks_postgres
-    assert tasks_postgres._MOST_MOVES == transfer._MOST_MOVES
+    assert transfer.MOST_MOVES == tasks_postgres.MOST_MOVES == 64
+    assert "_MOST_MOVES" not in vars(transfer) and "_MOST_MOVES" not in vars(tasks_postgres)

@@ -34,14 +34,13 @@ from homunculus.admission.boardkey import board_key
 from homunculus.admission.boardlink import board_link_of, card_record
 from homunculus.admission.models import Admission, AdmissionState, Patient
 from homunculus.admission.schemas import EngineWrite
-from homunculus.api.tasks_postgres import STAY_WALK_BACK
+#: `MOST_MOVES`: how far `where_now` and `stay_began` follow one stay's moves — the task store's
+#: number, one for every walk (re-read R-5). A ward never moves one patient this often in a stay,
+#: and a chain that goes on (a row written wrong by hand) ends there instead of looping.
+from homunculus.api.tasks_postgres import MOST_MOVES, STAY_WALK_BACK
 from homunculus.tenant.models import Bed, Room
 
 log = logging.getLogger(__name__)
-
-#: How far `where_now` follows one stay's moves. A ward never moves one patient this often in a
-#: stay, and a chain that goes on (a row written wrong by hand) ends here instead of looping.
-_MOST_MOVES = 64
 
 
 async def unit_of(db: AsyncSession, bed_id: uuid.UUID) -> uuid.UUID:
@@ -96,7 +95,7 @@ async def where_now(db: AsyncSession, admission_id: uuid.UUID, *,
     tenant's admission ends the chain there."""
     current = admission_id
     inside = () if tenant_id is None else (Admission.tenant_id == tenant_id,)
-    for _ in range(_MOST_MOVES):
+    for _ in range(MOST_MOVES):
         found = (await db.execute(
             select(Admission.id, Admission.state, Admission.protocol_no, Patient.patient_number)
             .join(Patient, Patient.id == Admission.patient_id)
@@ -116,7 +115,7 @@ async def stay_began(db: AsyncSession, admission_id: uuid.UUID, *,
                      tenant_id: uuid.UUID) -> datetime | None:
     """When the stay this admission belongs to began: the `admission_datetime` of its first row,
     reached back along `source_admission_id` — G3-02's walk (X18, `tasks_postgres.STAY_WALK_BACK`:
-    one walker, at most `_MOST_MOVES` steps, inside the tenant), started from this row. A row no
+    one walker, at most `MOST_MOVES` steps, inside the tenant), started from this row. A row no
     move opened answers its own time. None when the row is not the tenant's.
 
     The discharge time's lower bound (final review M-1). The arriving row's own time is the move's
@@ -129,7 +128,7 @@ async def stay_began(db: AsyncSession, admission_id: uuid.UUID, *,
         .bindparams(bindparam("start", type_=Admission.__table__.c.id.type),
                     bindparam("tenant", type_=Admission.__table__.c.tenant_id.type))
         .columns(admission_datetime=Admission.__table__.c.admission_datetime.type),
-        {"start": admission_id, "tenant": tenant_id, "most": _MOST_MOVES})).scalar_one_or_none()
+        {"start": admission_id, "tenant": tenant_id, "most": MOST_MOVES})).scalar_one_or_none()
 
 
 async def move_card(request: Request, hospital: str, card: dict, *,

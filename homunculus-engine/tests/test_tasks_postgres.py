@@ -233,7 +233,7 @@ def test_the_walk_back_never_leaves_the_tenant(migrated):
 
 def test_a_chain_written_wrong_by_hand_ends_at_the_bound(migrated):
     """A row that names itself as its source (no route writes one): the walk stops at
-    `_MOST_MOVES` and answers that row's own time; it never loops."""
+    `MOST_MOVES` and answers that row's own time; it never loops."""
     _stay(migrated, moves=0)
     with migrated.begin() as conn:
         conn.execute(text("UPDATE admissions SET source_admission_id = id"))
