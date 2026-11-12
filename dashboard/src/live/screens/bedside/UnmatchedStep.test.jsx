@@ -474,3 +474,33 @@ describe("the rail's badge", () => {
     expect(entryOf().querySelector("[data-rail-badge]")).toBeNull();
   });
 });
+
+// Final review (minor 7): the engine answers at most the newest 200 sets; its `count` is how many wait, and
+// `truncated` says the answer is short of them. The badge and the button count the engine's way, never the answer's
+// length, and the list says — neutrally, below the sets — that only the newest are shown.
+describe("an answer the engine cut", () => {
+  const CUT = { count: 250, sets: [ROUND, OLD], truncated: true };
+  const entryOf = () => document.querySelector("nav a[href='#/olcum']");
+
+  it("the badge and the button carry the engine's count", async () => {
+    await open({ rail: true, setup: (api) => api.unmatchedReadings.mockResolvedValue(CUT) });
+    expect(entryOf().querySelector("[data-rail-badge='unmatched']")).toHaveTextContent("250");
+    expect(entryOf()).toHaveTextContent("250 uyğunlaşmayan ölçmə");
+    expect(button("Uyğunlaşmayan ölçmələr · 250")).toBeInTheDocument();
+  });
+
+  it("the list shows the sets it was given and says only the newest are shown", async () => {
+    await open({ setup: (api) => api.unmatchedReadings.mockResolvedValue(CUT) });
+    await openList();
+    expect(setRows()).toHaveLength(2);
+    const note = document.querySelector("[data-um-truncated]");
+    expect(note).toHaveTextContent("Yalnız ən yeni ölçmə dəstləri göstərilir (çox qeyd var).");
+    expect(note.getAttribute("role")).toBeNull();
+  });
+
+  it("a whole answer says nothing of a cut", async () => {
+    await open();
+    await openList();
+    expect(document.querySelector("[data-um-truncated]")).toBeNull();
+  });
+});

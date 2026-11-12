@@ -6,7 +6,8 @@
 // «alındı {time}» where the engine marks the arrival as late (`received_late`; the box compares no two times). Each
 // value is named and written as the bedside form names and writes it (vitalsFields.js); a code that form does not
 // know is printed as the engine sent it. A WITHDRAWN value stays, struck through, with its reason, who and when
-// (Q3): nothing measured ever disappears from this box. No score, no colour and no judgement lives here.
+// (Q3): nothing measured ever disappears from this box. No score, no colour and no judgement lives here. When the
+// engine's read of the window stopped at its limit (`truncated`), a neutral line says the oldest sets are not shown.
 //
 // WHAT IT WRITES, for a `clinical.chart` holder only — absent otherwise, never a disabled button: «Düzelt» on each
 // value of the bedside set that is not withdrawn and that the engine can address (`entry`), in CorrectDialog.jsx.
@@ -154,6 +155,11 @@ export function ReadingsBox({ patientId, bed, nowMs = Date.now(), canChart = fal
               time: timeOf(set.observed_at) === null ? "—" : dayStamp(timeOf(set.observed_at), nowMs) },
           }) : null} />
       ) : error ? null : <p className="m-0 text-13 text-mute">{t("kayit.reading")}</p>}
+      {/* The engine's read stopped at its limit (`truncated`, final review minor 7): the oldest sets of the window are
+          not in the answer. Said where they would be, in neutral words — it describes the list, not the patient. */}
+      {data?.truncated === true ? (
+        <p data-readings-truncated="" className="m-0 mt-2 text-12 text-mute">{t("kayit.recordTruncated")}</p>
+      ) : null}
       {open ? (
         <CorrectDialog
           bed={bed} what={open.what} nowMs={nowMs}

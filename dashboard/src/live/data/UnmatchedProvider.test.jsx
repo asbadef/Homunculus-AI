@@ -13,8 +13,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const CHART = ["board.view", "clinical.chart"];
 
 function Probe() {
-  const { count, sets, phase } = useUnmatched();
-  return <p data-probe="">{`${phase}:${count === null ? "null" : count}:${sets.length}`}</p>;
+  const { count, sets, phase, truncated } = useUnmatched();
+  return <p data-probe="">{`${phase}:${count === null ? "null" : count}:${sets.length}${truncated ? ":cut" : ""}`}</p>;
 }
 const probe = () => document.querySelector("[data-probe]").textContent;
 
@@ -62,6 +62,27 @@ describe("the unmatched readings, read once for the shell", () => {
     api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
     await act(async () => { vi.advanceTimersByTime(UNMATCHED_POLL_MS); await settle(); });
     expect(probe()).toBe("stale:null:2");
+  });
+
+  // Final review (minor 7): the engine answers at most its newest 200 sets; `count` is its own count of what waits.
+  it("counts the sets the engine's way, and says when the answer was cut", async () => {
+    const { api } = await open({ setup: (a) => a.unmatchedReadings.mockResolvedValue({ ...unmatched(), count: 250, truncated: true }) });
+    expect(probe()).toBe("known:250:2:cut");
+    api.unmatchedReadings.mockResolvedValue(unmatched());
+    await act(async () => { vi.advanceTimersByTime(UNMATCHED_POLL_MS); await settle(); });
+    expect(probe()).toBe("known:2:2");
+  });
+
+  it("an answer with no count of its own is counted by its sets", async () => {
+    await open({ setup: (a) => a.unmatchedReadings.mockResolvedValue({ sets: unmatched().sets }) });
+    expect(probe()).toBe("known:2:2");
+  });
+
+  it("a failed read after a cut answer keeps the word on the sets it keeps, but no count", async () => {
+    const { api } = await open({ setup: (a) => a.unmatchedReadings.mockResolvedValue({ ...unmatched(), count: 250, truncated: true }) });
+    api.unmatchedReadings.mockRejectedValue(refusal(503, "kapsam şu anda okunamıyor"));
+    await act(async () => { vi.advanceTimersByTime(UNMATCHED_POLL_MS); await settle(); });
+    expect(probe()).toBe("stale:null:2:cut");
   });
 
   it("an answer that is not a list is a failed read", async () => {

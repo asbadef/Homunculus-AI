@@ -4,7 +4,8 @@
 // THE LIST is the shell's own read (data/UnmatchedProvider.jsx): one row per set — one number, one device, one time
 // — with the number AS IT WAS TYPED, why it matched nobody, the device, the measurement time and the values. The
 // engine has already left out what this session may not see (a discharged patient of another unit, D11) and says
-// which sets can still be linked (`linkable`: the browser judges no age).
+// which sets can still be linked (`linkable`: the browser judges no age), and when it answered only the newest sets
+// (`truncated`: a line below them says so).
 //
 // «HASTAYA BAĞLA» walks the page's own two steps before anything is sent (D11): the patient list (the board in this
 // session's scope), then the identity question — name, year of birth, bed — asked over the reading's values. Only
@@ -166,7 +167,7 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
   const { t } = useI18n();
   const board = useBoard();
   const toast = useToast();
-  const { sets, phase, error, reload } = useUnmatched();
+  const { sets, truncated, phase, error, reload } = useUnmatched();
   // The sets the engine has just taken (a link, a rejection), left out of the answer they came with until a read
   // replaces that answer: the old list must not offer a second link on them while the next read is out. `base` is the
   // answer they were taken from, so a replaced answer (the engine's word) shows whatever it says.
@@ -290,6 +291,10 @@ export function UnmatchedStep({ patients, nowMs, known, onBack }) {
               </li>
             ))}
           </ul>
+        ) : null}
+        {/* The engine answered the newest sets only (`truncated`, final review minor 7): said below them, neutrally. */}
+        {truncated && shown.length > 0 ? (
+          <p data-um-truncated="" className="m-0 mt-2 text-12 text-mute">{t("kayit.umTruncated")}</p>
         ) : null}
         <div className="mt-3"><Button icon="chevL" onClick={onBack}>{t("kayit.umBack")}</Button></div>
         {rejecting ? (

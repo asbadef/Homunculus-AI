@@ -67,6 +67,20 @@ describe("the measurement record — what was measured, and by what", () => {
     expect(sets()[0]).not.toHaveTextContent("qəbul edildi");
   });
 
+  // Final review (minor 7): the engine reads the newest RECORD_ROWS_MAX rows of the window and says when it cut.
+  it("says, in neutral words below the sets, when the engine's read of the window was cut", async () => {
+    await open({ answer: (pid, hours) => readings(pid, hours, { truncated: true }) });
+    expect(sets()).toHaveLength(3);
+    const note = document.querySelector("[data-readings-truncated]");
+    expect(note).toHaveTextContent("Bu dövrün ən köhnə ölçmələri göstərilmir (çox qeyd var).");
+    expect(note.getAttribute("role")).toBeNull();          // a plain line, not an alert
+  });
+
+  it("says nothing of a cut when the answer is whole", async () => {
+    await open();
+    expect(document.querySelector("[data-readings-truncated]")).toBeNull();
+  });
+
   it("keeps a withdrawn value, struck through, with its reason, who and when — and offers no «Düzelt» on it", async () => {
     await open();
     const struck = sets()[1].querySelector("[data-reading='22']");

@@ -23,6 +23,9 @@ export default {
     // `device_truncated`): the oldest entries of the window are not listed, so their source («cihaz», «elle») and
     // any withdrawal are not shown. Neutral: it describes the list, it says nothing of the patient.
     entriesTruncated: "Bu aralıkta en eski ölçümlerin kaynağı gösterilmiyor (çok fazla kayıt).",
+    // The record box's and the list's notes when the engine's answer is cut (`truncated`): neutral, about the list.
+    recordTruncated: "Bu dönemin en eski ölçümleri gösterilmiyor (çok fazla kayıt).",
+    umTruncated: "Yalnız en yeni ölçüm setleri gösteriliyor (çok fazla kayıt).",
     sourceDevice: "cihaz · {device}",
     sourceDeviceUnnamed: "cihaz",
     sourceHand: "elle · {user}",
@@ -102,6 +105,8 @@ export default {
     readFailed: "Ölçmə qeydi oxunmadı: {reason}",
     empty: "Bu dövrdə ölçmə qeydi yoxdur.",
     entriesTruncated: "Bu aralıqda ən köhnə ölçmələrin mənbəyi göstərilmir (çox qeyd var).",
+    recordTruncated: "Bu dövrün ən köhnə ölçmələri göstərilmir (çox qeyd var).",
+    umTruncated: "Yalnız ən yeni ölçmə dəstləri göstərilir (çox qeyd var).",
     sourceDevice: "cihazdan · {device}",
     sourceDeviceUnnamed: "cihazdan",
     sourceHand: "əl ilə · {user}",
@@ -181,6 +186,8 @@ export default {
     readFailed: "Запись измерений не прочитана: {reason}",
     empty: "За этот период измерений в записи нет.",
     entriesTruncated: "В этом интервале источник самых старых измерений не показан (слишком много записей).",
+    recordTruncated: "Самые старые измерения этого периода не показаны (слишком много записей).",
+    umTruncated: "Показаны только самые новые наборы измерений (слишком много записей).",
     sourceDevice: "прибор · {device}",
     sourceDeviceUnnamed: "прибор",
     sourceHand: "вручную · {user}",
@@ -260,6 +267,8 @@ export default {
     readFailed: "The measurement record could not be read: {reason}",
     empty: "No measurement in the record for this period.",
     entriesTruncated: "The source of the oldest measurements in this range is not shown (too many records).",
+    recordTruncated: "The oldest measurements of this period are not shown (too many records).",
+    umTruncated: "Only the newest measurement sets are shown (too many records).",
     sourceDevice: "device · {device}",
     sourceDeviceUnnamed: "device",
     sourceHand: "by hand · {user}",
