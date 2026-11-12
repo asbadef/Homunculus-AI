@@ -13,8 +13,8 @@ import httpx
 import pytest
 
 from homunculus.tres.client import (
-    CALL_DEADLINE_S, LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, TresSearchUnclear,
-    TresSessionError, is_outage, read_error,
+    CALL_DEADLINE_S, LOCAL_ID_EXTENSION, TOKEN_CONTENT_TYPE, TresAccount, TresClient, TresError, TresLoginRefused,
+    TresSearchUnclear, TresSessionError, is_outage, read_error,
 )
 from homunculus.tres.ledger import _write
 from tests.fake_tres import FakeTres
@@ -120,6 +120,34 @@ async def test_a_429_from_the_token_route_is_a_session_error_that_keeps_retry_af
     with pytest.raises(TresSessionError) as raised:
         await client.find("Patient", "hmn-p-0001")
     assert (raised.value.status, raised.value.message, raised.value.retry_after) == (429, "Slow down", 90.0)
+    await client.aclose()
+
+
+@pytest.mark.parametrize("response, refused", [
+    (httpx.Response(401, json={"message": "Invalid credentials"}), True),
+    (httpx.Response(403, json={"error": "Provider blocked"}), True),
+    (httpx.Response(400, json={"error": "Bad provider id"}), True),
+    (httpx.Response(404, text=""), True),
+    (httpx.Response(408, text=""), False),
+    (httpx.Response(429, text=""), False),
+    (httpx.Response(503, text=""), False),
+    (httpx.Response(200, json={"payload": {}}), False),
+])
+async def test_only_a_4xx_of_the_token_route_is_a_refused_login(response, refused):
+    """Review I3: what the worker parks a tenant for — the platform said no to the account."""
+    client = TresClient(ACCOUNT, transport=httpx.MockTransport(lambda request: response))
+    with pytest.raises(TresSessionError) as raised:
+        await client.token()
+    assert isinstance(raised.value, TresLoginRefused) is refused
+    await client.aclose()
+
+
+async def test_a_second_401_on_a_fhir_call_is_no_refused_login():
+    client = client_on(Script(httpx.Response(401, json={"error": "Session expired"}),
+                              httpx.Response(401, json={"error": "Session expired"})))
+    with pytest.raises(TresSessionError) as raised:
+        await client.find("Patient", "hmn-p-0001")
+    assert not isinstance(raised.value, TresLoginRefused)
     await client.aclose()
 
 

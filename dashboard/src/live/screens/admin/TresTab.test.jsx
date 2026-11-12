@@ -204,6 +204,23 @@ describe("TresTab — «Bağlantını yoxla»", () => {
     expect(shown("Bağlantı quruldu: platforma sessiya açdı.")).toHaveLength(1);
   });
 
+  it("says the rounds wait while the platform's refusal of the login stands, until a test succeeds", async () => {
+    const { api } = await mounted((a) => {
+      a.tresSettings.mockResolvedValue({ ...SET, session_refused_at: "2026-11-11T08:00:00Z" });
+      a.testTres.mockResolvedValue({ ok: true, message: null });
+    });
+    const parked = /^Platforma giriş rədd edildi \(.+\); hesab məlumatları düzəldilib yadda saxlanılana və ya bağlantı yoxlaması uğurlu olana qədər avtomatik göndəriş aparılmır\.$/;
+    expect(screen.getByText(parked)).toBeInTheDocument();
+    await pressTest();
+    expect(api.testTres).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(parked)).toBeNull();
+  });
+
+  it("says nothing of a refused login while none stands", async () => {
+    await mounted((a) => a.tresSettings.mockResolvedValue({ ...SET, session_refused_at: null }));
+    expect(screen.queryByText(/^Platforma giriş rədd edildi/)).toBeNull();
+  });
+
   it("tells the platform's own words when it refuses, and says so when it gave none", async () => {
     await mounted((a) => {
       a.tresSettings.mockResolvedValue(SET);

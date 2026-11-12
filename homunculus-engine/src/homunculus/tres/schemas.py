@@ -68,6 +68,7 @@ class TresSettingsOut(BaseModel):
     live: TresAccountOut
     egress: bool                     # the install's lock (D2 (b)): false = nothing leaves the server
     updated_at: datetime | None      # None: the tenant has never saved the tab
+    session_refused_at: datetime | None   # when the platform refused the login; the rounds wait (I3)
 
 
 class TresTestOut(BaseModel):

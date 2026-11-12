@@ -10,9 +10,10 @@ the test with them. Phase F0 creates the two tables it has models for:
 * `tres_settings`: one row per tenant (FK tenants ON DELETE CASCADE) — `mode` off|validate|send
   (default off), `environment` test|live (default test), each environment's account (`test_*`,
   `live_*`: base URL, username, password, provider id, Organization id and name), `enabled_types`
-  (JSONB, default all eight), `settle_hours` (0–168, default 24), `updated_at`, `updated_by`. The
-  two password columns hold Fernet ciphertext (`EncryptedString`). NO ROW is written: a tenant with
-  no row reads as the defaults, and the feed is off.
+  (JSONB, default all eight), `settle_hours` (0–168, default 24), `updated_at`, `updated_by`, and
+  `session_refused_at` (null; when the platform last refused the tenant's login — the rounds pass
+  it over while set). The two password columns hold Fernet ciphertext (`EncryptedString`). NO ROW
+  is written: a tenant with no row reads as the defaults, and the feed is off.
 * `tres_deliveries`: the ledger, one row per (tenant, environment, resource type, local id) —
   status, operation, the platform's id, the payload's keyed digest, the attempt count and the next
   attempt's time, a skip's reason code, the platform's last message (Fernet ciphertext) and the
@@ -80,6 +81,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
                   server_default=sa.text("now()")),
         sa.Column("updated_by", UUID(as_uuid=True), nullable=True),
+        sa.Column("session_refused_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("mode IN ('off', 'validate', 'send')", name="ck_tres_settings_mode"),
         sa.CheckConstraint("environment IN ('test', 'live')", name="ck_tres_settings_environment"),
         sa.CheckConstraint("settle_hours BETWEEN 0 AND 168", name="ck_tres_settings_settle"),

@@ -130,8 +130,8 @@ def test_settings_default_to_off_test_every_type_and_24_hours_and_the_checks_hol
         conn.execute(text(f"INSERT INTO {SETTINGS} (tenant_id) VALUES (:t)"), {"t": tenant})
         row = conn.execute(text(
             f"SELECT mode, environment, settle_hours, enabled_types, test_password, live_base_url, "
-            f"updated_at IS NOT NULL, updated_by FROM {SETTINGS}")).one()
-    assert tuple(row) == ("off", "test", 24, list(RESOURCE_TYPES), None, None, True, None)
+            f"updated_at IS NOT NULL, updated_by, session_refused_at FROM {SETTINGS}")).one()
+    assert tuple(row) == ("off", "test", 24, list(RESOURCE_TYPES), None, None, True, None, None)
     for bad in ("mode = 'on'", "environment = 'prod'", "settle_hours = -1", "settle_hours = 169"):
         with pytest.raises(IntegrityError, match="ck_tres_settings_"), engine.begin() as conn:
             conn.execute(text(f"UPDATE {SETTINGS} SET {bad}"))

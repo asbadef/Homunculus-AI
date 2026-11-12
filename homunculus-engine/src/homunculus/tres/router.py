@@ -11,7 +11,8 @@ base URL https with nothing riding along, on a host the install allows (`TRES_HO
 egress.py), the lengths: a coded 422, nothing written). Then it makes the tenant's row if there is
 none, locks it and writes what differs. A password omitted or null keeps the stored one — unless
 that environment's base URL changes, which clears it (review #4: a stored password never follows
-the account to another server); an empty string clears it. The change is audited `tres.settings`
+the account to another server); an empty string clears it. A save that changes something also lets a tenant the platform refused
+(`session_refused_at`, worker.py) be tried again. The change is audited `tres.settings`
 AFTER the commit with the NAMES of the fields that changed (`mode`, `test.password`…) and, for a
 changed base URL, the HOST it now points at (no path, no credentials) — never another value (D24;
 A-26: never a 500 for a committed change). A save that changes nothing writes no audit row.
@@ -23,8 +24,9 @@ at all; 409 `tres_host_not_allowed` for a stored address the install does not al
 before `TRES_HOSTS` was narrowed); 409 `tres_account_incomplete` while the account lacks a part.
 The client comes from `app.state.tres_client_factory` (egress.open_client, the lock and the hosts
 bound in), so the refusals hold even for a caller that forgot to ask. It is allowed in the mode
-`off`: an administrator tests before turning the feed on. Not audited: it writes nothing; and it
-ends its database transaction before it asks the platform.
+`off`: an administrator tests before turning the feed on. Not audited; it writes one thing only: a
+success clears `session_refused_at` (the account opens a session again: the rounds go on). A
+failed test parks nothing. It ends its database transaction before it asks the platform.
 
 No patient data anywhere in this file."""
 from __future__ import annotations
@@ -35,7 +37,7 @@ from functools import partial
 
 import httpx
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,7 +96,8 @@ def _out(row: TresSettings | None, egress: bool) -> TresSettingsOut:
         settle_hours=row.settle_hours if row is not None else DEFAULT_SETTLE_HOURS,
         enabled_types=list(row.enabled_types) if row is not None else list(RESOURCE_TYPES),
         test=_account_out(row, "test"), live=_account_out(row, "live"), egress=egress,
-        updated_at=row.updated_at if row is not None else None)
+        updated_at=row.updated_at if row is not None else None,
+        session_refused_at=row.session_refused_at if row is not None else None)
 
 
 def _apply(row: TresSettings, payload: TresSettingsIn) -> list[str]:
@@ -162,6 +165,8 @@ async def write_settings(
         audit["hosts"] = hosts
     if changed:
         row.updated_at, row.updated_by = datetime.now(timezone.utc), user_id
+        # A changed setting is the administrator's answer to a refused login: the rounds try again.
+        row.session_refused_at = None
     answer = _out(row, _egress(request))
     hospital = await trail.hospital_of(db, caller_tenant)
     await db.commit()
@@ -197,7 +202,11 @@ async def test_connection(
     try:
         await client.token()
     except TresError as exc:
-        return TresTestOut(ok=False, message=exc.message)
+        return TresTestOut(ok=False, message=exc.message)      # parks nothing, clears nothing
     finally:
         await client.aclose()
+    # The platform opened a session with the stored account: a parked tenant's rounds go on.
+    await db.execute(update(TresSettings).where(TresSettings.tenant_id == caller_tenant)
+                     .values(session_refused_at=None))
+    await db.commit()
     return TresTestOut(ok=True, message=None)

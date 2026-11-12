@@ -11,6 +11,7 @@ no database; the routes run on Postgres (tests/kabul_world.py) against the stand
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -134,7 +135,7 @@ async def test_a_tenant_starts_off_with_no_account_and_the_lock_closed(ward, db_
     account = {**EMPTY, "password_set": False}
     assert r.json() == {"mode": "off", "environment": "test", "settle_hours": 24,
                         "enabled_types": list(RESOURCE_TYPES), "test": account, "live": account,
-                        "egress": False, "updated_at": None}
+                        "egress": False, "updated_at": None, "session_refused_at": None}
     assert await _count(db_session) == 0                    # a read writes no row
 
 
@@ -422,3 +423,53 @@ async def test_a_dead_line_is_an_answer_too_never_a_500(ward):
     app.state.tres_client_factory = lambda acc: TresClient(acc, transport=httpx.MockTransport(refuse))
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()) == (200, {"ok": False, "message": "ConnectError"})
+
+
+# ---------------------------------------------------------------- a parked tenant (review I3)
+PARKED = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
+
+
+async def _park(db_session) -> None:
+    """What the worker does when the platform refuses the login."""
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = :t"), {"t": PARKED})
+    await db_session.commit()
+
+
+async def _parked_at(db_session):
+    at = (await db_session.execute(text("SELECT session_refused_at FROM tres_settings"))).scalar_one()
+    await db_session.commit()
+    return at
+
+
+@requires_db
+async def test_a_save_that_changes_something_lets_a_parked_tenant_try_again(ward, db_session):
+    w, client, app = ward
+    assert (await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])).status_code == 200
+    await _park(db_session)
+    assert (await client.get(URL, headers=w.auth["admin"])).json()["session_refused_at"] == "2026-11-11T08:00:00Z"
+    same = await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])          # nothing changes
+    assert same.json()["session_refused_at"] == "2026-11-11T08:00:00Z" and await _parked_at(db_session) == PARKED
+    fixed = await client.put(URL, json=body(test={**SANDBOX, "password": "duzeldilmis-parola"}),
+                             headers=w.auth["admin"])
+    assert (fixed.status_code, fixed.json()["session_refused_at"]) == (200, None)
+    assert await _parked_at(db_session) is None
+
+
+@requires_db
+async def test_a_successful_connection_test_lets_a_parked_tenant_try_again_and_a_failed_one_parks_nothing(
+        ward, db_session):
+    w, client, app = ward
+    app.state.tres_egress = True
+    await _stand_in(app, client, w, password="yanlis-parola")
+    assert (await client.post(TEST_URL, headers=w.auth["admin"])).json()["ok"] is False
+    assert await _parked_at(db_session) is None                                   # a failed test parks nothing
+    await _stand_in(app, client, w)
+    await _park(db_session)
+    wrong = FakeTres(password="baska-parola")
+    app.state.tres_client_factory = lambda acc: TresClient(acc, transport=wrong.transport)
+    assert (await client.post(TEST_URL, headers=w.auth["admin"])).json()["ok"] is False
+    assert await _parked_at(db_session) == PARKED                                 # still parked
+    await _stand_in(app, client, w, provider_id="PRV-0001")                       # the same account: no change
+    await _park(db_session)
+    assert (await client.post(TEST_URL, headers=w.auth["admin"])).json() == {"ok": True, "message": None}
+    assert await _parked_at(db_session) is None

@@ -14,6 +14,11 @@ whole, one after the other, each on its own client:
   THROTTLED_S);
 * a session refused (`TresSessionError`: a wrong password, a blocked provider) ends the tenant's
   round at once — every next package would ask the same token route the same question;
+* A REFUSED LOGIN PARKS THE TENANT (`TresLoginRefused`: the token route answered a 4xx other than
+  408 and 429): `session_refused_at` is set, and every round passes the tenant over (`parked`)
+  until a save that changes something, or a successful connection test, clears it (router.py).
+  Without it a wrong password costs a failed login every five minutes — 288 a day, and the
+  ministry may lock the account (review I3). A token route that is down parks nothing;
 * MAX_CONSECUTIVE packages failing in a row end the tenant's round too — the platform, or the
   line to it, is not well, and the next round will find out. What counts towards the five: an
   outage (no answer, a 3xx, 408, 502, 503, 504 — never counted against a row), a 5xx about one
@@ -46,10 +51,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from homunculus.tres.client import TresAccount, TresClient, TresError, TresSessionError
+from homunculus.tres.client import TresAccount, TresClient, TresError, TresLoginRefused, TresSessionError
 from homunculus.tres.egress import TresEgressRefused
 from homunculus.tres.ledger import deliver, record_skip
 from homunculus.tres.models import TresDelivery, TresSettings, account_of
@@ -120,6 +125,7 @@ class RoundReport:
     tenants: int = 0                    # worked: mode not off, the account whole
     incomplete: int = 0                 # passed over: the selected environment's account is not whole
     refused: int = 0                    # passed over: the install does not allow the account's address
+    parked: int = 0                     # passed over: the platform refused its login (session_refused_at)
     packages: int = 0                   # packages that ran to their end
     failed: int = 0                     # packages that raised, and tenants whose round itself did
     retry_after: float | None = None    # the longest wait a 429 asked for; None when none came
@@ -152,6 +158,17 @@ async def _still_on(db: AsyncSession, sender: Sender) -> bool:
     return True
 
 
+async def _park(db: AsyncSession, sender: Sender, status: int | None = None) -> None:
+    """The platform refused this tenant's login: `session_refused_at` is set (by a statement of
+    its own, so `updated_at` — the administrator's — is not touched) and committed. One log line:
+    the tenant and the status, never the platform's words (they may echo the account)."""
+    await db.execute(update(TresSettings).where(TresSettings.tenant_id == sender.tenant_id)
+                     .values(session_refused_at=sender.now))
+    await db.commit()
+    log.warning("TRƏS: the platform refused tenant %s's login (HTTP %s); it is parked until its "
+                "settings are saved or a connection test succeeds", sender.tenant_id, status)
+
+
 async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: TresSettings,
                 source: PackageSource, report: RoundReport) -> None:
     """One tenant's packages, until they end, a 429 or a refused session comes, MAX_CONSECUTIVE
@@ -171,6 +188,9 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
                 report.retry_after = max(report.retry_after or 0.0, wait)
                 log.warning("TRƏS: 429 for tenant %s; its round ends, the next waits %.0f s",
                             sender.tenant_id, report.retry_after)
+                return
+            if isinstance(exc, TresLoginRefused):
+                await _park(db, sender, exc.status)
                 return
             if isinstance(exc, TresSessionError):
                 log.warning("TRƏS: %s (HTTP %s) for tenant %s; its round ends",
@@ -208,9 +228,13 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
     async with session_factory() as db:
         rows = (await db.execute(select(TresSettings).where(TresSettings.mode != "off")
                                  .order_by(TresSettings.tenant_id))).scalars().all()
-        # Read before the first commit: (settings, account, tenant, environment, mode).
-        work = [(row, account_of(row), row.tenant_id, row.environment, row.mode) for row in rows]
-        for settings, account, tenant_id, environment, mode in work:
+        # Read before the first commit: (settings, account, tenant, environment, mode, parked).
+        work = [(row, account_of(row), row.tenant_id, row.environment, row.mode,
+                 row.session_refused_at is not None) for row in rows]
+        for settings, account, tenant_id, environment, mode, parked in work:
+            if parked:
+                report.parked += 1
+                continue
             if account is None:
                 report.incomplete += 1
                 continue

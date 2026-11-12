@@ -14,6 +14,11 @@ the defaults: mode `off`, environment `test`):
                  it — only whether one is set (router.py).
 * `enabled_types`  the resource types this tenant sends, as the ledger's keys (RESOURCE_TYPES).
 * `settle_hours`   how long after a discharge a stay waits before it is sent (D9), 0–168.
+* `session_refused_at`  when the platform last REFUSED this tenant's login (its token route
+                 answered a 4xx other than 408/429): the rounds pass the tenant over while it is
+                 set, so a wrong password costs one failed login, not one every five minutes
+                 (review I3). Cleared by a save that changes something, or a successful
+                 connection test. Not a setting: writing it never touches `updated_at`.
 
 `tres_deliveries` — the ledger (D6): one row per (tenant, environment, resource type, local id).
 A sandbox success never counts for live: the environment is in the key. NO REQUEST OR RESPONSE
@@ -101,6 +106,7 @@ class TresSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now, server_default=func.now())
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    session_refused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TresDelivery(Base):

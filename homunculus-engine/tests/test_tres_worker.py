@@ -19,7 +19,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.api.app import create_app
@@ -278,7 +278,7 @@ async def test_a_wrong_password_asks_one_token_ends_the_round_and_touches_no_row
     assert fake.requests == [("POST", "/auth/token")]                # ONE token request, no FHIR at all
     assert (report.packages, report.failed, report.retry_after) == (0, 1, None)
     assert await _ledger(db_session) == before                      # every row as it was
-    assert "TresSessionError" in caplog.text and "Invalid credentials" not in caplog.text
+    assert "401" in caplog.text and "Invalid credentials" not in caplog.text
     assert clients[0]._client is None
 
 
@@ -507,3 +507,64 @@ async def test_five_resources_the_platform_always_answers_500_no_longer_hold_up_
     assert {state[local_id] for local_id in set(order) - poison} == {("sent", 0)}
     report, _, _ = await round_(source, transport=httpx.MockTransport(platform), now=T0 + timedelta(hours=3))
     assert (report.packages, report.failed) == (12, 0)                        # stuck: left alone
+
+
+# ---------------------------------------------------------------- a refused login parks the tenant (review I3)
+async def _parking(db_session, tenant_id):
+    row = (await db_session.execute(text("SELECT session_refused_at, updated_at FROM tres_settings "
+                                         "WHERE tenant_id = :t"), {"t": tenant_id})).one()
+    await db_session.commit()
+    return tuple(row)
+
+
+def _tokens(fake) -> int:
+    return sum(1 for line in fake.requests if line == ("POST", "/auth/token"))
+
+
+@requires_db
+async def test_a_refused_login_parks_the_tenant_until_a_save_lets_it_try_again(feed, db_session, caplog):
+    """A wrong password must not cost a failed login every five minutes (288 a day, and an account
+    the ministry may lock): one login, then nothing until the administrator saves the tab."""
+    fake, tenants, round_ = feed
+    tenant_id = tenants["acik"].id
+    settings = await db_session.get(TresSettings, tenant_id)
+    settings.test_password = "degisdirilib-parola"
+    await db_session.commit()
+    (_, saved_at) = await _parking(db_session, tenant_id)
+    with caplog.at_level("WARNING"):
+        report, _, _ = await round_(source_of(sends("hmn-p-0001")))
+    assert _tokens(fake) == 1 and report.failed == 1
+    assert await _parking(db_session, tenant_id) == (T0, saved_at)            # parked; updated_at untouched
+    (line,) = [r.getMessage() for r in caplog.records if str(tenant_id) in r.getMessage()]
+    assert "401" in line and "Invalid credentials" not in line and "degisdirilib" not in line
+    for _ in range(2):                                                         # rounds 2 and 3: nothing asked
+        report, _, _ = await round_(source_of(sends("hmn-p-0001")))
+        assert (report.tenants, report.parked) == (0, 1)
+    assert _tokens(fake) == 1
+    # the administrator corrects the password and saves (the route clears the parking): the next
+    # round logs in again
+    settings.test_password, settings.updated_at = fake.account.password, datetime.now(timezone.utc)
+    await db_session.commit()
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = NULL WHERE tenant_id = :t"),
+                             {"t": tenant_id})
+    await db_session.commit()
+    report, _, _ = await round_(source_of(sends("hmn-p-0001")))
+    assert _tokens(fake) == 2 and (report.tenants, report.parked, report.packages) == (1, 0, 1)
+
+
+@requires_db
+async def test_a_token_route_that_is_down_parks_nothing(feed, db_session):
+    fake, tenants, round_ = feed
+
+    asked = []
+
+    def down(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/token":
+            asked.append(request.url.path)
+            return httpx.Response(503, text="")
+        return fake.transport.handler(request)
+
+    for n in (1, 2):                                       # every round asks again: the platform, not the account
+        report, _, _ = await round_(source_of(sends("hmn-p-0001")), transport=httpx.MockTransport(down))
+        assert (report.tenants, report.parked, report.failed) == (1, 0, 1) and len(asked) == n
+        assert (await _parking(db_session, tenants["acik"].id))[0] is None

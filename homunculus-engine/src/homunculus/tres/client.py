@@ -20,7 +20,9 @@ file and the server disagree, the server is right and this file changes.
 * A session that cannot be had is a `TresSessionError`: the token route answered anything but a
   2xx, or a 2xx with no usable session id; or a FHIR call was refused 401 again after the one new
   token. Nothing in it is about one resource, so the ledger counts it against none and the round
-  ends (review #1: a password changed at the ministry must not make every due stay `stuck`).
+  ends (review #1: a password changed at the ministry must not make every due stay `stuck`). When
+  the token route answered a 4xx other than 408 and 429, it is a `TresLoginRefused`: the account
+  itself was refused, and the worker parks the tenant (review I3).
 * HTTP 429 (D21) is never retried here: the `TresError` carries `retry_after` and the round ends.
 * `is_outage` tells the platform's (or the line's) failures — a session refused, no answer, a
   3xx, 408, 429, 502, 503, 504 — from a failure about ONE resource (every other status, 500 and
@@ -83,6 +85,13 @@ class TresSessionError(TresError):
     """No session could be had: the token route refused or answered no usable session id, or a
     FHIR call was refused 401 again after the one new token. `status`, `message` and
     `retry_after` as `TresError`'s (a 429 from the token route keeps its `Retry-After`)."""
+
+
+class TresLoginRefused(TresSessionError):
+    """The token route itself said no to the account: a 4xx other than 408 and 429 (401, 403,
+    400…). Asking again will not change its answer — and every failed login counts at the
+    ministry, which may lock the account — so the worker PARKS the tenant until its settings are
+    saved again or a connection test succeeds (review I3)."""
 
 
 class TresSearchUnclear(TresError):
@@ -256,6 +265,8 @@ class TresClient:
             status = response.status_code
             if not response.is_success:
                 said = read_error(response.text) or ("Too Many Requests" if status == 429 else f"HTTP {status}")
+                if 400 <= status < 500 and status not in (408, 429):
+                    raise TresLoginRefused(status, said)        # the account itself: the worker parks
                 raise TresSessionError(status, said,
                                        retry_after=_retry_after(response) if status == 429 else None)
             payload = _answer(response).get("payload")

@@ -17,6 +17,9 @@
 //
 // «Bağlantıyı sına» uses the STORED account of the selected environment, not what is on screen; the note under the
 // buttons says so. The platform's own words for a refused sign-in are shown as it wrote them.
+//
+// A REFUSED LOGIN PARKS THE FEED (engine worker.py, review I3): while `session_refused_at` is set the tab says, under the
+// lock, that nothing is sent until the account is corrected and saved or a test succeeds; a successful test lifts it.
 import React, { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -175,7 +178,11 @@ export function TresTab() {
     setTesting(true);
     try {
       const got = await store.track(() => store.api.testTres());
-      if (got?.ok === true) toast(t("tres.testOk"));
+      if (got?.ok === true) {
+        toast(t("tres.testOk"));
+        // The server let the rounds go on (it cleared `session_refused_at`): so does the tab.
+        setSettings((s) => (s ? { ...s, session_refused_at: null } : s));
+      }
       else {
         const said = typeof got?.message === "string" && got.message.trim() ? got.message.trim() : t("tres.testNoWords");
         toast(t("tres.testFailed", { reason: said }), "error");
@@ -201,12 +208,18 @@ export function TresTab() {
     );
   }
   const open = settings.egress === true;
+  const refusedAt = typeof settings.session_refused_at === "string" ? settings.session_refused_at : null;
   const incomplete = settings.mode !== "off" && !accountWhole(settings[settings.environment]);
   return (
     <div className="grid max-w-[760px] gap-3">
       {open
         ? <Note tone="info" icon="globe">{t("tres.egressOn")}</Note>
         : <Note tone="warn" icon="lock">{t("tres.egressOff")}</Note>}
+      {refusedAt ? (
+        <Note tone="warn" icon="alert">
+          {t("tres.sessionRefused", { time: dayStamp(Date.parse(refusedAt), Date.now()) })}
+        </Note>
+      ) : null}
       <Box title={t("tres.title")} icon="globe" level={2}>
         <p className="m-0 mb-3 text-13 text-mute">{t("tres.sub")}</p>
         <form noValidate autoComplete="off" onSubmit={save}>
