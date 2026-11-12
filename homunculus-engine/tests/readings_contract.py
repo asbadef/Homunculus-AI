@@ -193,6 +193,21 @@ class ReadingStoreContract:
         store.add(device("resp_rate", 16.0, at=until + timedelta(seconds=1), audit_id=4))
         assert store.for_patient("h1", KEY, since=since, until=until) == [first, last]
 
+    def test_a_patients_rows_can_be_limited_to_the_newest(self, store):
+        """B8 review: a `limit` keeps the NEWEST rows by `observed_at` (cut in the database), still oldest first —
+        and rows of one instant keep their id order, the cut falling among them by id."""
+        rows = [store.add(device("spo2", 90.0 + i, at=T0 - timedelta(minutes=10 - i), audit_id=i + 1))
+                for i in range(5)]
+        window = dict(since=T0 - timedelta(hours=1), until=T0)
+        assert store.for_patient("h1", KEY, **window) == rows
+        assert store.for_patient("h1", KEY, **window, limit=3) == rows[2:]
+        assert store.for_patient("h1", KEY, **window, limit=5) == rows
+        assert store.for_patient("h1", KEY, **window, limit=50) == rows
+        assert store.for_patient("h1", KEY, **window, limit=0) == []
+        round_ = [store.add(device(code, 80.0, at=T0, audit_id=10 + i))
+                  for i, code in enumerate(("heart_rate", "resp_rate", "temperature"))]
+        assert store.for_patient("h1", KEY, **window, limit=2) == round_[1:]
+
     def test_the_unmatched_list_is_the_waiting_rows_by_arrival(self, store):
         b = store.add(unmatched("heart_rate", 88.0, at=T0, audit_id=2))
         a = store.add(unmatched("spo2", 97.0, at=T0 - timedelta(minutes=1), audit_id=1))

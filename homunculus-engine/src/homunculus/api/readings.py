@@ -95,6 +95,10 @@ LIST_MAX = 200
 #: than SET_MAX values, so LIST_MAX sets fit; a week of a flooded list is cut in the database, never read whole.
 #: When the cut bites, `truncated` is set and `count` is the number of sets among the rows read — a lower bound.
 UNMATCHED_ROWS_MAX = LIST_MAX * SET_MAX
+#: The most ROWS the patient's record reads for one window (B8 review): the newest ones, cut in the database. A
+#: continuous monitor writes a row per code per reading; a week of that is never read whole into one answer.
+#: `truncated` says when the cut bit — the oldest rows of the window are then missing from the record.
+RECORD_ROWS_MAX = 5000
 #: The reason a reading is closed with when the patient it was linked to already holds it (the device sent it
 #: again under the corrected number, or a nurse typed it): linking it would put it in the engine twice.
 RESOLVE_ALREADY_HELD = "the patient's record already holds this reading: it was not entered a second time"
@@ -180,7 +184,7 @@ class ReadingStore(Protocol):
     patient (recorded, or a finalized link) — never a waiting, claimed or rejected row, whatever number it
     carries: a reading linked to the very number it arrived under would otherwise match itself (B6 re-review).
     `unmatched` with a `limit` answers only the newest `limit` rows (still oldest first), so the database never
-    reads a week of a flooded list.
+    reads a week of a flooded list; `for_patient` does the same by `observed_at` (B8 review).
     `claim` moves EVERY row named from `unmatched` to `assigned` (with `resolved_by`, `resolved_at`, and
     `patient_key` still None) or none of them: ReadingNotUnmatched. `release` puts a claim back; `finalize` files
     one under a patient; `reject` closes claims as `rejected`. The three touch claims only, so each is safe to
@@ -196,7 +200,8 @@ class ReadingStore(Protocol):
                     value: float) -> bool: ...
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]: ...
     def get(self, tenant: str, ids: Iterable[int]) -> list[Reading]: ...
-    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime) -> list[Reading]: ...
+    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime,
+                    limit: int | None = None) -> list[Reading]: ...
     def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]: ...
     def claim(self, tenant: str, ids: Iterable[int], *, by: str, at: datetime) -> list[Reading]: ...
     def claims(self, tenant: str) -> list[Reading]: ...
@@ -277,9 +282,11 @@ class InMemoryReadingStore:
         wanted = set(ids)
         return sorted((r for r in self._of(tenant) if r.id in wanted), key=lambda r: r.id)
 
-    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime) -> list[Reading]:
+    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime,
+                    limit: int | None = None) -> list[Reading]:
         rows = [r for r in self._of(tenant) if r.patient_key == patient_key and since <= r.observed_at <= until]
-        return sorted(rows, key=lambda r: (r.observed_at, r.id))
+        rows.sort(key=lambda r: (r.observed_at, r.id))
+        return rows if limit is None else rows[max(len(rows) - limit, 0):]      # the NEWEST `limit`, oldest first
 
     def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]:
         rows = [r for r in self._of(tenant) if r.state == STATE_UNMATCHED and r.received_at >= since]
@@ -400,11 +407,26 @@ def device_identity(row: Reading) -> tuple:
     return (row.patient_key, row.code, row.observed_at, row.source, row.value)
 
 
-def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, now: datetime) -> dict:
+def _arrival(row: Reading) -> datetime:
+    """When the value came into THIS patient's record (B8 review): its arrival at the door — except a reading a
+    person linked from the list (state `assigned`), which entered the record, and the engine, when it was linked
+    (`resolved_at`): under the number it was typed with it was no value of this patient, and missing from their
+    scores until then. Linking never changes `received_at` (the list's own time), so the record reads it here."""
+    if row.state == STATE_ASSIGNED and row.resolved_at is not None:
+        return max(row.received_at, row.resolved_at)
+    return row.received_at
+
+
+def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, now: datetime,
+                     truncated: bool = False) -> dict:
     """One patient's record as GET /patients/{id}/readings answers it (spec §4, D16): the rows as measurement
     sets — one time, one origin, one source, one person — the newest first; within a set the values by code.
     Each value carries what «Düzelt» needs (`entry`: the engine row a withdrawal names, None for a row the
-    engine never took) and its withdrawal, `voided`, when there is one. `received_late`: RECEIVED_LATE.
+    engine never took) and its withdrawal, `voided`, when there is one. A set's `received_at` is when its latest
+    value entered the record (`_arrival`) and `received_late` says it came more than RECEIVED_LATE after it was
+    measured. `until` is `now`: the moment the window was cut, which is also where the rows were read to.
+    `truncated: True` is added to the answer only when the read of the rows hit RECORD_ROWS_MAX (as the unmatched
+    list's): the oldest rows of the window are then not in it.
 
     A withdrawn DEVICE reading is withdrawn as a whole (D13): the engine skips every copy of it, so every row of
     the table with the same `device_identity` shows the withdrawal — the earliest mark among them — whichever
@@ -431,7 +453,7 @@ def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, no
     sets = []
     for (observed_at, origin, source, _), members in grouped.items():
         members.sort(key=lambda r: (r.code, r.id))
-        received_at = max(r.received_at for r in members)
+        received_at = max(_arrival(r) for r in members)
         sets.append({
             "observed_at": _iso(observed_at), "received_at": _iso(received_at),
             "received_late": received_at - observed_at > RECEIVED_LATE,
@@ -446,8 +468,11 @@ def patient_readings(rows: Iterable[Reading], *, patient_id: str, hours: int, no
     sets.sort(key=lambda s: (s["origin"], s["source"], s["recorded_by"] or ""))
     sets.sort(key=lambda s: s["observed_at"], reverse=True)
     now = now.astimezone(timezone.utc)
-    return {"patient_id": patient_id, "hours": hours, "since": _iso(now - timedelta(hours=hours)),
-            "until": _iso(now), "sets": sets}
+    answer = {"patient_id": patient_id, "hours": hours, "since": _iso(now - timedelta(hours=hours)),
+              "until": _iso(now), "sets": sets}
+    if truncated:
+        answer["truncated"] = True
+    return answer
 
 
 # ----------------------------------------------------------------------------- the router

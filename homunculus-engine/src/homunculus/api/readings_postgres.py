@@ -98,12 +98,22 @@ class PostgresReadingStore:
                                 {"tenant": tenant, "ids": wanted}).mappings().all()
         return [_row(r) for r in rows]
 
-    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime) -> list[Reading]:
+    def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime,
+                    limit: int | None = None) -> list[Reading]:
+        """The patient's rows in the window, oldest first. With a `limit`: the NEWEST `limit` of them (the database
+        cuts the read), in the same order."""
+        where = (" WHERE tenant = :tenant AND patient_key = :key AND observed_at >= :since "
+                 "AND observed_at <= :until")
+        params = {"tenant": tenant, "key": patient_key, "since": since, "until": until}
+        if limit is None:
+            query = where + " ORDER BY observed_at, id"
+        else:
+            query = where + " ORDER BY observed_at DESC, id DESC LIMIT :limit"
+            params["limit"] = max(int(limit), 0)
         with self._engine.connect() as conn:
-            rows = conn.execute(text(_SELECT + " WHERE tenant = :tenant AND patient_key = :key AND observed_at >= :since "
-                                     "AND observed_at <= :until ORDER BY observed_at, id"),
-                                {"tenant": tenant, "key": patient_key, "since": since, "until": until}).mappings().all()
-        return [_row(r) for r in rows]
+            rows = conn.execute(text(_SELECT + query), params).mappings().all()
+        found = [_row(r) for r in rows]
+        return found if limit is None else found[::-1]
 
     def unmatched(self, tenant: str, *, since: datetime, limit: int | None = None) -> list[Reading]:
         """The waiting rows, oldest arrival first. With a `limit`: the NEWEST `limit` of them (the database cuts

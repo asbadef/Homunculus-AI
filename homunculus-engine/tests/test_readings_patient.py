@@ -14,13 +14,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+from homunculus.api import app as app_module
+from homunculus.api import trends
 from homunculus.api.app import create_app
-from homunculus.api.audit import InMemoryAuditLog
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.api.identity import Caller
 from homunculus.api.patient_identity import KABUL, IdentityRecord, InMemoryIdentityStore
 from homunculus.api.readings import (
-    READING_HOURS, READINGS_HOURS, RECEIVED_LATE, WORDS, InMemoryReadingStore, Reading, device_identity,
-    patient_readings,
+    READING_HOURS, READINGS_HOURS, RECEIVED_LATE, STATE_ASSIGNED, STATE_UNMATCHED, WORDS, InMemoryReadingStore,
+    Reading, device_identity, patient_readings,
 )
 from homunculus.api.rehydrate import device_key_of
 from homunculus.scope import Scope, ScopeReason
@@ -280,6 +282,32 @@ class TestThePureAnswer:
         assert {v["origin"]: v["voided"] is not None for s in body["sets"] for v in s["readings"]} == {
             "device": True, "manual": False}
 
+    def test_a_linked_reading_entered_the_record_when_it_was_linked(self):
+        """B8 review: measured 07:00, arrived 07:00 under a mistyped number, linked at 10:00 — missing from the
+        patient's scores for three hours, so the record says «alındı» with the link's time. Linking never changes
+        the row's own `received_at` (the list's arrival), so the record reads `resolved_at` for an `assigned` row."""
+        seven, ten = self.T0 - timedelta(hours=2), self.T0 + timedelta(hours=1)
+        linked = self._row(1, observed_at=seven, received_at=seven + timedelta(seconds=20), state=STATE_ASSIGNED,
+                           resolved_at=ten, resolved_by="hem.ayse", received_key="202600000010")
+        [one] = patient_readings([linked], patient_id=KEY, hours=24, now=ten + timedelta(minutes=5))["sets"]
+        assert (one["received_late"], one["received_at"]) == (True, ten.isoformat())
+        direct = self._row(2, observed_at=seven, received_at=seven + timedelta(seconds=20))     # the control
+        [two] = patient_readings([direct], patient_id=KEY, hours=24, now=ten)["sets"]
+        assert (two["received_late"], two["received_at"]) == (False, (seven + timedelta(seconds=20)).isoformat())
+
+    def test_a_set_is_as_late_as_its_latest_value(self):
+        seven, ten = self.T0 - timedelta(hours=2), self.T0 + timedelta(hours=1)
+        rows = [self._row(1, observed_at=seven, received_at=seven + timedelta(seconds=20)),
+                self._row(2, code="heart_rate", value=88.0, observed_at=seven, received_at=seven,
+                          state=STATE_ASSIGNED, resolved_at=ten)]
+        [one] = patient_readings(rows, patient_id=KEY, hours=24, now=ten)["sets"]
+        assert (one["received_late"], one["received_at"], len(one["readings"])) == (True, ten.isoformat(), 2)
+
+    def test_the_answer_says_truncated_only_when_the_read_was_cut(self):
+        assert "truncated" not in patient_readings([self._row(1)], patient_id=KEY, hours=24, now=self.T0)
+        cut = patient_readings([self._row(1)], patient_id=KEY, hours=24, now=self.T0, truncated=True)
+        assert cut["truncated"] is True
+
 
 def _channel(client, key, hours=24):
     r = client.get(f"/patients/{KEY}/trends", params={"hours": hours}, headers=NURSE)
@@ -376,3 +404,126 @@ class TestTheTwinOfAWithdrawnReading:
             tenant="h1", patient_id=KEY, event_type="ingest", limit=50)}
         rows = client.app.state.readings.for_patient("h1", KEY, since=_ago(60), until=_ago(0))
         assert {r.code: device_identity(r) for r in rows} == trail and len(trail) == 2
+
+
+def _trends(client, hours=24):
+    r = client.get(f"/patients/{KEY}/trends", params={"hours": hours}, headers=NURSE)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _flood(client, n, code="spo2"):
+    """`n` device `ingest` rows of one channel written straight into the trail, one second apart and all inside
+    the window — a continuous monitor. The times, oldest first."""
+    audit = client.app.state.audit
+    first = datetime.now(timezone.utc) - timedelta(minutes=1) - timedelta(seconds=n)
+    times = [(first + timedelta(seconds=i)).isoformat() for i in range(n)]
+    for at in times:
+        audit.append(AuditEvent("h1", "ingest", KEY, code, {"value": 97.0, "unit": "%", "obs_ts": at,
+                                                            "device": "CONNEX-3A"}))
+    return times
+
+
+class TestTheDeviceBudget:
+    """B8 review: the device `ingest` rows have a read of their own (`TRENDS_DEVICE_LIMIT`), so a monitor writing a
+    row a minute never pushes a hand entry or a withdrawal out of the hand read (`TRENDS_MANUAL_LIMIT`)."""
+
+    def test_a_flood_of_device_rows_cuts_no_hand_entry_and_no_withdrawal(self, client):
+        entries = _chart(client, [{"code": "sbp", "value": 121}, {"code": "heart_rate", "value": 82}], _ago(120))
+        _retract(client, entries["sbp"])
+        times = _flood(client, trends.TRENDS_DEVICE_LIMIT + 1)
+        assert trends.TRENDS_DEVICE_LIMIT == 5000 == trends.TRENDS_MANUAL_LIMIT
+        body = _trends(client)
+        assert (body["manual_truncated"], body["device_truncated"]) == (False, True)
+        [hand] = _channel(client, "sbp")["manual"]
+        assert (hand["entry"], hand["retracted"]["reason"]) == (entries["sbp"], WHY)
+        assert [m["entry"] for m in _channel(client, "heart_rate")["manual"]] == [entries["heart_rate"]]
+        listed = next(c for c in body["channels"] if c["key"] == "spo2")["device"]
+        assert [d["at"] for d in listed] == times[1:]                    # the NEWEST rows are kept, oldest first
+
+    def test_both_flags_are_in_every_answer_and_false_when_nothing_was_cut(self, client):
+        _send(client, [("sbp", 118)], _ago(10))
+        body = _trends(client)
+        assert (body["manual_truncated"], body["device_truncated"]) == (False, False)
+
+    def test_the_device_flag_says_when_the_oldest_readings_were_left_out(self, client, monkeypatch):
+        monkeypatch.setattr(trends, "TRENDS_DEVICE_LIMIT", 2)
+        _send(client, [("sbp", 118)], _ago(30))
+        _send(client, [("sbp", 119)], _ago(20))
+        body = _trends(client)
+        assert (body["device_truncated"], len(_channel(client, "sbp")["device"])) == (False, 2)    # it just fits
+        _send(client, [("sbp", 120)], _ago(10))
+        body = _trends(client)
+        assert (body["device_truncated"], body["manual_truncated"]) == (True, False)
+        assert [d["value"] for d in _channel(client, "sbp")["device"]] == [119.0, 120.0]
+
+    def test_a_kept_device_reading_still_carries_its_withdrawal_when_the_device_read_is_cut(self, client, monkeypatch):
+        """The withdrawal is a `chart_retract` row, read with the hand entries: the device cut cannot lose it."""
+        monkeypatch.setattr(trends, "TRENDS_DEVICE_LIMIT", 2)
+        _send(client, [("spo2", 97)], _ago(30))                          # the oldest: cut
+        _send(client, [("sbp", 88)], _ago(20))
+        _send(client, [("spo2", 96)], _ago(10))
+        _retract(client, _channel(client, "sbp")["device"][0]["entry"])
+        body = _trends(client)
+        assert body["device_truncated"] is True
+        [sbp] = _channel(client, "sbp")["device"]
+        assert (sbp["value"], sbp["retracted"]["reason"], sbp["retracted"]["by"]) == (88.0, WHY, "hem.ayse")
+        assert [d["value"] for d in _channel(client, "spo2")["device"]] == [96.0]
+
+    def test_the_hand_budget_is_exactly_what_it_was(self, client, monkeypatch):
+        """Hand rows alone fill `TRENDS_MANUAL_LIMIT`: device rows add nothing to it, a hand cut still says so."""
+        monkeypatch.setattr(trends, "TRENDS_MANUAL_LIMIT", 2)
+        _send(client, [("sbp", 118), ("spo2", 97)], _ago(40))
+        _chart(client, [{"code": "heart_rate", "value": 82}], _ago(30))
+        _chart(client, [{"code": "heart_rate", "value": 84}], _ago(20))
+        body = _trends(client)
+        assert (body["manual_truncated"], body["device_truncated"]) == (False, False)
+        _chart(client, [{"code": "heart_rate", "value": 86}], _ago(10))
+        assert _trends(client)["manual_truncated"] is True
+
+
+class TestTheRecordRead:
+    def test_a_linked_reading_is_late_by_its_link_in_the_answer(self, client):
+        store = client.app.state.readings
+        observed, linked_at = _ago(180), _ago(2)
+        waiting = store.add(Reading(tenant="h1", received_key="202600000010", code="spo2", value=97.0, unit="%",
+                                    observed_at=observed, received_at=observed + timedelta(seconds=20),
+                                    origin="device", source="CONNEX-3A", state=STATE_UNMATCHED,
+                                    unmatched_reason="unknown", audit_id=3001))
+        store.claim("h1", [waiting.id], by="hem.ayse", at=linked_at)
+        store.finalize("h1", waiting.id, patient_key=KEY, admission_id=None, entry_id=3002)
+        client.post("/ingest", json=obs("heart_rate", 80, KEY, _ago(500 * 60)), headers=DEVICE)   # the engine knows the patient
+        [one] = _read(client).json()["sets"]
+        assert (one["received_late"], one["received_at"]) == (True, linked_at.isoformat())
+
+    def _fill(self, client, n):
+        store = client.app.state.readings
+        client.post("/ingest", json=obs("heart_rate", 80, KEY, _ago(500 * 60)), headers=DEVICE)   # outside every window
+        for i in range(n):
+            at = _ago(60 - i)
+            store.add(Reading(tenant="h1", received_key=KEY, patient_key=KEY, code="spo2", value=90.0 + i, unit="%",
+                              observed_at=at, received_at=at, origin="device", source="CONNEX-3A",
+                              audit_id=4000 + i, entry_id=4000 + i))
+
+    def test_the_read_is_bounded_to_the_newest_rows_and_says_when_it_cut(self, client, monkeypatch):
+        monkeypatch.setattr(app_module, "RECORD_ROWS_MAX", 3)
+        self._fill(client, 4)
+        body = _read(client).json()
+        assert body["truncated"] is True
+        assert [v["value"] for s in body["sets"] for v in s["readings"]] == [93.0, 92.0, 91.0]   # the oldest went
+
+    def test_a_read_that_just_fits_does_not_say_it_cut(self, client, monkeypatch):
+        monkeypatch.setattr(app_module, "RECORD_ROWS_MAX", 4)
+        self._fill(client, 4)
+        body = _read(client).json()
+        assert "truncated" not in body and len(body["sets"]) == 4
+
+    def test_a_value_stamped_ahead_is_in_neither_the_record_nor_the_trends_list(self, client):
+        """Both read to the answer's own `until`: a value a clock that runs fast stamped a minute from now is in no
+        list yet — and the two lists never disagree about it."""
+        _send(client, [("sbp", 118)], _ago(10))
+        _send(client, [("sbp", 150)], _ago(-1))
+        record = _read(client).json()
+        assert [v["value"] for s in record["sets"] for v in s["readings"]] == [118.0]
+        assert [d["value"] for d in _channel(client, "sbp")["device"]] == [118.0]
+        assert datetime.fromisoformat(record["until"]) < datetime.now(timezone.utc) + timedelta(seconds=1)

@@ -46,7 +46,7 @@ from homunculus.api.patient_identity import (
 )
 from homunculus.api.broadcast import Broadcaster
 from homunculus.api.clinical import (
-    BEDSIDE_SKEW, GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
+    GCS_NOT_WHOLE, PLAUSIBLE, RETRACT, RETRACT_ALREADY, RETRACT_DISCHARGED, RETRACT_MAX_REASON_CHARS,
     RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
     RETRACT_UNKNOWN, RETRACTABLE_CODES, ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
@@ -70,8 +70,9 @@ from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
 from homunculus.api.readings import (                             # G3-05
     MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_HOURS, READING_TARGET_DISCHARGED, READING_UNMATCHED,
-    READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, UNKNOWN_POLICIES, InMemoryReadingStore, Reading,
-    ReadingStore, device_reading, device_source, manual_reading, patient_readings, reading_refusal, readings_router,
+    READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, RECORD_ROWS_MAX, UNKNOWN_POLICIES, InMemoryReadingStore,
+    Reading, ReadingStore, device_reading, device_source, manual_reading, patient_readings, reading_refusal,
+    readings_router,
 )
 from homunculus.api.tasks import DEFAULT_SETTINGS as DEFAULT_TASK_SETTINGS
 from homunculus.api.tasks import InMemoryTaskStore, TaskStore, tasks_router, zone_of
@@ -2151,10 +2152,14 @@ def create_app(
         await _require_patient(caller, authorization, patient_id, scope=scope)
         _score_state(caller.hospital, patient_id)     # 404 for an id neither measured nor admitted
         now = datetime.now(timezone.utc)
-        # Up to the door's own skew ahead: a bedside value stamped a minute fast is in the record at once.
-        rows = readings.for_patient(caller.hospital, patient_id, since=now - timedelta(hours=int(hours)),
-                                    until=now + BEDSIDE_SKEW)
-        return patient_readings(rows, patient_id=patient_id, hours=int(hours), now=now)
+        # Read to `now`, the answer's own `until`, as the trends read does: a value stamped ahead of it is in
+        # neither, and the two lists agree. Bounded: the newest RECORD_ROWS_MAX rows, one more asked for to tell
+        # a cut from an exact fit (as the unmatched list).
+        fetched = readings.for_patient(caller.hospital, patient_id, since=now - timedelta(hours=int(hours)),
+                                       until=now, limit=RECORD_ROWS_MAX + 1)
+        cut = len(fetched) > RECORD_ROWS_MAX
+        return patient_readings(fetched[1:] if cut else fetched, patient_id=patient_id, hours=int(hours), now=now,
+                                truncated=cut)
 
     @app.get("/patients/{patient_id}/fluids")
     async def fluids(patient_id: str, authorization: str | None = Header(default=None)):

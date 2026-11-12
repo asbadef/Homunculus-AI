@@ -59,6 +59,12 @@ TRENDS_MARKER_LIMIT = 5000
 #: window; this sits far above it, and `manual_truncated` says when a read had to cut. A cut loses the OLDEST
 #: entries: a withdrawal is written after the row it withdraws, so a row that is kept keeps its withdrawal.
 TRENDS_MANUAL_LIMIT = 5000
+#: G3-05 (D16, B8 review): the most device `ingest` rows one trends read keeps — the NEWEST ones — with a budget of
+#: their own, so that a monitor writing a reading a minute can never push a hand entry or a withdrawal out of the
+#: read above (`manual_truncated` keeps meaning what it meant). A spot-check device writes about four rows a round,
+#: far below this; a continuous monitor passes it inside the 72-hour window, and `device_truncated` says when the
+#: oldest device readings were left out of the list (the drawn `points` are the engine's, and are not affected).
+TRENDS_DEVICE_LIMIT = 5000
 
 # The NEWS2 parameter each published channel is — the names `score()` puts in its breakdown and
 # NEWS2_BANDS is keyed by. MAP and lactate are not NEWS2 parameters: no band, no points.
@@ -173,11 +179,29 @@ def _finite_number(value) -> bool:
 
 
 def _manual(audit: AuditLog, hospital: str, patient_id: str, since: datetime,
-            until: datetime) -> tuple[dict[str, list[dict]], dict[str, list[dict]], bool]:
+            until: datetime) -> tuple[dict[str, list[dict]], dict[str, list[dict]], bool, bool]:
     """Each published channel's hand entries measured in [since, until], in the order they were written, each
     with its withdrawal when there is one (G3-01, D13, X1) — and, since G3-05 (D16), its device readings the
-    same way, from the same read: `(manual, device, truncated)`. A device entry is `{entry, at, value, source,
-    retracted}`: `entry` the `ingest` row «Düzelt» names, `source` the device as it named itself.
+    same way: `(manual, device, manual_truncated, device_truncated)`. A device entry is `{entry, at, value,
+    source, retracted}`: `entry` the `ingest` row «Düzelt» names, `source` the device as it named itself.
+
+    Read from the trail, as the marks are, so the live door, the admission form's charting and a restart all
+    show one list. TWO bounded reads, each with a budget of its own, so that a flood of one kind never cuts the
+    other: the patient's `chart` and `chart_retract` rows (`TRENDS_MANUAL_LIMIT`, exactly as before G3-05 — a
+    device's withdrawal is a `chart_retract` row too, so it is in this read) and the patient's `ingest` rows
+    (`TRENDS_DEVICE_LIMIT`; the audit API cannot filter by code, so a row of a code no chart publishes counts
+    against it). Each read's two bounds follow the same reasons:
+      * the NEWEST rows are kept (`newest=True`, returned oldest first, so each list stays in write order). A
+        withdrawal is written after the row it withdraws, so a kept chart row keeps its withdrawal and a cut
+        loses only the oldest entries, `manual_truncated` / `device_truncated` saying so. Kept the other way
+        (the oldest rows), a withdrawal behind the cut would leave an entry the engine dropped shown as not
+        withdrawn.
+      * a row is written at or after the time it records, except a bedside value the door lets run up to
+        `BEDSIDE_SKEW` ahead of its write. The read therefore starts `BEDSIDE_SKEW` before `since`, and the
+        time filter below keeps the exact bound (`until` is the answer's own, the moment it was cut: a value
+        stamped ahead of it is in no list and no line, as the record read — `api/readings.py` — agrees). A
+        lactate (no future bound at the door) dated ahead and written before the window start is the one hole
+        left.
 
     A hand entry is paired with its withdrawal by its own row id. A device entry is paired by the reading
     (`rehydrate.device_key`): a reading the trail holds twice is one reading, the engine skips every copy of a
@@ -185,20 +209,9 @@ def _manual(audit: AuditLog, hospital: str, patient_id: str, since: datetime,
     the withdrawal (the earliest written), whichever row the nurse named. A copy is never collapsed away: the
     list is what the trail holds, marked as the engine counts it.
 
-    Read from the trail, as the marks are, so the live door, the admission form's charting and a restart all
-    show one list. One bounded read of the patient's `chart` and `chart_retract` rows is enough, for two reasons
-    that the read's two bounds follow:
-      * the NEWEST rows are kept (`newest=True`, returned oldest first, so `manual` stays in write order). A
-        withdrawal is written after the row it withdraws, so a kept chart row keeps its withdrawal and a cut
-        loses only the oldest entries, `manual_truncated` saying so. Kept the other way (the oldest rows), a
-        withdrawal behind the cut would leave an entry the engine dropped shown as not withdrawn.
-      * a row is written at or after the time it records, except a bedside value the door lets run up to
-        `BEDSIDE_SKEW` ahead of its write. The read therefore starts `BEDSIDE_SKEW` before `since`, and the
-        time filter below keeps the exact bound. A lactate (no future bound at the door) dated ahead and
-        written before the window start is the one hole left.
     A value the trail cannot read is left out, never shown as 0: not a finite number, or a time with no zone.
     Who: the `charted_by` the door wrote, the `retracted_by` the withdrawal wrote."""
-    fetched = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", "ingest", RETRACT},
+    fetched = audit.records(tenant=hospital, patient_id=patient_id, event_types={"chart", RETRACT},
                             since=since - BEDSIDE_SKEW, limit=TRENDS_MANUAL_LIMIT + 1, newest=True)
     truncated = len(fetched) > TRENDS_MANUAL_LIMIT
     rows = fetched[max(len(fetched) - TRENDS_MANUAL_LIMIT, 0):]    # drop the extra, OLDEST row
@@ -218,26 +231,34 @@ def _manual(audit: AuditLog, hospital: str, patient_id: str, since: datetime,
         if key is not None:
             withdrawn_reading.setdefault(key, mark)    # rows come oldest first: the first withdrawal stands
     out: dict[str, list[dict]] = {key: [] for key in _PUBLISHED_SIGNALS}
-    device: dict[str, list[dict]] = {key: [] for key in _PUBLISHED_SIGNALS}
     for rec in rows:
-        if rec.event_type not in ("chart", "ingest") or rec.subject not in out:
+        if rec.event_type != "chart" or rec.subject not in out:
             continue
         at = _instant(rec.payload.get("obs_ts"))
         value = rec.payload.get("value")
         if at is None or not since <= at <= until or not _finite_number(value):
             continue
-        if rec.event_type == "ingest":
-            mark = withdrawn.get(rec.id) or withdrawn_reading.get(device_key_of(rec))
-            device[rec.subject].append({
-                "entry": rec.id, "at": at.astimezone(timezone.utc).isoformat(), "value": value,
-                "source": str(rec.payload.get("device") or ""), "retracted": None if mark is None else dict(mark),
-            })
-            continue
         out[rec.subject].append({
             "entry": rec.id, "at": at.astimezone(timezone.utc).isoformat(), "value": value,
             "by": str(rec.payload.get("charted_by") or ""), "retracted": withdrawn.get(rec.id),
         })
-    return out, device, truncated
+    sent = audit.records(tenant=hospital, patient_id=patient_id, event_type="ingest",
+                         since=since - BEDSIDE_SKEW, limit=TRENDS_DEVICE_LIMIT + 1, newest=True)
+    device_truncated = len(sent) > TRENDS_DEVICE_LIMIT
+    device: dict[str, list[dict]] = {key: [] for key in _PUBLISHED_SIGNALS}
+    for rec in sent[max(len(sent) - TRENDS_DEVICE_LIMIT, 0):]:     # drop the extra, OLDEST row
+        if rec.subject not in device:
+            continue
+        at = _instant(rec.payload.get("obs_ts"))
+        value = rec.payload.get("value")
+        if at is None or not since <= at <= until or not _finite_number(value):
+            continue
+        mark = withdrawn.get(rec.id) or withdrawn_reading.get(device_key_of(rec))
+        device[rec.subject].append({
+            "entry": rec.id, "at": at.astimezone(timezone.utc).isoformat(), "value": value,
+            "source": str(rec.payload.get("device") or ""), "retracted": None if mark is None else dict(mark),
+        })
+    return out, device, truncated, device_truncated
 
 
 def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id: str,
@@ -256,7 +277,7 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
     breakdown = news2_score(state).breakdown
     since, until = now - timedelta(hours=hours), now
 
-    manual, device, manual_truncated = _manual(audit, hospital, patient_id, since, until)   # G3-01 (D13, X1); G3-05 (D16)
+    manual, device, manual_truncated, device_truncated = _manual(audit, hospital, patient_id, since, until)   # G3-01 (D13, X1); G3-05 (D16)
     channels = []
     for key, code in _PUBLISHED_SIGNALS.items():
         window = _finite(state.window(code, since, until))
@@ -301,4 +322,6 @@ def patient_trends(engine: Engine, audit: AuditLog, *, hospital: str, patient_id
         "markers": markers,
         "markers_truncated": markers_truncated,
         "manual_truncated": manual_truncated,
+        # G3-05 (B8 review): the device list was cut at TRENDS_DEVICE_LIMIT, the oldest readings left out of it.
+        "device_truncated": device_truncated,
     }
