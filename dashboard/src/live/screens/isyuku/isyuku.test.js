@@ -8,7 +8,8 @@ import { describe, it, expect, vi } from "vitest";
 import { CONNECTION } from "../../../liveConnection.js";
 import { WHY, noSource, okSource } from "../ozet/ozet.js";
 import {
-  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, labelled, listedKeysOf, meanOf, readWork,
+  ALL, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, labelled, listedKeysOf, meanOf,
+  readWork,
   remainingOf, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
 import { BED, NEO, NOW_MS, NURSE, NURSES, REA, schedule, tasks, tree, unitSchedule } from "./isyuku.testutil.js";
@@ -69,6 +70,15 @@ describe("the round's read and its sources", () => {
       .toEqual(noSource(WHY.failed));
     expect(isNursesAnswer(NURSES)).toBe(true);
     expect(isNursesAnswer([{ id: "n-1", name: "x" }])).toBe(false);
+  });
+
+  // Review 4: a round whose task read failed, or answered in another shape, is not a whole one («HH:MM itibarıyla»).
+  it("calls the round's answer whole only when its task read answered whole, or was not to be made", () => {
+    expect(isWholeWork({ schedule: schedule(), tasks: null })).toBe(true);
+    expect(isWholeWork({ schedule: schedule(), tasks: { ok: true, data: tasks() } })).toBe(true);
+    expect(isWholeWork({ schedule: schedule(), tasks: { ok: false, error: new Error("down") } })).toBe(false);
+    const short = { ...tasks(), patients: [{ patient_id: "S-1", unit_id: REA, vital: null, tasks: [{ id: "t", late: false }] }] };
+    expect(isWholeWork({ schedule: schedule(), tasks: { ok: true, data: short } })).toBe(false);
   });
 
   it("asks for the shift with either key, and reads /tasks only with tasks.view", () => {

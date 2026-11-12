@@ -183,6 +183,7 @@ describe("Decision 18: a zero only from a fresh answer", () => {
     let mounted = await mountIsYuku({ setup: (api) => api.tasks.mockRejectedValue(refusal(503, "down")) });
     expect(unitRows().map((row) => [row[5], row[6]])).toEqual([["— oxunmadı", "— oxunmadı"], ["— oxunmadı", "— oxunmadı"]]);
     expect(unitRows()[0][2]).toBe("2");                                   // the assignment is still counted
+    expect(document.querySelector("[data-as-of]").textContent).toBe("Hələ tam oxunuş yoxdur");   // review 4: not whole
     act(() => { mounted.board.clear(); });
     cleanup();
     const short = { ...tasks(), patients: [{ patient_id: "S-101", bed_key: null, unit_id: REA, vital: null,

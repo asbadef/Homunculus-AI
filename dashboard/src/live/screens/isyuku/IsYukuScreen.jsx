@@ -18,7 +18,8 @@ import { Alert, Box, Button, Field, Note, Seg, Select, Table } from "../../ui/in
 import { WHY, boardReachSource, reachSource, readSource, structureSource } from "../ozet/ozet.js";
 import { useSummaryReads } from "../ozet/useSummaryReads.js";
 import {
-  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWorkAnswer, listedKeysOf, meanOf,
+  ALL, NO_NURSE, SHIFT_CHANGED, boardWork, formModel, isNursesAnswer, isScheduleAnswer, isWholeWork, isWorkAnswer,
+  listedKeysOf, meanOf,
   readWorkAlone,
   readWorkAndTasks, saveBody, workSources, workloadPage, workloadRights,
 } from "./isyuku.js";
@@ -294,7 +295,7 @@ export function IsYukuScreen() {
   // G4-02's round without its own /tasks read (this page reads /tasks over the shift, in `extra`) or the handovers.
   const summaryRights = useMemo(() => ({ structure: rights.structure, tasks: false, pending: false }), [rights.structure]);
   const extra = useMemo(() => ({ may: rights.schedule, read: rights.tasks ? readWorkAndTasks : readWorkAlone,
-    valid: isWorkAnswer }), [rights.schedule, rights.tasks]);
+    valid: isWorkAnswer, full: isWholeWork }), [rights.schedule, rights.tasks]);
   const reads = useSummaryReads({ store, rights: summaryRights, reloadStructure: tree.reload, extra });
   const [selected, setSelected] = useState(ALL);
   const occupancy = structureSource(tree, rights.structure);

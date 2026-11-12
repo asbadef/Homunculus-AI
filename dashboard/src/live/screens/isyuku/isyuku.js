@@ -98,6 +98,11 @@ export function workloadRights(perms) {
 const isWorkTasks = (answer) => isTasksAnswer(answer) && answer.patients.every((patient) => patient.tasks
   .every((task) => typeof task.state === "string" && msOf(task.due_at) !== null));
 
+/** useSummaryReads' `extra.full`: the round's answer is whole when its task read answered in this page's shape, or was
+ *  not to be made (no `tasks.view`). A failed one keeps «HH:MM itibarıyla» where it was (review 4). */
+export const isWholeWork = (answer) => answer?.tasks === null
+  || (answer?.tasks?.ok === true && isWorkTasks(answer.tasks.data));
+
 /** The round's read (`readSource`-shaped, from useSummaryReads' `extra`) as the page's two sources at `nowMs`: the
  *  schedule, and the task queue read over it. An answer whose shift has ended is SHIFT_CHANGED, both of them (A6). */
 export function workSources(read, rights, nowMs) {

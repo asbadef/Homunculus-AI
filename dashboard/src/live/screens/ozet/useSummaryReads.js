@@ -3,7 +3,7 @@
 // `useSummaryReads`: the tree (through the shell's StructureProvider — every screen keeps the one tree), `/tasks`,
 // `/handovers/pending` and the caller's own scope (`/scope/me`, which every signed-in user may read: the units table's
 // reach, ozet.js `reachSource`), read when the page opens, on «Yenile», and every SUMMARY_POLL_MS while the page is
-// visible (and at once when it is shown again). G4-04: `extra` — `{may, read(api), valid}` — is one more read of
+// visible (and at once when it is shown again). G4-04: `extra` — `{may, read(api), valid, full?}` — is one more read of
 // another page's in the same round («İş yükü»: GET /shift-schedule, then /tasks over its shift), answered as `extra`.
 // A read that fails keeps nothing of its last answer: the page says
 // «okunamadı», never an older number as today's. `fullAt`: when the last round in which every source this session may
@@ -22,8 +22,10 @@ export const LOADING = Object.freeze({ phase: "loading", data: null, atMs: null,
 const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 const isReport = (answer) => Number.isInteger(answer?.episodes);
 
-/** `extra` (G4-04): `{may, read(api), valid}` with stable `read` and `valid` (module constants) — one more read in the
- *  round, answered as `extra`; null (the summary page) reads nothing more, and `extra` stays LOADING. */
+/** `extra` (G4-04): `{may, read(api), valid, full?}` with stable functions (module constants) — one more read in the
+ *  round, answered as `extra`; null (the summary page) reads nothing more, and `extra` stays LOADING. `full(answer)`:
+ *  whether a valid answer is a whole one — «İş yükü»'s holds a /tasks read that can fail on its own, and a round in
+ *  which it did is no full round («HH:MM itibarıyla» stays), as a failed /tasks holds it here. */
 export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMMARY_POLL_MS, extra = null }) {
   const [tasks, setTasks] = useState(LOADING);
   const [pending, setPending] = useState(LOADING);
@@ -39,13 +41,14 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
     const mine = seq.current;
     const current = () => alive.current && mine === seq.current;
     setBusy(true);
-    const one = async (may, call, valid, set) => {
+    // `whole`: whether an answer this page reads counts for the full round (`extra.full`; any other: yes).
+    const one = async (may, call, valid, set, whole = null) => {
       if (!may) return true;
       try {
         const data = await store.track(call);
         if (!valid(data)) throw new Error("not the answer this page reads");
         if (current()) set({ phase: "ok", data, atMs: Date.now(), error: null });
-        return true;
+        return whole ? whole(data) === true : true;
       } catch (error) {
         if (current()) set({ phase: "failed", data: null, atMs: null, error });
         return false;
@@ -56,13 +59,14 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
       one(rights.tasks, () => store.api.tasks(), isTasksAnswer, setTasks),
       one(rights.pending, () => store.api.pendingHandovers(), isPendingAnswer, setPending),
       one(true, () => store.api.myScope(), isScopeAnswer, setScope),
-      one(Boolean(extra?.may), () => extra.read(store.api), extra?.valid, setMore),
+      one(Boolean(extra?.may), () => extra.read(store.api), extra?.valid, setMore, extra?.full),
     ]);
     if (current()) {
       if (answered.every(Boolean)) setFullAt(Date.now());
       setBusy(false);
     }
-  }, [store, rights.structure, rights.tasks, rights.pending, reloadStructure, extra?.may, extra?.read, extra?.valid]);
+  }, [store, rights.structure, rights.tasks, rights.pending, reloadStructure, extra?.may, extra?.read, extra?.valid,
+    extra?.full]);
 
   useEffect(() => {
     alive.current = true;

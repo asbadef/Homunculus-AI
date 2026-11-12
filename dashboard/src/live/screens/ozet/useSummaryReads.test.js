@@ -176,6 +176,27 @@ describe("the page's own reads (useSummaryReads)", () => {
     expect(result.current.fullAt).toBe(lastFull);
   });
 
+  // G4-04 review 4: «İş yükü»'s answer holds a second read (/tasks) that can fail on its own; the header's time must
+  // not move for a round in which it did — as a failed /tasks holds it on the summary page.
+  it("keeps the full round's time where it was when the extra answer says it is not whole", async () => {
+    const store = fakeStore();
+    const read = vi.fn().mockResolvedValue({ generated_at: "x", whole: true });
+    const extra = { may: true, read, valid: (answer) => typeof answer?.generated_at === "string",
+      full: (answer) => answer.whole === true };
+    const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
+    const { result } = renderHook(() => useSummaryReads({ store, rights: ALL, reloadStructure, everyMs: 60 * MIN, extra }));
+    await flush();
+    expect(result.current.fullAt).toBe(T0);
+    read.mockResolvedValueOnce({ generated_at: "x", whole: false });
+    vi.setSystemTime(T0 + MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.extra).toMatchObject({ phase: "ok", data: { whole: false } });   // its answer is still shown
+    expect(result.current.fullAt).toBe(T0);
+    vi.setSystemTime(T0 + 2 * MIN);
+    await act(async () => { result.current.refresh(); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.fullAt).toBe(T0 + 2 * MIN);
+  });
+
   it("reads nothing more without a page's ask: the extra read stays unasked", async () => {
     const store = fakeStore();
     const reloadStructure = vi.fn().mockResolvedValue({ sites: [] });
