@@ -590,7 +590,7 @@ async def patch_bed(
 
 
 async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_id: uuid.UUID,
-                         actor: str, *, via: str = "bed.release") -> None:
+                         actor: str, *, tenant_id: uuid.UUID, via: str = "bed.release") -> None:
     """The bed's discharged patients off the board before the bed is freed (review I-2): a
     discharge whose board step failed leaves that patient's card standing as admitted on this
     bed, and a bed freed under it would take a second card. EVERY DISCHARGED admission of the bed
@@ -653,7 +653,9 @@ async def _last_card_off(request: Request, db: AsyncSession, hospital: str, bed_
         .order_by(Admission.updated_at.desc()))).scalars().all()
     here = await transfer.unit_of(db, bed_id) if transferred else None     # once, before the loop
     for source_id in transferred:
-        end = await transfer.where_now(db, source_id)
+        # Re-read R-6: the chain is followed inside the caller's tenant (`tenant_id`), as the kabul
+        # form's resend follows it (I-1): a row written wrong by hand ends it there.
+        end = await transfer.where_now(db, source_id, tenant_id=tenant_id)
         if end is None:
             continue                                   # a move the closed routes left half done
         key = end.key
@@ -707,7 +709,7 @@ async def release_bed(
                       f"Only a bed in cleaning can be released (it is {bed.state.value}).").http()
     hospital = await trail.hospital_of(db, caller_tenant)
     try:
-        await _last_card_off(request, db, hospital, bed.id, user.username)
+        await _last_card_off(request, db, hospital, bed.id, user.username, tenant_id=caller_tenant)
     except Refusal as exc:
         raise exc.http() from None
     bed.transition_to(BedState.AVAILABLE)
@@ -726,7 +728,7 @@ async def _holds_open_admission(db: AsyncSession, bed_id: uuid.UUID) -> bool:
 
 
 async def _free_guards(request: Request, db: AsyncSession, hospital: str, bed: Bed, actor: str,
-                       *, via: str) -> None:
+                       *, tenant_id: uuid.UUID, via: str) -> None:
     """What every move that FREES a bed checks first, under the bed's lock (B1a's final review;
     G2-B3a R6): no admission on it still open (`bed_in_use`), and its discharged patients' cards
     off the board (`_last_card_off`, `board_not_cleared`). The raw move and the Doluluk's return
@@ -734,7 +736,7 @@ async def _free_guards(request: Request, db: AsyncSession, hospital: str, bed: B
     if await _holds_open_admission(db, bed.id):
         raise Refusal(409, BED_IN_USE, "An admission on this bed is still open: it is "
                       "discharged before the bed is freed.")
-    await _last_card_off(request, db, hospital, bed.id, actor, via=via)
+    await _last_card_off(request, db, hospital, bed.id, actor, tenant_id=tenant_id, via=via)
 
 
 #: G2-B3a (X4): states the raw move neither sets nor leaves. Each comes with a note or a reason,
@@ -775,7 +777,7 @@ async def transition_bed(
             body.new_state in BED_STATE_TRANSITIONS.get(bed.state, set()):
         try:
             await _free_guards(request, db, await trail.hospital_of(db, caller_tenant), bed,
-                               user.username, via="bed.transition")
+                               user.username, tenant_id=caller_tenant, via="bed.transition")
         except Refusal as exc:
             raise exc.http() from None
     try:
@@ -907,7 +909,8 @@ async def bed_return_to_service(
     reason = bed.state_reason
     hospital = await trail.hospital_of(db, caller_tenant)
     try:
-        await _free_guards(request, db, hospital, bed, user.username, via="bed.return_to_service")
+        await _free_guards(request, db, hospital, bed, user.username, tenant_id=caller_tenant,
+                           via="bed.return_to_service")
     except Refusal as exc:
         raise exc.http() from None
     bed.transition_to(BedState.AVAILABLE)

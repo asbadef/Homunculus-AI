@@ -738,6 +738,27 @@ async def test_a_release_passes_over_a_patient_whose_card_moved_and_reads_no_nam
     assert audited(app, "admission.transfer_board_retry") == [] and reads == []
 
 
+async def test_a_release_follows_a_moved_patients_chain_inside_the_callers_tenant(ward, monkeypatch):
+    """Re-read R-6: the old bed's release follows each moved patient's chain (`where_now`) inside
+    the caller's tenant, as the kabul form's resend does (I-1): a row written wrong by hand that
+    names another tenant's admission ends the chain there."""
+    w, client, _ = ward
+    one, tenant_id = w.beds["1"].id, w.tenant.id
+    source = await signed(w, client)
+    await moved(w, client, source)
+    asked = []
+    real = transfer_module.where_now
+
+    async def spied(db, admission_id, **kwargs):
+        asked.append(kwargs.get("tenant_id"))
+        return await real(db, admission_id, **kwargs)
+
+    monkeypatch.setattr(transfer_module, "where_now", spied)
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert asked == [tenant_id]
+
+
 async def test_a_release_takes_off_the_card_of_a_patient_moved_and_discharged_since(
         ward, monkeypatch):
     """X4: her move's and then her discharge's board steps both failed, so her card still stands
