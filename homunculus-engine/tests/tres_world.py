@@ -32,10 +32,12 @@ async def add_stay(db: AsyncSession, ward: Ward, *, protocol_no: str | None = "2
                    discharged_at: datetime | None = DISCHARGED, bed: str = "1", unit: str = "rea",
                    attending: str | None = "doctor", weight_kg: float | None = 72.5,
                    source: Admission | None = None, patient: Patient | None = None,
-                   phone: str | None = "050 123 45 67") -> Admission:
+                   phone: str | None = "050 123 45 67", updated_at: datetime | None = None) -> Admission:
     """One admission of a synthetic person (a new patient row unless `patient` is given — the
     admission form makes one per admission, so two stays of one FİN are two rows); with `source`,
-    the arriving row of a transfer from it."""
+    the arriving row of a transfer from it. Its `updated_at` — which the rounds' window reads with the
+    discharge (batch-4 review) — is the discharge's moment (the admission's, while it is open) unless
+    given: the tests' clock is not the wall clock."""
     if patient is None:
         patient = Patient(tenant_id=ward.tenant.id, patient_number=number, display_name="Sentetikova Leyla",
                           date_of_birth="1980-01-31", sex="female", father_name="Sentetik", national_id=fin,
@@ -48,7 +50,9 @@ async def add_stay(db: AsyncSession, ward: Ward, *, protocol_no: str | None = "2
         attending_physician_id=ward.users[attending].id if attending else None,
         admission_diagnosis_free_text="Sentetik tanı", protocol_no=protocol_no, weight_kg=weight_kg,
         discharge_at=discharged_at if state == AdmissionState.DISCHARGED else None,
-        source_admission_id=source.id if source is not None else None)
+        source_admission_id=source.id if source is not None else None,
+        updated_at=updated_at or (discharged_at if state == AdmissionState.DISCHARGED and discharged_at
+                                  else admitted_at))
     db.add(admission)
     await db.commit()
     return admission
@@ -103,7 +107,7 @@ async def other_tenants_stay(db: AsyncSession, *, discharged_at: datetime = DISC
     admission = Admission(patient_id=patient.id, tenant_id=tenant.id, state=AdmissionState.DISCHARGED,
                           admission_datetime=discharged_at - timedelta(days=3), admitting_unit_id=unit.id,
                           bed_id=bed.id, admission_diagnosis_free_text="Sentetik tanı", protocol_no="202699900001",
-                          discharge_at=discharged_at)
+                          discharge_at=discharged_at, updated_at=discharged_at)
     db.add(admission)
     await db.flush()
     db.add(TresDelivery(tenant_id=tenant.id, environment="test", resource_type="patient", local_id="hmn-p-baska.",

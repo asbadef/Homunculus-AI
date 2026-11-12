@@ -38,7 +38,7 @@ from homunculus.tres.client import TresClient
 from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, payload_digest
 from homunculus.tres.mapping.patient import patient as map_patient
 from homunculus.tres.models import RESOURCE_TYPES, TresDelivery, TresSettings
-from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, stuck_stays, window, zone_of
+from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, retry_stays, window, zone_of
 from homunculus.tres.worker import Sender, run_round
 from tests.conftest import requires_db
 from tests.fake_tres import FakeTres
@@ -76,6 +76,17 @@ def test_an_unknown_zone_is_said_by_the_tenants_id_and_the_night_falls_back_to_u
     with caplog.at_level("WARNING"):
         assert StaySource(InMemoryAuditLog(), zone=lambda name: BAKU).night_zone(tenant) is BAKU
     assert caplog.text == ""
+
+
+def test_an_unknown_zone_is_said_once_per_tenant_not_every_round(caplog):
+    """Batch-4 review: a round every five minutes would say it 288 times a day."""
+    source_ = StaySource(InMemoryAuditLog())
+    first, second = (SimpleNamespace(id=uuid.uuid4(), timezone="Mars/Olympus_Mons") for _ in range(2))
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            assert source_.night_zone(first) is timezone.utc
+        assert source_.night_zone(second) is timezone.utc
+    assert caplog.text.count(str(first.id)) == 1 and caplog.text.count(str(second.id)) == 1
 
 
 def _settings(**over) -> SimpleNamespace:
@@ -527,7 +538,7 @@ async def test_another_tenants_stay_is_never_due_stuck_or_loaded(db_session):
                                 local_id="hmn-p-bizim.", status="stuck", attempts=5, admission_id=ours.id))
     await db_session.commit()
     assert await due_stays(db_session, settings, NOW) == [ours.id]
-    assert await stuck_stays(db_session, settings) == [ours.id]
+    assert await retry_stays(db_session, settings) == [ours.id]
     assert await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, theirs.id) is None
     assert (await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, ours.id)).last_id == ours.id
 
@@ -549,3 +560,263 @@ async def test_the_window_holds_its_upper_edge_and_leaves_its_lower_one(db_sessi
                    discharged_at=upper + timedelta(microseconds=1))
     settings = await feed_settings(db_session, ward, fake, mode="validate")
     assert await due_stays(db_session, settings, NOW) == [inside.id, at_upper.id]
+
+
+# ---------------------------------------------------------------- batch-4 review (Postgres)
+def _once(fake, status: int, match) -> httpx.MockTransport:
+    """The stand-in, but the first request `match` takes is answered `status` — a 503 (an outage: the
+    row is left as it was, a new one `pending`) or a 400 (a refusal about the resource: `failed`)."""
+    left = [1]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if left[0] and match(request):
+            left[0] -= 1
+            if status >= 500:
+                return httpx.Response(status, text="")
+            return httpx.Response(status, json={"resourceType": "OperationOutcome", "issue": [
+                {"severity": "error", "code": "invalid", "diagnostics": "Sentetik ret"}]})
+        return fake.transport.handler(request)
+    return httpx.MockTransport(handler)
+
+
+async def _rows_of(db_session, admission_id) -> dict[str, tuple[str, str | None]]:
+    rows = (await db_session.execute(select(TresDelivery).where(TresDelivery.admission_id == admission_id)
+                                     .execution_options(populate_existing=True))).scalars()
+    return {row.resource_type: (row.status, row.reason) for row in rows if row.resource_type != "vital"}
+
+
+@requires_db
+@pytest.mark.parametrize("status", [503, 400])
+async def test_a_gap_stay_whose_catch_up_meets_one_outage_or_one_refusal_goes_the_next_night(db_session, status):
+    """Batch-4 review (the reviewer's repro, inverted): the round that reached back for a gap stay ran to
+    its end, so the watermark passed the stay; its Patient's first request met one 503 (the new row stays
+    `pending`) or one 400 (`failed`). No round reaches it again — the nightly retry takes every stay with a
+    `stuck`, `failed` or `pending` row, so the next night sends it."""
+    ward, fake = await _world(db_session)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    cut = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+    await feed_settings(db_session, ward, fake, send_from=cut)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit, now=t1)
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = :t"), {"t": t1})   # parked
+    await db_session.commit()
+    gap = await add_stay(db_session, ward, protocol_no="202600000111", number="H2600111", fin="EF56G7H", bed="2",
+                         admitted_at=t1, discharged_at=t1 + timedelta(days=1))
+    await add_stay(db_session, ward, protocol_no="202600000112", number="H2600112", fin="GH78J9K", bed="3",
+                   admitted_at=t1 + timedelta(days=6), discharged_at=t1 + timedelta(days=8))
+    await db_session.execute(text("UPDATE tres_settings SET session_refused_at = NULL"))
+    await db_session.commit()
+    t2 = t1 + timedelta(days=10)
+    transport = _once(fake, status, lambda r: r.url.path.startswith("/fhir/Patient")
+                      and (status >= 500 or r.method in ("POST", "PUT")))
+    await _round(db_session, fake, audit, now=t2, transport=transport)          # the gap stay goes first
+    assert await _reached(db_session) == t2 - timedelta(hours=24)               # it ran to its end
+    assert (await _rows_of(db_session, gap.id))["patient"][0] == ("pending" if status >= 500 else "failed")
+    assert len(fake.stored("Encounter")) == 1                                   # the recent stay's only
+    await _round(db_session, fake, audit, now=t2 + timedelta(minutes=5))
+    assert len(fake.stored("Encounter")) == 1                                   # out of the rounds' window
+    await _round(db_session, fake, audit, now=datetime(2026, 11, 14, 0, 5, tzinfo=timezone.utc))   # 04:05 Baku
+    assert len(fake.stored("Encounter")) == 2
+    rows = await _rows_of(db_session, gap.id)          # (the doctor's row follows the stay that last ran it)
+    assert (rows["patient"], rows["encounter"]) == (("sent", None), ("sent", None))
+
+
+@requires_db
+async def test_the_nightly_retry_never_crosses_the_cut_off(db_session):
+    """Batch-4 review (the reviewer's repro, inverted): a `validate` trial left a Practitioner `stuck`; the
+    first `send` set `send_from` two days after this stay's discharge. The night does not send it — the
+    duplicate O15 exists to prevent."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake, send_from=DISCHARGED + timedelta(days=2),
+                        retried_at=datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc))
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="practitioner",
+                                local_id="hmn-pr-takili.", status="stuck", attempts=5, admission_id=admission.id))
+    await db_session.commit()
+    await _round(db_session, fake, InMemoryAuditLog(), now=datetime(2026, 11, 9, 0, 5, tzinfo=timezone.utc))
+    assert fake.stored("Patient") == [] and fake.stored("Encounter") == []
+    assert (await db_session.execute(text("SELECT retried_at FROM tres_settings"))).scalar_one() is not None
+
+
+@requires_db
+async def test_the_nightly_retry_takes_the_unfinished_stays_since_the_cut_off_and_in_validate_only_the_refused(
+        db_session):
+    """Batch-4 review: a stay with a `stuck`, `failed` or `pending` row in the selected environment; in
+    `send`, also one whose Encounter row is not `sent` — skipped for any reason, so a FİN added, a unit
+    mapped or a zone set later sends the old stay; never one discharged before the cut-off (or of the
+    other environment, or another tenant's). In `validate`, an Encounter `no_reference` is not taken:
+    every validated stay would be rebuilt every night."""
+    ward, fake = await _world(db_session)
+    stays = {}
+    for n, name in enumerate(("stuck", "failed", "pending", "unmapped", "no_reference", "done", "before_cut",
+                              "live", "deleted", "admitted")):
+        stays[name] = await add_stay(
+            db_session, ward, protocol_no=f"2026000002{n:02d}", number=f"H26002{n:02d}", bed="1",
+            state=AdmissionState.ACTIVE if name == "admitted" else AdmissionState.DISCHARGED,
+            discharged_at=DISCHARGED - timedelta(days=30 if name == "before_cut" else 10))
+    cut = DISCHARGED - timedelta(days=20)
+    settings = await feed_settings(db_session, ward, fake, send_from=cut)
+
+    def row(name, resource_type, status, reason=None, environment="test"):
+        db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment=environment, resource_type=resource_type,
+                                    local_id=f"hmn-{name}-{resource_type}.", status=status, reason=reason,
+                                    admission_id=stays[name].id))
+
+    row("stuck", "patient", "stuck")
+    row("failed", "vital", "failed")
+    row("pending", "practitioner", "pending")
+    row("unmapped", "encounter", "skipped", "unit_unmapped")
+    row("no_reference", "encounter", "skipped", "no_reference")
+    row("done", "encounter", "sent")
+    row("done", "practitioner", "skipped", "identity_missing")   # a practitioner left out: the stay went
+    row("before_cut", "patient", "stuck")
+    row("live", "patient", "stuck", environment="live")
+    row("deleted", "encounter", "deleted")
+    row("admitted", "encounter", "skipped", "patient_unheld")   # still admitted: not before the cut-off
+    await db_session.commit()
+    expected = sorted((stays[n].id for n in ("stuck", "failed", "pending", "unmapped", "no_reference", "admitted")),
+                      key=str)
+    assert sorted(await retry_stays(db_session, settings), key=str) == expected
+    settings.mode = "validate"
+    assert sorted(await retry_stays(db_session, settings), key=str) == sorted(
+        (stays[n].id for n in ("stuck", "failed", "pending")), key=str)
+    settings.send_from = None                                    # no cut-off: the old stay too
+    assert stays["before_cut"].id in await retry_stays(db_session, settings)
+
+
+@requires_db
+async def test_an_older_stay_held_back_by_a_stuck_patient_goes_the_night_after_its_newer_stay_took_the_person(
+        db_session):
+    """Batch-4 review (the reviewer's A1 repro, inverted): the older stay's run stopped at its `stuck`
+    Patient and wrote its own Encounter row (`patient_unheld`); the newer stay then took the person's
+    row and sent it. The next night takes the older stay (its Encounter not sent): it yields the Patient
+    to the newer stay, which holds the platform's id, and its Encounter goes."""
+    ward, fake = await _world(db_session)
+    old = DISCHARGED - timedelta(days=14)
+    older = await add_stay(db_session, ward, admitted_at=old - timedelta(days=2), discharged_at=old, phone=OLDER_PHONE)
+    newer = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                           phone=NEWER_PHONE)                              # due at NOW, the same FİN
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake, retried_at=datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc))
+    audit = InMemoryAuditLog()
+    stay = await _source(audit).load(db_session, ward.tenant.id, older.id)
+    built = map_patient(stay.person, stay.root_id)
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="patient",
+                                local_id=built.local_id, status="stuck", attempts=5,
+                                payload_digest=payload_digest(built.resource), admission_id=older.id))
+    await db_session.commit()
+    await _round(db_session, fake, audit, now=old + timedelta(hours=25))      # the older stay's own week
+    assert (await _rows_of(db_session, older.id))["encounter"] == ("skipped", "patient_unheld")
+    assert fake.stored("Patient") == []
+    await _round(db_session, fake, audit, now=NOW)                            # the newer stay takes the person
+    assert (await _patient_row(db_session)).admission_id == newer.id and _phone(fake) == "+994557654321"
+    await _round(db_session, fake, audit, now=datetime(2026, 11, 8, 0, 5, tzinfo=timezone.utc))   # 04:05 Baku
+    assert len(fake.stored("Encounter")) == 2 and len(fake.stored("Patient")) == 1
+    assert (await _rows_of(db_session, older.id))["encounter"] == ("sent", None)
+    assert _phone(fake) == "+994557654321"                                    # the newer stay's person stands
+
+
+@requires_db
+async def test_an_older_stay_takes_a_persons_row_its_newer_stay_holds_no_id_on_and_the_newer_takes_it_back(
+        db_session):
+    """Batch-4 review (A1 follow-up): an older stay yields the person's row ONLY to a newer stay whose
+    row holds the platform's id. Here the newer stay's Patient was refused: the older stay sends its own
+    version and takes the row; the newer stay takes it back when it runs again; and then the older one
+    yields and asks nothing — no flip-flop."""
+    ward, fake = await _world(db_session)
+    older = await add_stay(db_session, ward, phone=OLDER_PHONE)
+    newer = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                           admitted_at=DISCHARGED + timedelta(days=1), discharged_at=DISCHARGED + timedelta(days=2),
+                           phone=NEWER_PHONE)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+
+    async def hand(admission, transport=None):
+        client = TresClient(fake.account, transport=transport or fake.transport)
+        sender = Sender(db_session, client, tenant_id=ward.tenant.id, environment="test", mode="send", now=NOW,
+                        enabled_types=RESOURCE_TYPES, lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
+        await _source(audit).package(db_session, settings, admission.id)(sender)
+        await client.aclose()
+
+    await hand(newer, _once(fake, 400, lambda r: r.url.path == "/fhir/Patient" and r.method == "POST"))
+    row = await _patient_row(db_session)
+    assert (row.status, row.remote_id, row.admission_id) == ("failed", None, newer.id)
+    await hand(older)                                                         # the newer stay holds no id
+    row = await _patient_row(db_session)
+    assert (row.status, row.admission_id) == ("sent", older.id) and _phone(fake) == "+994501234567"
+    assert len(fake.stored("Encounter")) == 1                                 # the older stay is not orphaned
+    await hand(newer)                                                         # the newer takes it back
+    assert (await _patient_row(db_session)).admission_id == newer.id and _phone(fake) == "+994557654321"
+    assert len(fake.stored("Encounter")) == 2
+    asked = list(fake.requests)
+    await hand(older)
+    assert fake.requests == asked and (await _patient_row(db_session)).admission_id == newer.id
+
+
+@requires_db
+async def test_a_unit_mapped_after_the_stays_week_sends_it_the_next_night(db_session):
+    """Batch-4 review: the stay's Encounter was skipped `unit_unmapped` while it was in reach; the unit is
+    mapped after its week. The next night takes it (send mode: its Encounter is not `sent`)."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake, retried_at=datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc))
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)
+    assert (await _rows_of(db_session, admission.id))["encounter"] == ("skipped", "unit_unmapped")
+    await map_unit(db_session, ward)
+    later = NOW + REACH + timedelta(days=1)                                   # 15 Nov 12:00 UTC: out of reach
+    await db_session.execute(text("UPDATE tres_settings SET retried_at = :t"), {"t": later - timedelta(hours=1)})
+    await db_session.commit()                                                 # tonight's retry has run
+    await _round(db_session, fake, audit, now=later)                          # the rounds no longer reach it
+    assert fake.stored("Encounter") == []
+    await _round(db_session, fake, audit, now=later + timedelta(hours=12, minutes=5))    # 16 Nov 04:05 Baku
+    assert len(fake.stored("Encounter")) == 1
+
+
+@requires_db
+async def test_a_validate_night_does_not_rebuild_the_stays_left_no_reference(db_session):
+    """Batch-4 review: in `validate` an Encounter `no_reference` is what every stay of a tenant that never
+    sent has; the night takes only `stuck`, `failed` and `pending` rows."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake, mode="validate",
+                        retried_at=datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc))
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)
+    assert (await _rows_of(db_session, admission.id))["encounter"] == ("skipped", "no_reference")
+    asked = list(fake.requests)
+    await _round(db_session, fake, audit, now=NOW + REACH + timedelta(hours=12, minutes=5))   # a night, out of reach
+    assert fake.requests == asked
+
+
+@requires_db
+async def test_the_window_is_keyed_on_the_discharge_or_the_rows_last_change_and_the_cut_off_on_the_discharge(
+        db_session):
+    """Batch-4 review: a discharge confirmed (or backdated) long after its `discharge_at`, or a later
+    edit, brings the stay within reach — the row's `updated_at` (bumped by `transition_to`) counts as
+    its discharge for the window, and the wait runs from it; the cut-off stays on `discharge_at`."""
+    ward, fake = await _world(db_session)
+    upper = NOW - timedelta(hours=24)
+    long_ago = NOW - timedelta(days=20)
+    confirmed_late = await add_stay(db_session, ward, admitted_at=long_ago - timedelta(days=2), discharged_at=long_ago,
+                                    updated_at=NOW - timedelta(days=2))
+    await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", bed="2",
+                   admitted_at=long_ago - timedelta(days=2), discharged_at=long_ago)          # untouched since
+    await add_stay(db_session, ward, protocol_no="202600000103", number="H2600103", bed="3",
+                   admitted_at=NOW - timedelta(days=5), discharged_at=NOW - timedelta(days=3),
+                   updated_at=NOW - timedelta(hours=1))                                     # its wait not over
+    settings = await feed_settings(db_session, ward, fake, send_from=NOW - timedelta(days=30),
+                                   reached_to=upper - timedelta(minutes=5))
+    assert await due_stays(db_session, settings, NOW) == [confirmed_late.id]
+    settings.send_from = long_ago + timedelta(minutes=1)                     # the cut-off: on the discharge
+    assert await due_stays(db_session, settings, NOW) == []

@@ -9,7 +9,11 @@ audit read and write here goes through `asyncio.to_thread`: the event loop never
 
 WHICH STAYS A ROUND SENDS (D9, amended by plan F1; `window`):
 * the chain's last admission is DISCHARGED, with a `discharge_at`;
-* `settle_hours` have passed since it — `discharge_at <= now − settle_hours` (the round's UPPER
+* the window is judged on the later of its `discharge_at` and its `updated_at` (`window_key`,
+  batch-4 review: a discharge confirmed or backdated long after its `discharge_at`, or a later edit
+  of the row, brings the stay within reach — `transition_to` bumps `updated_at` when the row becomes
+  DISCHARGED); the cut-off below is judged on `discharge_at` alone. Below, «its discharge» is that key;
+* `settle_hours` have passed since it — `discharge <= now − settle_hours` (the round's UPPER
   bound, inclusive: a stay is due the moment its wait is over);
 * it is within the rounds' REACH: after the week before that bound (`> upper − REACH`, exclusive) —
   a stay is rebuilt every round for a week after it became due, which is when a late correction is
@@ -19,7 +23,8 @@ WHICH STAYS A ROUND SENDS (D9, amended by plan F1; `window`):
   stay discharged while no round could complete (a parked tenant, `TRES_EGRESS` closed for
   maintenance, an outage or 429s for more than a week) is not dropped: the first round that
   completes afterwards reaches back to the last one that did, and the window then closes to the
-  week again. A stay older than all of that goes by hand («Şimdi gönder») or the nightly retry;
+  week again. A stay older than all of that goes by hand («Şimdi gönder») or the nightly retry
+  (when a row of it is unfinished);
 * O15 (PROPOSED, AWAITING THE OWNER'S WORD): not discharged before the tenant's `send_from` — the
   moment `send` was first chosen, by default — so opening `send` where another system has reported
   the stays already (O11) does not send its whole recent past again. The cut-off is never crossed,
@@ -29,16 +34,30 @@ causes to stop came: the source's generator is exhausted only then (worker.py `_
 every early end — a session refused, a 429, five failures in a row, the settings saved under it —
 and a tenant parked, passed over or behind a closed lock never reaches the source). A package that
 failed alone (fewer than five in a row) does not end the round: its stay was due in this window
-and stays within the week of the next rounds (or `stuck`, for the nightly retry). Its last step
+and stays within the week of the next rounds — and, past it, its `failed` or `pending` row takes it
+to the nightly retry (batch-4 review: a gap stay the watermark has passed included). Its last step
 writes `reached_to` = its upper bound, by its own statement (never `updated_at`), as a
 compare-and-set: only while the settings are still the version the round began on and `reached_to`
 is still what it read — a save during the last package, or another process's round, moves nothing.
-THE NIGHTLY RETRY (D21, O21): at the first round after 04:00 in the tenant's zone — on a tenant's
-first night too: never before 04:00 (A6) — every stay with a `stuck` row in the selected
-environment is rebuilt and sent with `force`, whatever its age; a stuck stay that is also due goes
-once, forced (A8). The night is marked first (`retried_at`, by its own statement): a round that
-ends early leaves the rest to the next night or «Yeniden dene». A zone this server's zone database
-does not hold is said in a warning (the tenant's id, nothing else) and the night is read in UTC.
+THE NIGHTLY RETRY (D21, O21; batch-4 review): at the first round after 04:00 in the tenant's zone —
+on a tenant's first night too: never before 04:00 (A6) — every UNFINISHED stay is rebuilt and sent
+with `force`, whatever its age (`retry_stays`):
+* a stay with a row `stuck`, `failed` or `pending` in the selected environment (a gap stay whose
+  catch-up met one outage or one refusal, a refusal in the last hours of a stay's week…);
+* in `send` only, a stay whose Encounter row is not `sent` — skipped for any reason
+  (`patient_unheld`, `unit_unmapped`, `timezone_unknown`, `discharge_missing`, `organization_missing`,
+  `type_off`…): a FİN added, a unit mapped or a zone set later sends the old stay with no hand. In
+  `validate` an Encounter `no_reference` is what every stay of a tenant that never sent has: the
+  night would rebuild them all, so it takes only the three statuses above;
+* NEVER a stay discharged before the cut-off (`send_from`; a stay not discharged is not before it):
+  O15 exists to keep the stays another system reported from going again.
+THE NIGHT'S COST is bounded by the unfinished stays since the cut-off, each rebuilt once a night
+(its unchanged resources ask nothing, D7; a skip that still stands writes nothing new) — a stay
+that can never be sent (a person with no FİN) is read every night until it can, or a hand sends it.
+A stuck stay that is also due goes once, forced (A8). The night is marked first (`retried_at`, by
+its own statement): a round that ends early leaves the rest to the next night or «Yeniden dene». A
+zone this server's zone database does not hold is said in a warning — once per tenant in this
+process, its id and nothing else — and the night is read in UTC.
 ONE API PROCESS: `Dockerfile.api` runs uvicorn with one worker (state that must be one per server
 lives in its memory), so one round runs at a time. The night's mark and the watermark are
 compare-and-sets all the same (`WHERE … IS NOT DISTINCT FROM <what the round read>`, by rowcount):
@@ -66,7 +85,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.admission.boardkey import board_key
@@ -115,8 +134,9 @@ def nightly_due(retried_at: datetime | None, now: datetime, zone: tzinfo) -> boo
 
 def window(settings: TresSettings, now: datetime) -> tuple[datetime | None, datetime]:
     """(after, upper) of a round at `now` (the module's docstring; amendment 25, A3): a stay is due
-    when `after < discharge_at <= upper` — no lower bound of this kind when `after` is None — and,
-    with a cut-off, `discharge_at >= send_from` (`due_stays` adds that; the cut-off is never crossed).
+    when `after < its discharge <= upper` — its discharge being `window_key` (batch-4 review), no
+    lower bound of this kind when `after` is None — and, with a cut-off, `discharge_at >= send_from`
+    (`due_stays` adds that; the cut-off is never crossed).
 
         upper = now − settle_hours
         after = min(upper − REACH, reached_to)   when a round has run to its end (`reached_to`)
@@ -131,28 +151,55 @@ def window(settings: TresSettings, now: datetime) -> tuple[datetime | None, date
     return week, upper
 
 
+def window_key():
+    """What the window is judged on (batch-4 review): the later of the last admission's `discharge_at`
+    and its `updated_at` — `transition_to` bumps it when the row becomes DISCHARGED, and any later edit
+    of the row does too. A discharge confirmed (or backdated) long after its `discharge_at`, or a row
+    edited after the stay left the rounds, so comes within reach again, its wait counted from that
+    moment. The cut-off is judged on `discharge_at` alone (`due_stays`)."""
+    return func.greatest(Admission.discharge_at, Admission.updated_at)
+
+
 async def due_stays(db: AsyncSession, settings: TresSettings, now: datetime) -> list[uuid.UUID]:
-    """The last admissions of the stays a round sends (the module's docstring, `window`), oldest
-    discharge first. The caller's tenant only."""
+    """The last admissions of the stays a round sends (the module's docstring, `window`, judged on
+    `window_key`), oldest first. The caller's tenant only."""
     after, upper = window(settings, now)
+    key = window_key()
     query = select(Admission.id).where(
         Admission.tenant_id == settings.tenant_id, Admission.state == AdmissionState.DISCHARGED,
-        Admission.discharge_at.is_not(None), Admission.discharge_at <= upper)
+        Admission.discharge_at.is_not(None), key <= upper)
     if after is not None:
-        query = query.where(Admission.discharge_at > after)
+        query = query.where(key > after)
     if settings.send_from is not None:
         query = query.where(Admission.discharge_at >= settings.send_from)
-    return list((await db.execute(query.order_by(Admission.discharge_at, Admission.id))).scalars())
+    return list((await db.execute(query.order_by(key, Admission.id))).scalars())
 
 
-async def stuck_stays(db: AsyncSession, settings: TresSettings) -> list[uuid.UUID]:
-    """The stays (their last admissions) with a `stuck` row in the selected environment — the
-    caller's tenant only."""
-    return list((await db.execute(
-        select(TresDelivery.admission_id).where(
-            TresDelivery.tenant_id == settings.tenant_id, TresDelivery.environment == settings.environment,
-            TresDelivery.status == "stuck", TresDelivery.admission_id.is_not(None))
-        .distinct().order_by(TresDelivery.admission_id))).scalars())
+#: The statuses whose stays the nightly retry takes in either mode: a refusal still waiting
+#: (`failed`), five in a row (`stuck`), a row an outage left (`pending`) — batch-4 review.
+RETRIED = ("stuck", "failed", "pending")
+#: An Encounter in one of these is not taken by the night's «not sent» rule: `deleted` is F6's (a
+#: record removed on purpose is not brought back by a night).
+NOT_RETRIED_ENCOUNTER = ("sent", "deleted")
+
+
+async def retry_stays(db: AsyncSession, settings: TresSettings) -> list[uuid.UUID]:
+    """The stays (their last admissions) the nightly retry takes (the module's docstring): a row
+    `stuck`, `failed` or `pending` in the selected environment; in `send`, also an Encounter row that
+    is not `sent` (skipped for any reason: `patient_unheld`, `unit_unmapped`, `timezone_unknown`…).
+    Never a stay discharged before the cut-off (`send_from`; one not discharged is not before it).
+    The caller's tenant only."""
+    unfinished = TresDelivery.status.in_(RETRIED)
+    if settings.mode == "send":
+        unfinished = or_(unfinished, and_(TresDelivery.resource_type == "encounter",
+                                          TresDelivery.status.not_in(NOT_RETRIED_ENCOUNTER)))
+    query = (select(TresDelivery.admission_id)
+             .join(Admission, Admission.id == TresDelivery.admission_id)
+             .where(TresDelivery.tenant_id == settings.tenant_id, Admission.tenant_id == settings.tenant_id,
+                    TresDelivery.environment == settings.environment, unfinished))
+    if settings.send_from is not None:
+        query = query.where(or_(Admission.discharge_at.is_(None), Admission.discharge_at >= settings.send_from))
+    return list((await db.execute(query.distinct().order_by(TresDelivery.admission_id))).scalars())
 
 
 async def chain_of(db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID) -> list[Admission]:
@@ -188,6 +235,8 @@ class StaySource:
     def __init__(self, audit: AuditLog, *, clock: Callable[[], datetime] = _utcnow,
                  zone: Callable[[str | None], tzinfo | None] = zone_of) -> None:
         self.audit, self.clock, self.zone = audit, clock, zone
+        #: The tenants whose unknown zone this process has said already (once each, not every round).
+        self._zone_said: set[uuid.UUID] = set()
 
     async def __call__(self, db: AsyncSession, settings: TresSettings) -> AsyncIterator:
         """A round's packages for one tenant: the nightly retry's first when its night has come,
@@ -202,7 +251,7 @@ class StaySource:
         zone = self.night_zone(await db.get(Tenant, tenant_id))
         forced: set[uuid.UUID] = set()
         if nightly_due(seen_night, now, zone) and await self._mark_night(db, tenant_id, seen_night, now):
-            for admission_id in await stuck_stays(db, settings):
+            for admission_id in await retry_stays(db, settings):
                 forced.add(admission_id)
                 yield self.package(db, settings, admission_id, force=True)
         for admission_id in await due_stays(db, settings, now):
@@ -214,11 +263,14 @@ class StaySource:
 
     def night_zone(self, tenant: Tenant) -> tzinfo:
         """The zone the tenant's night is read in: its own; UTC, said in a warning, for a name this
-        server's zone database does not hold (A6) — the tenant's id only, nothing else."""
+        server's zone database does not hold (A6) — the tenant's id only, nothing else, and once per
+        tenant in this process (batch-4 review: not 288 times a day)."""
         zone = self.zone(tenant.timezone)
         if zone is None:
-            log.warning("TRƏS: tenant %s's time zone is not in this server's zone database; its nightly "
-                        "retry is timed in UTC", tenant.id)
+            if tenant.id not in self._zone_said:
+                self._zone_said.add(tenant.id)
+                log.warning("TRƏS: tenant %s's time zone is not in this server's zone database; its nightly "
+                            "retry is timed in UTC", tenant.id)
             return timezone.utc
         return zone
 

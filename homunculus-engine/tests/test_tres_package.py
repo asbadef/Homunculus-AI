@@ -19,7 +19,7 @@ from homunculus.tenant.models import Tenant
 from homunculus.tres import ids
 from homunculus.tres.client import TresClient
 from homunculus.tres.models import TresDelivery
-from homunculus.tres.package import NO_REFERENCE, PreviewSender, run
+from homunculus.tres.package import NO_REFERENCE, PATIENT_UNHELD, PreviewSender, run
 from homunculus.tres.stay import Clinician
 from homunculus.tres.worker import Sender
 from tests.conftest import requires_db
@@ -48,8 +48,9 @@ class Recorder:
     validate mode hands out none (the platform stores nothing). `held` is what the ledger holds
     already; a type in `refuse` fails without an id. `newer` holds the shared rows a NEWER stay of
     the same person owns ({(type, local id): its platform id or None}): a shared send or skip of
-    one of them yields (A1) — asked nothing, the row as it is. `shared` records which rows were
-    sent or skipped as shared."""
+    one of them yields (A1) — asked nothing, the row as it is — but only when that row holds a
+    platform id (batch-4 review); with None this stay goes on as if the row were its own. `shared`
+    records which rows were sent or skipped as shared."""
 
     def __init__(self, mode: str = "send", held: dict | None = None, refuse=(), newer: dict | None = None) -> None:
         self.mode, self.ids, self.refuse, self.newer = mode, dict(held or {}), set(refuse), dict(newer or {})
@@ -64,10 +65,9 @@ class Recorder:
         key = (resource_type, local_id)
         if shared:
             self.shared.add(key)
-        if shared and key in self.newer:
+        if shared and self.newer.get(key) is not None:
             self.calls.append(("yield", resource_type, local_id))
-            remote = self.newer[key]
-            return Row("sent" if remote else "skipped", remote, None, yielded=True)
+            return Row("sent", self.newer[key], None, yielded=True)
         return None
 
     async def send(self, *, resource_type, fhir_type, local_id, resource, admission_id=None, force=False,
@@ -119,10 +119,14 @@ async def test_a_whole_package_goes_in_order_each_referring_to_the_platforms_ids
 
 
 async def test_a_skipped_patient_stops_the_package_under_its_placeholder():
+    """Batch-4 review: in send mode the stay's own Encounter gets a row (`patient_unheld`), so every stay
+    that reached the Encounter point has one — the nightly retry finds it once the person can be sent."""
     sender = Recorder()
     outcome = await run(stay(person=replace(PERSON, fin=None)), sender, organization_id="ORG-0001")
-    assert sender.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing")]
-    assert outcome.rows == [("patient", ids.patient_placeholder(ROOT), "skipped", "fin_missing")]
+    assert sender.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing"),
+                            ("skip", "encounter", ENCOUNTER_ID, PATIENT_UNHELD)]
+    assert outcome.rows == [("patient", ids.patient_placeholder(ROOT), "skipped", "fin_missing"),
+                            ("encounter", ENCOUNTER_ID, "skipped", "patient_unheld")]
     assert outcome.first_complete is False
 
 
@@ -130,7 +134,14 @@ async def test_a_patient_the_platform_does_not_hold_stops_the_package_before_the
     sender = Recorder(refuse={"patient"})
     await run(stay(), sender, organization_id="ORG-0001")
     assert [call[1] for call in sender.calls if call[0] == "send"] == ["patient", "practitioner"]
-    assert not any(call[0] == "skip" for call in sender.calls)             # send mode: the Patient's row says why
+    assert [call[1:] for call in sender.calls if call[0] == "skip"] == [("encounter", ENCOUNTER_ID, PATIENT_UNHELD)]
+
+
+async def test_in_validate_a_skipped_patient_still_stops_the_package_with_no_row_after_it():
+    """A9 stands in validate: the Patient's own skip says why; nothing after it gets a row in that run."""
+    sender = Recorder(mode="validate")
+    await run(stay(person=replace(PERSON, fin=None)), sender, organization_id="ORG-0001")
+    assert sender.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing")]
 
 
 async def test_a_practitioner_that_cannot_be_sent_is_left_out_of_participant():
@@ -183,7 +194,8 @@ async def test_a_person_keyed_by_a_fin_forgets_the_placeholder_even_when_skipped
     sender = Recorder()
     outcome = await run(stay(person=person), sender, organization_id="ORG-0001")
     assert sender.calls == [("forget", "patient", ids.patient_placeholder(ROOT)),
-                            ("skip", "patient", PATIENT_ID, reason)]
+                            ("skip", "patient", PATIENT_ID, reason),
+                            ("skip", "encounter", ENCOUNTER_ID, PATIENT_UNHELD)]
     assert outcome.first_complete is False
 
 
@@ -216,14 +228,15 @@ async def test_only_the_persons_row_is_shared_and_a_newer_stays_patient_is_the_r
 
 
 @pytest.mark.parametrize("mode", ["send", "validate"])
-async def test_a_newer_stays_patient_the_platform_does_not_hold_stops_this_stay_before_the_encounter(mode):
+async def test_a_newer_stays_patient_the_platform_does_not_hold_does_not_hold_this_stay_back(mode):
+    """Batch-4 review (A1 follow-up): a newer stay whose person's row holds no platform id is not yielded
+    to — this stay sends (or validates) its own version and goes on, never orphaned behind it."""
     sender = Recorder(mode=mode, newer={("patient", PATIENT_ID): None})
     await run(stay(), sender, organization_id="ORG-0001")
-    assert not any(c[0] == "send" and c[1] in ("patient", "encounter", "vital") for c in sender.calls)
-    assert ("send", "practitioner", PRACTITIONER_ID, False) in sender.calls         # as for an unheld Patient
-    skipped = [c[1:] for c in sender.calls if c[0] == "skip"]
-    assert skipped == ([] if mode == "send" else
-                       [("encounter", ENCOUNTER_ID, NO_REFERENCE), *(("vital", v, NO_REFERENCE) for v in VITALS)])
+    assert ("send", "patient", PATIENT_ID, False) in sender.calls and not any(c[0] == "yield" for c in sender.calls)
+    if mode == "send":
+        assert ("send", "encounter", ENCOUNTER_ID, False) in sender.calls
+        assert sender.last["subject"] == {"reference": "Patient/7001"}
 
 
 async def test_this_stays_own_skip_is_not_recorded_on_a_newer_stays_patient_which_it_then_refers_to():
@@ -237,7 +250,8 @@ async def test_this_stays_own_skip_is_not_recorded_on_a_newer_stays_patient_whic
     placeholder = Recorder(newer={("patient", ids.patient_placeholder(ROOT)): "9001"})
     await run(stay(person=replace(PERSON, fin=None)), placeholder, organization_id="ORG-0001")
     assert placeholder.shared == set()                                       # a stay's placeholder is its own
-    assert placeholder.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing")]
+    assert placeholder.calls == [("skip", "patient", ids.patient_placeholder(ROOT), "fin_missing"),
+                                 ("skip", "encounter", ENCOUNTER_ID, PATIENT_UNHELD)]
 
 
 # ---------------------------------------------------------------- through the ledger, against the stand-in (Postgres)

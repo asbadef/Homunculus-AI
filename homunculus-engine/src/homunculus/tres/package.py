@@ -9,7 +9,10 @@ Encounter, then Procedures, the Composition, the laboratory results — before t
 
 * A skipped Patient or Encounter stops the package there (D8), and so does one the platform does
   not hold after its delivery (failed, `stuck`, its type switched off before it was ever sent): a
-  reference is the platform's id (`remote_id`), never a local id.
+  reference is the platform's id (`remote_id`), never a local id. In `send`, a package that stops at
+  the Patient writes the stay's own Encounter row, `skipped` with PATIENT_UNHELD (batch-4 review): so
+  every stay that reached the Encounter point has a row of its own, and the nightly retry
+  (source.retry_stays: an Encounter not `sent`) sends it once its person can be sent.
 * A Practitioner that cannot be sent is left out of the Encounter's `participant` (D8).
 * Once a FİN keys the person — the Patient's local id is not the stay's placeholder
   (ids.patient_placeholder) — the placeholder's skip is removed, whether the Patient is then sent
@@ -17,10 +20,11 @@ Encounter, then Procedures, the Composition, the laboratory results — before t
   reason no longer stands for this stay.
 * THE PERSON'S NEWEST STAY IS THEIR PATIENT'S AUTHORITY (amendment 25, A1). The Patient's row is
   keyed by the FİN and shared by every stay of the person, each built from its own patient row; the
-  ledger (`shared`) leaves it to the newest stay that has run. An older stay then sends, validates
-  and records nothing for it, and refers to the platform's id on that row; with none there it stops
-  before the Encounter, as for any Patient the platform does not hold — and so even when its own
-  patient row would have been skipped: the newer stay's record stands for the person.
+  ledger (`shared`) leaves it to the newest stay that has run AND that the platform holds the
+  person for (the row's `remote_id`; batch-4 review). An older stay then sends, validates and
+  records nothing for it, and refers to the platform's id on that row — even when its own patient
+  row would have been skipped: the newer stay's record stands for the person. A newer stay the
+  platform holds nothing for does not hold an older one back: the older sends its own version.
 
 VALIDATE MODE AND REFERENCES (spec O14, decided by plan F1). `$validate` stores nothing, so a
 round in `validate` has no platform id for what a resource refers to unless an earlier `send` in
@@ -31,7 +35,8 @@ rows (A9): every resource the package REACHED has a row that says what happened 
 validated, failed, or skipped with its reason, `no_reference` included. A Patient or an Encounter
 skipped for a reason of its own (`fin_missing`, `unit_unmapped`…) stops the package, and the
 resources after it get NO row in that run: nothing was built for them, and the skip before them
-says why. (A person's Patient left to their newer stay has its row, that stay's.) A tenant that has
+says why — except, in `send`, the stay's Encounter after a Patient it could not refer to
+(`patient_unheld`, above). (A person's Patient left to their newer stay has its row, that stay's.) A tenant that has
 never sent therefore validates its Patients and Practitioners, the profiles with the most rules.
 F6 checks on the sandbox what `$validate` does with a reference to an unknown id, and may relax
 this.
@@ -60,6 +65,7 @@ from homunculus.tres.mapping.vitals import vitals as map_vitals
 from homunculus.tres.stay import Stay
 
 NO_REFERENCE = "no_reference"
+PATIENT_UNHELD = "patient_unheld"
 
 
 @dataclass
@@ -109,6 +115,13 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
         # The vitals' local ids depend on the stay alone; the references are never sent from here.
         return [("vital", built.local_id) for built in map_vitals(stay, patient_id="-", encounter_id="-")]
 
+    async def patient_unheld() -> None:
+        # Batch-4 review: in send mode a package that stops at the Patient writes the stay's own
+        # Encounter row, so every stay that reached the Encounter point has one — the nightly retry
+        # takes it (source.retry_stays) once the person can be sent.
+        if not validating:
+            await skip("encounter", ids.encounter(stay.root_id), PATIENT_UNHELD)
+
     placeholder = ids.patient_placeholder(stay.root_id)
     built = map_patient(stay.person, stay.root_id)
     # Keyed by the FİN (not the stay's placeholder): the row is the person's, shared by their stays.
@@ -118,8 +131,9 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
     if isinstance(built, Skip):
         row = await skip(built.resource_type, built.local_id, built.reason, shared=personal)
         if not row.yielded:
+            await patient_unheld()
             return outcome
-        # A newer stay is the person's authority (A1): its Patient stands for this stay too.
+        # A newer stay the platform holds the person for is their authority (A1): it stands for this stay.
     else:
         row = await send(built, shared=True)
     patient_id = row.remote_id
@@ -136,6 +150,7 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
 
     if not patient_id:
         await unreferenced(("encounter", ids.encounter(stay.root_id)), *vital_ids())
+        await patient_unheld()
         return outcome
     built = map_encounter(stay, patient_id=patient_id, practitioner_ids=practitioner_ids,
                           organization_id=organization_id)

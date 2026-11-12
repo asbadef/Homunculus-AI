@@ -32,8 +32,8 @@ the defaults: mode `off`, environment `test`):
                  stop completing (a parked tenant, the install's lock closed, an outage, 429s), the
                  next round reaches back to it rather than only a week, so no stay discharged in the
                  gap is dropped (D9). None until a round completes; reset by a save that changes the
-                 environment or the selected account's base URL (router.py). Written by its own
-                 statement, never touching `updated_at`.
+                 environment (router.py; the ledger is keyed by it). Written by its own statement,
+                 never touching `updated_at`.
 
 `tres_deliveries` — the ledger (D6): one row per (tenant, environment, resource type, local id).
 A sandbox success never counts for live: the environment is in the key. NO REQUEST OR RESPONSE

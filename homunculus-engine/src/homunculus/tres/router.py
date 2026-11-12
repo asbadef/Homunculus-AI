@@ -20,9 +20,9 @@ A-26: never a 500 for a committed change). A save that changes nothing writes no
 Plan F1: the answer carries `send_from` (O15, proposed: the rounds' cut-off), which the first save
 that chooses `send` sets to its own moment and a body's `send_from` moves; a mode other than `off`
 is refused 422 `tres_live_closed` while the selected account would reach the live platform.
-A save that changes the `environment`, or the base URL of the account in use, resets the rounds'
-watermark `reached_to` (plan F1, amendment 25, A3: the ledger is per environment) — not a setting,
-not in the answer, not named in the audit row.
+A save that changes the `environment` resets the rounds' watermark `reached_to` (plan F1, amendment
+25, A3: the ledger is keyed by the environment; a changed address of the account in use no longer
+does, batch-4 review) — not a setting, not in the answer, not named in the audit row.
 
 POST /admin/tres/test — one sign-in at the platform with the stored account of the selected
 environment: `{"ok": true}` or `{"ok": false, "message": <the platform's words>}`, never the
@@ -189,10 +189,11 @@ async def write_settings(
         # A changed setting is the administrator's answer to a refused login: the rounds try again.
         row.session_refused_at = None
 
-    if "environment" in changed or f"{row.environment}.base_url" in changed:
-        # Plan F1, amendment 25 (A3): the rounds' watermark belongs to the ledger they reached — one
-        # environment's, on one server. Another environment, or another address for the one in use,
-        # starts it again: the next round reaches back to the cut-off (a week, without one).
+    if "environment" in changed:
+        # Plan F1, amendment 25 (A3): the rounds' watermark belongs to the ledger they reached, which
+        # is keyed by the environment. Another environment starts it again: the next round reaches back
+        # to the cut-off (a week, without one). Another address for the account in use does not (batch-4
+        # review): the ledger has no address in its key, so reading the stays again would send nothing.
         row.reached_to = None
 
     answer = _out(row, _egress(request))

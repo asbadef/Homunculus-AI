@@ -35,12 +35,16 @@ admission form makes one per admission: a phone typed once, a name corrected lat
 send its own, the national Patient would flip between them every round. With `shared`, the
 person's NEWEST stay is the row's authority: once the row is held for a stay (its `admission_id`)
 whose last admission is newer than the caller's (`newer_stay`: the admission time, a tie broken by
-the larger id), the call YIELDS — nothing is asked, written or moved, the row comes back as it is
-(`row.yielded`) and the caller refers to the platform's id on it, if any. The comparison is made
-in `_row`, AFTER the row is locked, and the send that may follow happens under the same lock: two
-stays' deliverers of the person (a round and a hand, two processes) are serialised by the row, and
-the second always judges what the first left. A newer stay that has not run yet owns nothing, so it
-does not hold the older one back.
+the larger id) AND the row holds the platform's id (`yields`, batch-4 review), the call YIELDS —
+nothing is asked, written or moved, the row comes back as it is (`row.yielded`) and the caller
+refers to the platform's id on it. A newer stay the platform holds nothing for (its Patient refused,
+skipped, never sent) does not hold the older one back: the older sends its own version and takes the
+row, and the newer takes it back the next time it runs — after which the older yields (no flip-flop
+in `send`). The comparison is made in `_row`, AFTER the row is locked, and the send that may follow
+happens under the same lock: two stays' deliverers of the person (a round and a hand, two processes)
+are serialised by the row, and the second always judges what the first left. A newer stay that has
+not run yet owns nothing, so it does not hold the older one back either. (In `validate` a row holds
+an id only from an earlier `send`; until then each stay validates its own version.)
 
 `row.took_id` (A5): this `deliver` took the row's `remote_id` from None to a value, under its lock —
 the one run that gave the resource its platform id, whichever deliverer it was.
@@ -138,6 +142,18 @@ async def _owner_is_newer(db: AsyncSession, owner_id: uuid.UUID, admission_id: u
     return newer_stay((rows[owner_id], owner_id), (rows[admission_id], admission_id))
 
 
+async def yields(db: AsyncSession, *, owner_id: uuid.UUID | None, remote_id: str | None,
+                 admission_id: uuid.UUID | None) -> bool:
+    """Does the stay `admission_id` leave a SHARED row (the person's Patient) to the stay that owns
+    it (A1, as the batch-4 review amends it)? Only to a NEWER stay whose row HOLDS the platform's id:
+    an older stay never waits behind a newer one that the platform holds nothing for (its Patient
+    refused, skipped, never sent) — it sends its own version and takes the row, and the newer stay
+    takes it back the next time it runs (then the older yields: no flip-flop). `_row` asks this
+    under the row's lock; the preview (package.PreviewSender) asks it of the row as it reads it."""
+    return (admission_id is not None and owner_id is not None and owner_id != admission_id
+            and remote_id is not None and await _owner_is_newer(db, owner_id, admission_id))
+
+
 def due(row: TresDelivery, now: datetime) -> bool:
     """May an UNCHANGED payload be tried now? Not while `stuck`, and not while a `failed` row's
     wait has not run out. Every other row may."""
@@ -163,8 +179,9 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
     nothing the caller does with it afterwards — the write after the HTTP calls, minutes later.
 
     The row's `admission_id` follows the caller's stay — unless the row is `shared` (the person's
-    Patient, amendment 25, A1) and held for a NEWER stay: then nothing moves and `row.yielded` is set
-    (the module's docstring). Judged here, under the lock. `row.took_id` and `row.yielded` are reset
+    Patient, amendment 25, A1) and held for a NEWER stay that the platform holds it for (`remote_id`;
+    batch-4 review, `yields`): then nothing moves and `row.yielded` is set (the module's docstring).
+    Judged here, under the lock. `row.took_id` and `row.yielded` are reset
     on every call (models.TresDelivery)."""
     key = (TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id)
@@ -187,8 +204,9 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
         raise LedgerBusy(resource_type) from None
     row.took_id, row.yielded = False, False
     if admission_id is not None and row.admission_id != admission_id:
-        if shared and row.admission_id is not None and await _owner_is_newer(db, row.admission_id, admission_id):
-            row.yielded = True                 # the person's newest stay is the row's authority (A1)
+        if shared and await yields(db, owner_id=row.admission_id, remote_id=row.remote_id,
+                                   admission_id=admission_id):
+            row.yielded = True                 # the person's newest held stay is the row's authority (A1)
         else:
             row.admission_id = admission_id    # the row follows the caller's stay
     return row
@@ -224,8 +242,9 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
     (`client.is_outage`), the row left as it was; raises a counted 5xx again after recording it.
 
-    `shared` (the person's Patient, A1): a row held for a newer stay of the person is left as it is
-    and returned with `row.yielded` — nothing validated, sent or moved. `row.took_id` (A5) says
+    `shared` (the person's Patient, A1): a row held for a newer stay of the person, with the
+    platform's id on it (`yields`), is left as it is and returned with `row.yielded` — nothing
+    validated, sent or moved. `row.took_id` (A5) says
     whether THIS call took the row's `remote_id` from None to a value, under the row's lock.
 
     The row is locked from `_row` to the commit, and the transaction SPANS THE HTTP CALLS — on
@@ -295,8 +314,9 @@ async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: st
     """The resource was not built: its row reads `skipped` with the catalogue's reason code. With
     `keep_held`, a row the platform holds a record of (it has a `remote_id`) is left exactly as it
     is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7).
-    With `shared` (A1), a row held for a newer stay of the person is left exactly as it is too, and
-    comes back with `row.yielded`: an older stay's reason does not overwrite the newer one's record.
+    With `shared` (A1), a row held for a newer stay of the person, with the platform's id on it
+    (`yields`), is left exactly as it is too, and comes back with `row.yielded`: an older stay's
+    reason does not overwrite the newer one's record.
     With `lock_timeout_ms`, `LedgerBusy` rolls back the caller's WHOLE session transaction (review
     M8): the caller must hold no pending write it wants to keep."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,

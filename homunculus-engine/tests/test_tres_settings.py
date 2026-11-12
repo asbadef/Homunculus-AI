@@ -521,22 +521,20 @@ async def _reach(db_session, value=REACHED):
 
 
 @requires_db
-async def test_a_save_that_moves_the_environment_or_its_address_resets_the_rounds_reach(ward, db_session):
-    """The ledger is per environment: another environment, or another address for the selected
-    account, starts the watermark again — the next round reaches back to the cut-off (or a week).
-    Any other change keeps it, and so does a change to the account not in use."""
+async def test_a_save_that_moves_the_environment_resets_the_rounds_reach_and_nothing_else_does(ward, db_session):
+    """The ledger is keyed by the environment: another environment starts the watermark again — the
+    next round reaches back to the cut-off (or a week). Any other change keeps it — another address
+    for the account in use included (batch-4 review: the ledger has no address in its key, so reading
+    the stays again would send nothing)."""
     w, client, app = ward
     assert (await client.put(URL, json=body(test=SANDBOX), headers=w.auth["admin"])).status_code == 200
     await _reach(db_session)
     other = {**EMPTY, "base_url": "https://ehr.example.az"}
     for kept in (body(test=SANDBOX, settle_hours=48), body(test=SANDBOX, settle_hours=48, mode="validate"),
-                 body(test=SANDBOX, settle_hours=48, mode="validate", live=other)):        # live: not in use
+                 body(test=SANDBOX, settle_hours=48, mode="validate", live=other),          # live: not in use
+                 body(test={**SANDBOX, "base_url": "https://ehr.example.az"}, live=other)):  # the address in use
         assert (await client.put(URL, json=kept, headers=w.auth["admin"])).status_code == 200
         assert await _reach(db_session, None) == REACHED, kept
-    readdressed = body(test={**SANDBOX, "base_url": "https://ehr.example.az"}, live=other)
-    assert (await client.put(URL, json=readdressed, headers=w.auth["admin"])).status_code == 200
-    assert await _reach(db_session, None) is None
-    await _reach(db_session)
     moved = body(test={**SANDBOX, "base_url": "https://ehr.example.az"}, live=other, environment="live")
     assert (await client.put(URL, json=moved, headers=w.auth["admin"])).status_code == 200
     assert await _reach(db_session, None) is None

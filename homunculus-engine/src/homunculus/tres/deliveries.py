@@ -30,9 +30,10 @@ it is due — an admitted patient goes as `in-progress`. POST /admin/tres/delive
 «Yeniden dene» (D21, O21): the package of the row's stay with `force`, so a `stuck` row (or one in
 its 30-minute wait) is tried now — a person's Patient row belongs to their newest stay (amendment
 25, A1), so «Yeniden dene» on it runs that stay. Both:
-* send a person's Patient only from their newest stay that has run (amendment 25, A1): the hand on
-  an older stay asks nothing for it and refers to the newer stay's Patient (none held: it stops
-  before the Encounter, as for any Patient the platform does not hold);
+* send a person's Patient only from their newest stay that has run and that the platform holds the
+  person for (amendment 25, A1; batch-4 review): the hand on an older stay asks nothing for it and
+  refers to the newer stay's Patient — a newer stay the platform holds nothing for does not hold it
+  back (it sends its own version, and the newer stay takes the row back when it runs);
 * leave the stay's one `tres.package` row to the source (`StaySource.package`): written only by the
   run whose delivery took the Encounter's platform id under its row's lock (amendment 25, A5) — a
   hand after a round, or a round after a hand, writes none;
