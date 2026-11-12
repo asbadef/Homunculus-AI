@@ -33,8 +33,9 @@ export function unitCounts(unit) {
   return out;
 }
 
-/** The states of a bed a patient is in: OCCUPIED and the two pending states. */
-const WITH_PATIENT = new Set(["OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT"]);
+/** The states of a bed a patient is in: OCCUPIED and the two pending states. G4-04 «İş yükü» counts its patients by
+ *  them too (isyuku.js). */
+export const WITH_PATIENT = new Set(["OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT"]);
 const NOTHING_SHOWN = Object.freeze({ name: null, reason: null, note: null });
 
 /** What a bed's tile says from the names read (`about`, GET /tenant/occupancy, R1), by the state

@@ -28,9 +28,10 @@
 //
 // Counts only: no score, no target ratio. No patient's name or id: beds by their structure name, nurses by name.
 import { bedLabel, indexStructure, normId } from "../../data/structure.js";
-import { waitingAlarms } from "../../data/boardStore.js";
-import { withOpen } from "../doluluk/occupancy.js";
-import { WHY, boardSource, isTasksAnswer, lateOf, noSource, okSource, readSource, rightsOf } from "../ozet/ozet.js";
+import { WITH_PATIENT, withOpen } from "../doluluk/occupancy.js";
+import {
+  WHY, boardSource, isObject, isTasksAnswer, lateOf, listOf, msOf, noSource, okSource, readSource, rightsOf,
+} from "../ozet/ozet.js";
 
 /** The selection «Tüm birimler». A unit's own key is its id (normId). */
 export const ALL = "*";
@@ -38,17 +39,8 @@ export const ALL = "*";
 export const SHIFT_CHANGED = "shiftChanged";
 /** The widest range GET /tasks takes (api/tasks.py MAX_WINDOW). */
 export const TASKS_SPAN_MS = 7 * 24 * 60 * 60_000;
-/** The beds a patient is in: OCCUPIED and the two pending states (doluluk/occupancy.js `unitCounts`' occupied). */
-const WITH_PATIENT = new Set(["OCCUPIED", "PENDING_DISCHARGE", "PENDING_TRANSFER_OUT"]);
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const listOf = (value) => (Array.isArray(value) ? value : []);
 const isCount = (value) => Number.isInteger(value) && value >= 0;
-
-function msOf(iso) {
-  const ms = typeof iso === "string" ? Date.parse(iso) : NaN;
-  return Number.isFinite(ms) ? ms : null;
-}
 
 /** GET /shift-schedule as this page reads it: the window, the server's time, and units each with an id, a name, a count
  *  of other windows' rows and items each naming a bed and a nurse. Anything else is a failed read. */
@@ -153,8 +145,9 @@ export function labelled(people) {
 export const byLabel = (lang) => (a, b) => a.label.localeCompare(b.label, lang) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /** The open units of the tree, in its order, each with its open beds: key, id, structure name («1 · Otaq 1 ·
- *  Reanimasiya»), whether a patient is in it. */
-function unitsOf(tree) {
+ *  Reanimasiya»), whether a patient is in it (doluluk/occupancy.js WITH_PATIENT). Not ozet.js `unitsOf`, which lists
+ *  every unit with its counts. */
+function openUnitsOf(tree) {
   const index = indexStructure(tree);
   const out = [];
   for (const site of listOf(tree?.sites)) {
@@ -215,7 +208,7 @@ export function workloadPage({ tree, occupancy, reach, wholeTree = false, schedu
   const outOf = (key) => reach.ok && !reach.data.all && !reach.data.units.has(key);
   const gate = (key, cell) => (outOf(key) ? { why: WHY.noRight } : !reach.ok ? { why: reach.why } : cell);
 
-  const rows = unitsOf(tree).map((unit) => {
+  const rows = openUnitsOf(tree).map((unit) => {
     const mine = listed.get(unit.key);
     const items = mine ? unit.beds.filter((bed) => mine.items.has(bed.key)).map((bed) => ({ bed, ...mine.items.get(bed.key) })) : [];
     const nurses = new Set(items.map((i) => i.key));
