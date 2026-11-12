@@ -69,6 +69,17 @@ class PostgresReadingStore:
                 {"tenant": tenant, "key": received_key, "code": code, "at": observed_at, "source": source,
                  "value": value}).first() is not None
 
+    def filed_under(self, tenant: str, patient_key: str, code: str, observed_at: datetime, source: str,
+                    value: float) -> bool:
+        """Does the record hold this device reading UNDER the patient — `patient_key` only, never `received_key`
+        (the link asks this of its target: a waiting row of the same number must not answer for itself)."""
+        with self._engine.connect() as conn:
+            return conn.execute(text(
+                "SELECT 1 FROM vital_readings WHERE origin = 'device' AND tenant = :tenant AND patient_key = :key "
+                "AND code = :code AND observed_at = :at AND source = :source AND value = :value LIMIT 1"),
+                {"tenant": tenant, "key": patient_key, "code": code, "at": observed_at, "source": source,
+                 "value": value}).first() is not None
+
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]:
         wanted = _ids(audit_ids)
         if not wanted:

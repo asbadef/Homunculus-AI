@@ -896,8 +896,11 @@ def create_app(
         target=lambda who, authorization, patient_id: _link_target(who, authorization, patient_id),
         identity=lambda hospital, patient_id: identities.get(hospital, patient_id),
         admission_for=lambda hospital, record: _admission_for(hospital, record),
+        # A link is judged NOW (`judge_at=now`, see `_apply_reading`). Not covered: the shadow lane's
+        # `mirror_observation` still judges a linked reading at its measurement time, inside its own engine — the
+        # shadow lane is non-clinical, and that is left as it is (B6 re-review).
         apply=lambda hospital, obs, record, now, reading, actor, on_written: _apply_reading(
-            hospital, obs, record, now, reading=reading, judge_at=now,        # a link is judged now
+            hospital, obs, record, now, reading=reading, judge_at=now,
             linked_by=actor, on_written=on_written),
         audit=audit, store=readings))
 
@@ -1567,6 +1570,39 @@ def create_app(
             raise HTTPException(status_code=404, detail="hasta bulunamadı")
         return record
 
+    async def _finish_resent(hospital: str, record, patient_id: str) -> None:
+        """G3-05 (B6 re-review): the re-send of a reading the record already holds finishes what the first request
+        may have left undone — WITHOUT entering the reading again and without an `ingest` or `alert` row. Since
+        the table's row is filed the moment the `ingest` row is written (`_apply_reading`'s `on_written`), a
+        request whose tail then failed (an alert append, a publish) is answered `duplicate` when the bridge sends
+        the reading again: the alert is in the engine, but its first-seen stamp, the nurse's notification and the
+        card's frame were never made. Those are the tail's steps that are safe to repeat, and each is idempotent:
+        `stamp_first_seen` stamps only an alert not stamped yet, `Notifier.for_new` tells only what it has not
+        told. When nothing was missed — the ordinary duplicate, the Connex re-sending its buffer — nothing is
+        stamped, told or published, and the answer costs no row and no frame, as D14 says. A number the engine
+        does not hold (a listed or discharged one) has no tail. Unlike the `_file_*` writers this may raise: a
+        failure here is the same failure the first request had, and the bridge sending again is how it heals.
+        What stays lost is the failed request's own `alert` rows (the engine and the board hold the alert), and
+        the `first_seen` row if the append after a stamp is what failed."""
+        engine = _engine(hospital)
+        if is_tombstone(record) or patient_id not in set(engine.patient_ids()):
+            return
+        store = _store(hospital)
+        wall_now = datetime.now(timezone.utc)
+        stamped = False
+        for a in engine.active_alerts(patient_id):
+            if store.stamp_first_seen(patient_id, a.kind, wall_now, chain_gap=escalate_after):
+                audit.append(AuditEvent(hospital, "first_seen", patient_id, a.kind, {"at": wall_now.isoformat()}))
+                stamped = True
+        told = notifier.for_new(hospital, engine.active_alerts(patient_id))
+        if not stamped and not told:
+            return
+        await broadcaster.publish(hospital, _card(hospital, patient_id, record))
+        for note in told:
+            await hub.publish(hospital, note)
+            audit.append(AuditEvent(hospital, "notification", note.patient_id, note.kind,
+                                    {"audience": note.audience, "trigger": note.trigger}))
+
     def _file_unmatched(hospital: str, obs, reason: str, dropped: str) -> dict:
         """G3-05 (D4, D8, D9): a device reading whose number matches nobody — a discharged admission's, or (under
         the policy `unmatched`) one with no identity record. It is kept WITH its value: one `reading_unmatched`
@@ -1729,6 +1765,7 @@ def create_app(
         # G3-05 (D14): a reading the record already holds is recognised before the engine — no engine entry, no
         # audit row, no frame. 200, as every answer of this door: the bridge's uplink never blocks (D18).
         if _resent(hospital, obs):
+            await _finish_resent(hospital, record, obs.patient_id)       # what a failed first tail left undone
             return {"patient_id": obs.patient_id, "duplicate": True}
         if is_tombstone(record):
             return _file_unmatched(hospital, obs, REASON_DISCHARGED, DISCHARGED)

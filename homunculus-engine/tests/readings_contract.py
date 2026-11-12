@@ -108,6 +108,37 @@ class ReadingStoreContract:
         assert store.seen("h1", KEY, "heart_rate", T0, "CONNEX-3B", 131.0) is False
         assert store.seen("h2", KEY, "heart_rate", T0, "CONNEX-3A", 131.0) is False         # another hospital's
 
+    def test_filed_under_asks_only_for_the_patient_the_reading_is_filed_under(self, store):
+        """B6 re-review: the link's question. A recorded row counts under its own key; a linked row counts under the
+        patient it was linked to and NOT under the number it arrived under."""
+        store.add(device("spo2", 97.0, audit_id=1))                                  # recorded under KEY
+        linked(store, "heart_rate", 131.0, audit_id=2)                               # arrived TYPO, filed KEY
+        assert store.filed_under("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is True
+        assert store.filed_under("h1", KEY, "heart_rate", T0, "CONNEX-3A", 131.0) is True
+        assert store.filed_under("h1", TYPO, "heart_rate", T0, "CONNEX-3A", 131.0) is False   # `seen` says True
+        assert store.filed_under("h1", "202600000002", "spo2", T0, "CONNEX-3A", 97.0) is False
+        assert store.filed_under("h1", KEY, "spo2", T0, "CONNEX-3A", 96.0) is False
+        assert store.filed_under("h1", KEY, "spo2", T0 + timedelta(seconds=1), "CONNEX-3A", 97.0) is False
+        assert store.filed_under("h1", KEY, "spo2", T0, "CONNEX-3B", 97.0) is False
+        assert store.filed_under("h1", KEY, "resp_rate", T0, "CONNEX-3A", 97.0) is False
+        assert store.filed_under("h2", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False             # another hospital's
+
+    def test_filed_under_never_takes_a_waiting_claimed_or_rejected_row_for_its_own_number(self, store):
+        """The reading being linked to the number it arrived under would match itself: waiting, claimed and
+        rejected rows carry no `patient_key`, so none of them is «filed»."""
+        store.add(unmatched("spo2", 97.0, key=KEY, audit_id=1, reason=REASON_DISCHARGED))     # waiting, under KEY
+        claim = store.add(unmatched("heart_rate", 88.0, key=KEY, audit_id=2))
+        store.claim("h1", [claim.id], by="hem.ayse", at=T0)                                   # claimed, under KEY
+        rejected(store, "resp_rate", 16.0, audit_id=3)                                        # closed, under TYPO
+        assert store.filed_under("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False
+        assert store.filed_under("h1", KEY, "heart_rate", T0, "CONNEX-3A", 88.0) is False
+        assert store.filed_under("h1", TYPO, "resp_rate", T0, "CONNEX-3A", 16.0) is False
+        assert store.seen("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is True                   # the broader question
+
+    def test_filed_under_never_takes_a_hand_entry_for_a_device_reading(self, store):
+        store.add(replace(manual("spo2", 97.0, audit_id=1), source="CONNEX-3A"))
+        assert store.filed_under("h1", KEY, "spo2", T0, "CONNEX-3A", 97.0) is False
+
     def test_seen_does_not_take_a_claim_or_a_rejection_for_a_reading_filed_under_a_patient(self, store):
         claimed = store.add(unmatched("spo2", 97.0, audit_id=1))
         store.claim("h1", [claimed.id], by="hem.ayse", at=T0)

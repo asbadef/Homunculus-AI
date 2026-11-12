@@ -880,6 +880,19 @@ def _ingest_rows(audit, patient=KEY):
     return [r for r in audit.records(tenant="h1", event_type="ingest", limit=1000) if r.patient_id == patient]
 
 
+LATE = "202600000077"                    # a number listed as unknown, admitted afterwards
+
+
+def _frames(queue, key=KEY) -> list[dict]:
+    """The frames published for `key` since `queue` subscribed (app.state.broadcaster)."""
+    out = []
+    while not queue.empty():
+        frame = queue.get_nowait()
+        if frame.get("patient_id") == key:
+            out.append(frame)
+    return out
+
+
 def _history(client, code, key=KEY):
     return client.app.state.board_link._engine("h1").state(key).history(SignalCode(code))
 
@@ -928,6 +941,31 @@ class TestOneReadingEntersTheTargetOnce:
         [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
         assert assigned.payload["already_held"] == [by_code["heart_rate"].id]
 
+    def test_a_set_linked_to_the_number_it_arrived_under_is_applied_not_closed_as_held(self):
+        """B6 re-review (Critical): a number listed as unknown, admitted since, then linked to ITSELF — the natural
+        case. The claimed rows carry that very number; they must not answer for themselves (`filed_under`, not
+        `seen`): every reading goes into the engine."""
+        identities = _identities()
+        app, store, audit = _app(identities=identities)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _send(client, [("spo2", 97), ("heart_rate", 88)], key=LATE)
+            identities.apply("h1", IdentityRecord(LATE, family="Hasta", given="Test", state="admitted", source=KABUL,
+                                                  unit_id="u-1", bed_id="b-77", updated_at=WHEN + timedelta(minutes=1)))
+            ids = _ids(client, LATE)
+            r = _assign(client, ids, LATE)
+            assert r.status_code == 200 and r.json()["assigned"] == ids, r.text
+            rows = _ingest_rows(audit, LATE)
+            assert sorted(e.payload["reading"] for e in rows) == ids          # an `ingest` row per reading
+            assert all(e.payload["actor"] == "hem.ayse" for e in rows)
+            assert len(_history(client, "spo2", LATE)) == 1 and len(_history(client, "heart_rate", LATE)) == 1
+            assert [(x.state, x.patient_key, x.received_key) for x in store.get("h1", ids)] == [
+                (STATE_ASSIGNED, LATE, LATE)] * 2
+            [assigned] = audit.records(tenant="h1", event_type=READING_ASSIGNED, limit=10)
+            assert "already_held" not in assigned.payload and assigned.patient_id == LATE
+            # and the device sending it again under that number is now the duplicate it is
+            again = client.post("/ingest", json=obs("spo2", 97, LATE, WHEN), headers=DEVICE)
+            assert again.json() == {"patient_id": LATE, "duplicate": True} and len(_ingest_rows(audit, LATE)) == 2
+
     def test_a_target_that_holds_nothing_of_the_set_gets_no_already_held_key(self, world):
         client, _, audit = world
         _send(client, [("heart_rate", 131)])
@@ -943,7 +981,7 @@ class TestOneReadingEntersTheTargetOnce:
                 TestClient(app, raise_server_exceptions=False) as client:
             _send(client, [("heart_rate", 131.5)])
             ids = _ids(client)
-            store.fail = {"seen"}
+            store.fail = {"filed_under"}
             assert _assign(client, ids).status_code == 200
         assert len(_ingest_rows(audit)) == 1
         text = " ".join(r.getMessage() for r in caplog.records)
@@ -957,6 +995,11 @@ class _Leaky(_Flaky):
         if "seen" in self.fail:
             raise RuntimeError(f"Failing row contains ({received_key}, {value})")
         return super().seen(tenant, received_key, code, observed_at, source, value)
+
+    def filed_under(self, tenant, patient_key, code, observed_at, source, value):
+        if "filed_under" in self.fail:
+            raise RuntimeError(f"Failing row contains ({patient_key}, {value})")
+        return super().filed_under(tenant, patient_key, code, observed_at, source, value)
 
     def add(self, row):
         if "add" in self.fail:
@@ -1018,10 +1061,88 @@ class TestARetryAfterAPartialFailure:
             assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1
 
 
+class TestAResentReadingFinishesAFailedTail:
+    """Re-review: since the table's row is filed at once, a request whose tail failed is answered `duplicate` on the
+    bridge's re-send — and the alert it raised must still be stamped, told and framed, once, with no second
+    `ingest` row and no `alert` row. An ordinary re-send, with nothing missed, writes and publishes nothing."""
+
+    @staticmethod
+    def _post(client, code, value):
+        return client.post("/ingest", json=obs(code, value, KEY, WHEN), headers=DEVICE)
+
+    @staticmethod
+    def _rows(audit, kind):
+        return audit.records(tenant="h1", patient_id=KEY, event_type=kind, limit=100)
+
+    def test_the_stamp_and_the_frame_come_with_the_re_send_exactly_once(self):
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            queue = client.app.state.broadcaster.subscribe("h1")
+            audit.fail_on = "alert"
+            assert self._post(client, "heart_rate", 140).status_code == 500
+            assert self._rows(audit, "first_seen") == [] and _frames(queue) == []      # the tail never got there
+            retry = self._post(client, "heart_rate", 140)
+            assert (retry.status_code, retry.json()) == (200, {"patient_id": KEY, "duplicate": True})
+            firing = sorted(a.kind for a in client.app.state.board_link._engine("h1").active_alerts(KEY))
+            assert firing and sorted(r.subject for r in self._rows(audit, "first_seen")) == firing   # stamped, once
+            assert len(_frames(queue)) == 1                                               # the card went out, once
+            # what a re-send must not do: a second `ingest` row, an `alert` row, a second engine point
+            assert len(_ingest_rows(audit)) == 1 and len(_history(client, "heart_rate")) == 1
+            assert self._rows(audit, "alert") == []
+            # and the next re-send finds nothing left to finish
+            again = self._post(client, "heart_rate", 140)
+            assert again.json() == {"patient_id": KEY, "duplicate": True}
+            assert len(self._rows(audit, "first_seen")) == len(firing) and _frames(queue) == []
+
+    def test_the_nurses_notification_comes_with_the_re_send_exactly_once(self):
+        audit = _FailsOnce()
+        app, store, _ = _app(audit=audit)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            told = client.app.state.notification_hub.subscribe("h1", "nurse")
+            assert self._post(client, "heart_rate", 140).status_code == 200
+            assert self._post(client, "resp_rate", 30).status_code == 200
+            assert self._rows(audit, "notification") == []                       # the alert is not immediate yet
+            audit.fail_on = "alert"
+            assert self._post(client, "spo2", 88).status_code == 500             # … it turns immediate on this one
+            assert self._rows(audit, "notification") == [] and told.empty()
+            retry = self._post(client, "spo2", 88)
+            assert retry.json() == {"patient_id": KEY, "duplicate": True}
+            [note] = self._rows(audit, "notification")
+            assert (note.subject, note.payload["audience"]) == ("news2", "nurse")
+            assert told.qsize() == 1 and told.get_nowait()["patient_id"] == KEY
+            self._post(client, "spo2", 88)
+            assert len(self._rows(audit, "notification")) == 1 and told.empty()  # told once
+            assert len(_ingest_rows(audit)) == 3
+
+    def test_an_ordinary_re_send_stamps_tells_and_publishes_nothing(self, world):
+        client, store, audit = world
+        for code, value in IMMEDIATE:
+            assert "alerts" in self._post(client, code, value).json()
+        trail = len(audit.records(tenant="h1", limit=1000))
+        assert len(self._rows(audit, "notification")) == 1
+        queue = client.app.state.broadcaster.subscribe("h1")
+        told = client.app.state.notification_hub.subscribe("h1", "nurse")
+        for code, value in IMMEDIATE:                                            # the Connex re-sends its buffer
+            assert self._post(client, code, value).json() == {"patient_id": KEY, "duplicate": True}
+        assert len(audit.records(tenant="h1", limit=1000)) == trail              # not one row
+        assert _frames(queue) == [] and told.empty()
+
+    def test_the_re_send_of_a_listed_reading_has_no_tail(self, world):
+        """A number the engine does not hold has no alerts to finish: no row, no frame."""
+        client, _, audit = world
+        _send(client, [("heart_rate", 140)], key=TYPO)
+        trail = len(audit.records(tenant="h1", limit=1000))
+        queue = client.app.state.broadcaster.subscribe("h1")
+        again = client.post("/ingest", json=obs("heart_rate", 140, TYPO, WHEN), headers=DEVICE)
+        assert again.json() == {"patient_id": TYPO, "duplicate": True}
+        assert len(audit.records(tenant="h1", limit=1000)) == trail and _frames(queue, TYPO) == []
+
+
 class TestAnAdmittedNumberIsThatPatientsScope:
     """Review I-3: a number unknown when its readings arrived and ADMITTED since belongs to a patient now: its set
     is visible only where the caller's scope reaches that patient, however its reason still reads."""
-    LATE = "202600000077"
+    LATE = LATE
 
     def _arrive_then_admit(self, client, identities, unit="u-2"):
         client.post("/ingest", json=obs("spo2", 86, self.LATE, WHEN), headers=DEVICE)

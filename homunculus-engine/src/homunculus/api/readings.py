@@ -166,8 +166,12 @@ class ReadingStore(Protocol):
     a device reading — the same number, code, time, device and value (spec D14).
     `seen` is D14's question asked of a number: does the record hold this device reading under it — as RECEIVED
     under that number, or FILED under that patient (a reading linked from a mistyped number keeps the wrong one as
-    its `received_key`, and `patient_key` is where it counts: B6 review). `unmatched` with a `limit` answers only
-    the newest `limit` rows (still oldest first), so the database never reads a week of a flooded list.
+    its `received_key`, and `patient_key` is where it counts: B6 review). `filed_under` is the narrower question
+    the LINK asks of its target: does this patient's record hold the reading — a row whose `patient_key` IS the
+    patient (recorded, or a finalized link) — never a waiting, claimed or rejected row, whatever number it
+    carries: a reading linked to the very number it arrived under would otherwise match itself (B6 re-review).
+    `unmatched` with a `limit` answers only the newest `limit` rows (still oldest first), so the database never
+    reads a week of a flooded list.
     `claim` moves EVERY row named from `unmatched` to `assigned` (with `resolved_by`, `resolved_at`, and
     `patient_key` still None) or none of them: ReadingNotUnmatched. `release` puts a claim back; `finalize` files
     one under a patient; `reject` closes claims as `rejected`. The three touch claims only, so each is safe to
@@ -179,6 +183,8 @@ class ReadingStore(Protocol):
     def add(self, row: Reading) -> Reading | None: ...
     def seen(self, tenant: str, received_key: str, code: str, observed_at: datetime, source: str,
              value: float) -> bool: ...
+    def filed_under(self, tenant: str, patient_key: str, code: str, observed_at: datetime, source: str,
+                    value: float) -> bool: ...
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]: ...
     def get(self, tenant: str, ids: Iterable[int]) -> list[Reading]: ...
     def for_patient(self, tenant: str, patient_key: str, *, since: datetime, until: datetime) -> list[Reading]: ...
@@ -249,6 +255,10 @@ class InMemoryReadingStore:
         return any(_same_reading(r, tenant, received_key, code, observed_at, source, value)
                    or _filed_as(r, tenant, received_key, code, observed_at, source, value)
                    for r in self._rows.values())
+
+    def filed_under(self, tenant: str, patient_key: str, code: str, observed_at: datetime, source: str,
+                    value: float) -> bool:
+        return any(_filed_as(r, tenant, patient_key, code, observed_at, source, value) for r in self._rows.values())
 
     def have(self, tenant: str, audit_ids: Iterable[int]) -> set[int]:
         wanted = set(audit_ids)
@@ -449,11 +459,14 @@ def readings_router(*, caller: Callable[[str | None], Awaitable[Caller]],
                       hospital, len(linked), type(exc).__name__)
 
     def _already_held(hospital: str, patient_id: str, row: Reading) -> bool:
-        """Does the target's record hold this very reading — the same code, time, device and value, received
-        under the corrected number or filed there already (D14's `seen`, asked of the target)? A store that cannot
-        answer fails OPEN, as the door's does: the reading is linked."""
+        """Does the target's record hold this very reading — the same code, time, device and value FILED under
+        the patient (a recorded row: the device re-sent it under the corrected number; or a finalized link)? Not
+        `seen`: that also matches a row merely RECEIVED under the number, and when the target is the very number
+        the set arrived under (listed as unknown, admitted since, linked to itself) the claimed row would match
+        itself and every reading would be closed as already held and lost. A store that cannot answer fails
+        OPEN, as the door's does: the reading is linked."""
         try:
-            return store.seen(hospital, patient_id, row.code, row.observed_at, row.source, row.value)
+            return store.filed_under(hospital, patient_id, row.code, row.observed_at, row.source, row.value)
         except Exception as exc:
             log.error("vital_readings: yinelenen ölçüm denetimi yapılamadı (hastane %s, %s); ölçüm bağlanır",
                       hospital, type(exc).__name__)
