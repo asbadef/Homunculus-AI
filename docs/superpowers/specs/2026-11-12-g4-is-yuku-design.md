@@ -259,3 +259,16 @@ form shows none (D7 already keeps the setting off the page).
   has no PUT to wait.
 - **M9** — the structure's occupancy and the board's `bedId` can disagree for patients placed by the HIS bed map, so a
   card can read «0 hasta» with tasks shown «—»; recorded, as in G4-02.
+
+**A14 (code review, 2026-11-12).** Another window's rows (A3: `other_rows`, and the rows a save ends) are only those
+that are NOT keyed to one of the two live windows — the current or the next — and whose shift has NOT ended: when the
+hours are shortened, a save of one live window no longer ends the other's rows, and a finished night's rows are
+history, neither counted nor rewritten by a later save; the search looks back two days at most. The PUT decides its
+window under the unit's lock (the clock is read after the lock; a save that waited on it past a shift change is a 409
+`shift_changed`, rolled back). `items` and `expected` hold at most 500 pairs each (422 beyond). The `unit_not_reached`
+warning is decided per bed: a nurse is warned when her own scope reaches not every bed she is given (neither her unit
+nor the bed itself), so bed grants that cover her beds warn nothing; it is read after the commit, not under the lock,
+and keeps its shape (`reaches_unit` on `/nurses` stays the unit's). An integrity error is `assignment_conflict` only
+when it names the index. M1's old-image note is corrected in migration 0022's docstring: an old image does not start
+against 0022 (its start command's `upgrade head` refuses the revision), so a rollback downgrades first, in the new
+image.

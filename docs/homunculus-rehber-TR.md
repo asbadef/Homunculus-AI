@@ -2547,8 +2547,10 @@ adlar uydurmadır.
   başka bir gruba Yönetim › Roller ve yetkiler'den kodsuz verilebilir. Bir çalışma ekranıdır: bu iki yetkiden yalnız
   birini taşıyan bir hesap bununla oturum açar ve girişte bu sayfaya düşer. Rayda «Kalite göstergeleri»nden sonra gelir;
   kimsenin giriş sayfası değişmedi (Sorumlu Hemşire yine «Yataklar»a düşer). Sayıların her biri kendi kaynağının
-  yetkisini ister: görevler `tasks.view`, alarmlar ve hemşire kartlarının «Kalan iş»i `board.view`, yataklar bir kabul ya
-  da yapı yetkisi; olmayan yerde «— yetki yok» yazar.
+  yetkisini ister: görevler `tasks.view`; alarmlar `board.view`; hemşire kartlarının «Kalan iş»i ikisini birden
+  (`tasks.view` ve `board.view`: görev listesi yatak adlandırmaz, yataktaki hasta panodan bulunur); yataklar yatak
+  ağacını açan yetkilerden birini (`admissions.view`, `admissions.admit`, `admissions.discharge.confirm`,
+  `beds.release`, `devices.map_beds`, `structure.manage` ya da `users.manage`); olmayan yerde «— yetki yok» yazar.
 - **Nöbet:** Görevlerim'in iki nöbet başlangıcı (Yönetim › Görevler; varsayılan 08 ve 20) ve hastanenin saat dilimi. A
   nöbeti ilk başlangıçtan ikincisine, B nöbeti ikincisinden ertesi günün ilk başlangıcına kadardır (gece yarısını aşar ve
   başladığı güne aittir); sınır anı yeni nöbeti başlatır. İki başlangıç arasında 12 saat olmak zorunda değildir (08 ve
@@ -2567,6 +2569,9 @@ adlar uydurmadır.
      ölçüm dahil değil). «Yanıt bekleyen alarm»: canlı pano, yalnız pano canlıyken. Kapalı birim yazılmaz. Nöbet
      saatleri nöbetin ortasında değiştirilirse tablonun üstünde «Nöbet saatleri değişti; bu nöbetin ataması yeniden
      yapılmalı.» yazar: eski saatlerle yapılan atama yeni nöbete sayılmaz; o birimin bir sonraki kaydı onu kapatır.
+     Bu yalnız henüz bitmemiş, «bu» ya da «sonraki» nöbete ait olmayan eski atamalar içindir: saatler kısaltıldığında
+     bir nöbetin kaydı öbür nöbetin atamasına dokunmaz, ve bitmiş bir nöbetin ataması geçmiştir — ne sayılır ne
+     kapatılır.
   3. **«Hemşireler · {birim}»:** «Birim» seçici («Tüm birimler» ya da bir birim), «Alfabetik; sıralama değildir» ve
      seçilen birim(ler)de yatağı olan her hemşire için bir kart, ada göre: yatakları (yapıdaki adlarıyla, ör. «1 · Otaq
      1 · Reanimasiya»), hastaları (dolu yatakları) ve o hastaların «Kalan iş»i. Kartta geciken iş ve alarm sayısı yoktur
@@ -2575,16 +2580,20 @@ adlar uydurmadır.
   4. **«Nöbet ataması · {birim}»** (yalnız `shifts.manage`): «Bu nöbet» / «Sonraki nöbet», nöbetin saatleri, birimin
      her açık yatağı için bir seçici («— atanmadı —» ve sunulan kişiler), «Kaydet». Sunulan kişiler: hastanenin
      varsayılan «Hemşire» ve «Sorumlu Hemşire» gruplarındaki etkin üyeler (Hızlı Yanıt Ekibi değil; hastanenin kendi
-     hemşire grubu da değil). Kendi kapsamı bu birime ulaşmayan biri «bu birimi göremez» diye işaretlenir; atanabilir,
-     ama kaydedince bir uyarı çıkar: kendi panosunda bu yatakların hastaları görünmez. Nöbetin ortasında hesabı ya da
-     üyeliği kapanan biri tuttuğu yatağı koruyabilir, yeni yatak alamaz («artık atanamaz»). Kaydetmek o birimin o
-     nöbetteki atamasını bütünüyle değiştirir; bırakılan atamalar silinmez, kapatıldıkları anla birlikte kapatılır.
+     hemşire grubu da değil). Kendi kapsamı bu birime ulaşmayan biri «bu birimi göremez» diye işaretlenir; atanabilir.
+     Kaydedince, kendisine verilen yataklardan birine kendi kapsamı ulaşmayan (ne birimi ne o yatak ona atanmış) her
+     hemşire için bir uyarı çıkar: kendi panosunda o yatağın hastası görünmez. Uyarı yatak yatak karar verilir: yalnız
+     yatak ataması olan biri kendi yataklarına atanırsa uyarı çıkmaz (seçicideki işaret yine birime bakar). Nöbetin
+     ortasında hesabı ya da üyeliği kapanan biri tuttuğu yatağı koruyabilir, yeni yatak alamaz («artık atanamaz»).
+     Kaydetmek o birimin o nöbetteki atamasını bütünüyle değiştirir; bırakılan atamalar silinmez, kapatıldıkları anla
+     birlikte kapatılır.
      Form, yapı, nöbet ve kişi listesi okunamadıysa çizilmez, nedenini söyler.
 - **Aynı anda iki kayıt, ve nöbet değişirken:** form okuduğu atamayı kaydederken sunucuya geri gönderir; arada başka
   biri kaydettiyse kayıt yapılmaz ve form «Bu arada başka biri değiştirdi — liste yenilendi; yeniden bakın.» der. Form
   19:50'de açılıp 20:00'den sonra kaydedilirse gösterdiği nöbet artık ne «bu» ne «sonraki» olabilir: kayıt yapılmaz,
-  «Nöbet bu arada değişti — liste yenilendi; yeni nöbete yeniden bakın.» Başka bir red «Kaydedilmedi: {neden}» der,
-  seçimler korunur.
+  «Nöbet bu arada değişti — liste yenilendi; yeni nöbete yeniden bakın.» Sunucu bunu birimin kilidini aldıktan sonra
+  denetler: 20:00'den hemen önce gönderilip kilidi beklerken 20:00'ı geçen bir kayıt da yapılmaz. Başka bir red
+  «Kaydedilmedi: {neden}» der, seçimler korunur.
 - **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Okunurken, okunamadığında, reddedildiğinde, pano canlı
   değilken («pano güncel değil») ya da yanıtın nöbeti bitmişken («nöbet değişti, yenileniyor») sayının yerine «—» ve
   nedeni yazar; asla 0 yazılmaz. «Bu nöbet için atama yok» yalnız taze bir yanıt birimi atamasız gösterdiğinde yazılır;
@@ -2599,7 +2608,9 @@ adlar uydurmadır.
     `PUT /shift-schedule` (`shifts.manage`). Kayıt nöbeti başlangıç anıyla adlandırır; her kayıt denetim kaydına
     `shift.assign` olarak yazılır («Denetim bütünlüğü»nde «Nöbet ataması»; yalnız kimlikler). Hiçbir ekranın
     kullanmadığı eski `POST /shift-schedule` ve S-25'in «hemşire başına en çok yatak» uyarısı kaldırıldı (uyarı,
-    kaynağı olmayan bir kod varsayılanına dayanıyordu);
+    kaynağı olmayan bir kod varsayılanına dayanıyordu). Bir kayıt en çok 500 yatak–hemşire çifti taşır (gönderilen
+    liste de, okunan liste de); fazlası reddedilir. Aynı yatak ve nöbete aynı anda ikinci bir etkin atama yazılmak
+    istenirse kayıt yapılmaz ve form «Bu arada başka biri değiştirdi» der;
   - göç `0022`: Sorumlu Hemşire gruplarına `workload.view`; tabloya kapanış anı (`closed_at`); yanlış birime yazılmış
     ve aynı yatak ile nöbet için birden fazla etkin olan eski satırlar kapatılır (en yenisi kalır); sonra bir yatak bir
     nöbette yalnız bir etkin hemşire tutar. Göç geri alınırsa kapatılan satırlar yeniden açılmaz.
