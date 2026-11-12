@@ -31,7 +31,8 @@ PERMISSIONS: dict[str, str] = {
     "care_team.claim": "Claim a care-team role on a patient",
     "care_team.assign": "Assign others to a patient's care team",
     "handover.sign": "Sign or countersign a handover",
-    "shifts.manage": "Create shift schedules",
+    "shifts.manage": "Assign nurses to beds for this shift or the next, unit by unit (the İş yükü page's "
+                     "assignment form; GET /shift-schedule/nurses, PUT /shift-schedule)",
     "break_glass.use": "Open, extend or close a break-glass session",
     "audit.view": "Read the audit trail",
     "users.manage": "Users: create, edit, activate, reset password or MFA, unlock an AD "
@@ -85,6 +86,13 @@ PERMISSIONS: dict[str, str] = {
     # it (migration 0020 for the tenants seeded before it); the system group holds it by rule.
     "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators "
                     "(GET /quality), as counts and times only",
+
+    # G4-04 — İş yükü (spec D2): the workload page per unit for the current shift, and the shift's nurse–bed
+    # assignment read (GET /shift-schedule). The default charge-nurse group holds it (migration 0022 for the tenants
+    # seeded before it); the system group holds it by rule.
+    "workload.view": "Open the İş yükü page and read each unit's workload for the current shift — patients, "
+                     "nurses, unassigned patients, late and remaining tasks, alarms waiting — as counts, and "
+                     "the shift's nurse–bed assignment (GET /shift-schedule)",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -178,6 +186,7 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
     # G2-B1c (D7): no `care_team.claim`. The care team is physicians' (T1), and a charge nurse's
     # claim could only be refused. Migration 0018 takes the key, and «bakım ekibi» from the default
     # description, from the tenants seeded before it.
+    # G4-04 (spec D2): + `workload.view`, the İş yükü page; migration 0022 for the tenants seeded before.
     {"slug": "charge_nurse", "kind": "extra", "name": "Sorumlu Hemşire",
      "description": "Hasta kabul, transfer/taburcu onayı, nöbet çizelgesi.",
      "mfa_required": False, "is_system": False,
@@ -185,7 +194,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
                      "admissions.admit", "admissions.transfer.confirm",
                      "admissions.discharge.confirm", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
-                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage")},
+                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage",
+                     "workload.view")},
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
