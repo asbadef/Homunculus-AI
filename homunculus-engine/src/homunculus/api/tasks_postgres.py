@@ -20,6 +20,24 @@ _COLUMNS = ("id", "tenant", "patient_id", "title", "due_at", "target_role", "cre
 _SELECT = "SELECT " + ", ".join(_COLUMNS) + " FROM tasks"
 #: admission/models.py OPEN_ADMISSION_STATES, as the enum's values
 _OPEN_STATES = "('DRAFT','ACTIVE','PENDING_DISCHARGE','PENDING_TRANSFER')"
+#: G2-B1b (X18; re-read R-5): how far one stay's moves are followed — back by `STAY_WALK_BACK`
+#: (`admitted_at` here, `stay_began` in admission/transfer.py) and forward by `where_now` there. One
+#: number, kept here so the api's store imports nothing of the admission routes; transfer.py
+#: imports it. A chain written wrong by hand ends here instead of looping.
+MOST_MOVES = 64
+#: G2-B1b (X18): the walk back along `source_admission_id` from one admission to the first row of
+#: its stay — at most `:most` steps, each inside the row's tenant — answering that row's
+#: `admission_datetime`, the stay's first kabul. The statement it ends opens `WITH RECURSIVE` and
+#: defines `open_row` (one `id`) before it. Its two users share it, so there is one walker:
+#: `admitted_at` below, from a board key's open row, and the discharge time's lower bound
+#: (admission/transfer.py `stay_began`, final review M-1), from an admission's id.
+STAY_WALK_BACK = (
+    "stay AS (SELECT a.tenant_id, a.source_admission_id, a.admission_datetime, 0 AS depth "
+    "FROM admissions a JOIN open_row o ON o.id = a.id "
+    "UNION ALL SELECT s.tenant_id, s.source_admission_id, s.admission_datetime, stay.depth + 1 "
+    "FROM admissions s JOIN stay ON s.id = stay.source_admission_id AND s.tenant_id = stay.tenant_id "
+    "WHERE stay.depth < :most) "
+    "SELECT admission_datetime FROM stay ORDER BY depth DESC LIMIT 1")
 
 
 def _uuid(task_id) -> str | None:
@@ -118,12 +136,20 @@ class PostgresTaskStore:
         return saved
 
     def admitted_at(self, tenant: str, patient_id: str) -> datetime | None:
+        """When the stay of the patient under this board key began (G3-02 D2: "the admission's
+        `admitted_at` (kabul)"): her open admission's time — or, when a move opened that row
+        (G2-B1b: a transfer closes the row and opens another at the move's time, spec T6), the
+        stay's first row's, reached through `source_admission_id` (the owner, 2026-11-10; X18).
+        One statement: the open row as before, then the walk back (`STAY_WALK_BACK`), at most
+        `MOST_MOVES` steps, inside the tenant."""
         with self._engine.connect() as conn:
             return conn.execute(text(
-                "SELECT a.admission_datetime FROM admissions a JOIN patients p ON p.id = a.patient_id "
+                "WITH RECURSIVE open_row AS ("
+                "SELECT a.id FROM admissions a JOIN patients p ON p.id = a.patient_id "
                 "JOIN tenants t ON t.id = a.tenant_id WHERE t.slug = :tenant AND CAST(a.state AS text) IN " + _OPEN_STATES +
                 " AND (a.protocol_no = :key OR (a.protocol_no IS NULL AND p.patient_number = :key)) "
-                "ORDER BY a.admission_datetime DESC LIMIT 1"), {"tenant": tenant, "key": patient_id}).scalar_one_or_none()
+                "ORDER BY a.admission_datetime DESC LIMIT 1), " + STAY_WALK_BACK),
+                {"tenant": tenant, "key": patient_id, "most": MOST_MOVES}).scalar_one_or_none()
 
     def timezone(self, tenant: str) -> str:
         with self._engine.connect() as conn:

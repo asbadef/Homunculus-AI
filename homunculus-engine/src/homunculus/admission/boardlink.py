@@ -36,8 +36,15 @@ writes from the first into the second, and nothing else in `admission/` does:
                        answering `board`/`alerts` — after the confirmation, at its retry and at
                        the bed release (review I-2). It does not look at alerts: the critical-alarm
                        hold is the confirmation's own (review I-1).
+* `move`               a transfer's card moved to the patient's new bed (Group 2 · B1b, spec T8):
+                       the old place told first by a removal frame — its bed and unit, no name —
+                       then the card at the new place; never raising, answering `ok`/`failed` —
+                       after the transfer's commit, at its retry and at the old bed's release (T9);
+* `stands_on`          whether a number's card stands as admitted on a bed: the question a bed's
+                       release asks about a patient who moved from it (X12).
 
-The discharge's removal is never BoardLink's to send. `put_identity`, `chart_weight` and
+The discharge's removal is never BoardLink's to send; a transfer's is (`move`): that patient is
+still admitted, and her card follows her. `put_identity`, `chart_weight`, `move` and
 `apply_profile` refuse a discharged number before they build, chart or write anything (A-11; for
 the card, the Task 8 re-review and A-29): a card written again after the discharge — a resend's
 retry that read the admission open just before it — would otherwise be taken by the identity store
@@ -85,6 +92,7 @@ audit rows carry the number and the actor — never a name.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 
@@ -141,6 +149,19 @@ def kabul_record(*, patient_number: str, display_name: str, birth_date: date, se
                           birth_date=birth_date.isoformat(), sex=sex, bed=bed_label,
                           state="admitted", source=KABUL, updated_at=at,
                           bed_id=bed_id, unit_id=unit_id)
+
+
+def card_record(*, key: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
+                bed_id: uuid.UUID, unit_id: uuid.UUID) -> IdentityRecord:
+    """An admission's board identity from the plain values the routes take before a commit: the
+    card on its bed (`kabul_record`), stamped now, under its board key (`board_key`: the protocol
+    number; a legacy admission's H-number). The one builder of the admission route's card and of a
+    transfer's (G2-B1b, review of Task 3: `router._card` and `transfer._record` were the same
+    lines twice)."""
+    return kabul_record(patient_number=key, display_name=display_name,
+                        birth_date=date.fromisoformat(date_of_birth), sex=sex,
+                        bed_label=bed_label, bed_id=str(bed_id), unit_id=str(unit_id),
+                        at=datetime.now(timezone.utc))
 
 
 class BoardLink:
@@ -354,6 +375,14 @@ class BoardLink:
         discharge is not one: its card keeps its 24 hours on the board."""
         return is_tombstone(self._identities.get(tenant, patient_number))
 
+    def stands_on(self, tenant: str, patient_number: str, bed_id: str) -> bool:
+        """G2-B1b (spec §5.5, X12): whether this number's card stands as admitted on this bed —
+        the question a bed's release asks about a patient who moved from it. A tombstone, a number
+        with no identity, or a card on another bed stands nowhere here."""
+        record = self._identities.get(tenant, patient_number)
+        return (record is not None and record.state == "admitted"
+                and str(record.bed_id or "").lower() == str(bed_id).lower())
+
     def _refuse_discharged(self, tenant: str, patient_number: str) -> None:
         """A-11: nothing reaches the engine for a discharged number, no row a restart would replay
         is written for it, and its card never comes back (A-29). Lane A's `chart_observations`
@@ -430,6 +459,46 @@ class BoardLink:
                           "alerts were not ended", patient_number)
             return "failed", "failed"
         return "ok", "ok"
+
+    async def move(self, tenant: str, record: IdentityRecord, *,
+                   left: tuple[str, str | None]) -> EngineWrite:
+        """G2-B1b (spec T8, §5.4): a patient's card moved to the bed she now lies in — after a
+        transfer's commit, at its retry and at the old bed's release (T9). `record` is her `kabul`
+        record at the new place (`kabul_record`, stamped now); `left` is the old bed's id and its
+        unit's. Never raises: answers `ok`, or `failed` and logs with the number, never a name.
+
+        1. A discharged number is refused (`_refuse_discharged`), as `put_identity` refuses it.
+        2. The record is written and the strip's cached occupants are dropped
+           (`occupancy_reset`): from the next readings body the new bed's monitor links the
+           patient, and the old bed's links nobody. A record the store refuses (an older stamp)
+           is `failed`.
+        3. The old place is told first: a removal with the old bed and unit and no name,
+           `tombstone_board`'s shape. Then the card at the new place. Every screen hears where the
+           card left before where it went. An unrestricted screen gets both frames. A scoped one
+           gets what the stream's `ScopedBoardView` (`api/app.py`, G2 borç 1, spec F7) passes:
+           the removal to a screen of the old place, the card to a screen of the new one. That
+           view would also send an id-alone removal to a screen that showed the card once it
+           left its scope; the move's own removal comes first and names the place. A screen of
+           both units applies the removal, then the card: frames keep their order.
+
+        The board key does not change, so the engine's alerts, acknowledgements, escalations,
+        charted weight and profile stay with the patient. The step may run again."""
+        old_bed, old_unit = left
+        try:
+            self._refuse_discharged(tenant, record.patient_id)
+            stored = self._identities.apply(tenant, record)
+            if stored is None:
+                raise RuntimeError(f"the identity store refused the move of {record.patient_id}")
+            if self._occupancy_reset is not None:
+                self._hook("occupancy_reset", self._occupancy_reset, tenant)
+            await self._publish(tenant, {"patient_id": record.patient_id, "removed": True,
+                                         "identity": {"bed_id": old_bed or None,
+                                                      "unit_id": old_unit or None}})
+            await self._send(tenant, record.patient_id, stored)
+        except Exception:
+            log.exception("transfer %s: the card did not move to its new bed", record.patient_id)
+            return "failed"
+        return "ok"
 
 
 def board_link_of(request: Request) -> BoardLink | None:

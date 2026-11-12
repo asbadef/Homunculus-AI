@@ -6,9 +6,8 @@ Permission guards (see auth/permissions.py):
   * admissions.admit           print an admission's protocol label (G2-B1d)
   * admissions.view            list / read admissions, patients and care teams
   * admissions.sign_off        physician sign-off
-  * admissions.move.initiate   initiate a transfer or discharge
-  * admissions.transfer.confirm   confirm a transfer arrival
-  (the two transfer routes are closed for now — 409 `transfer_unavailable`, A-37; see below)
+  * admissions.move.initiate   transfer a patient (G2-B1b), or start a discharge
+  * admissions.transfer.confirm   transfer a patient (G2-B1b): either key opens the one route
   * admissions.discharge.confirm  confirm a discharge, release the bed
   * care_team.claim / .assign  claim or assign a care-team role; an assigner ends a row, and a
                                member ends her own with `admissions.view` alone (G2-B1c)
@@ -54,12 +53,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus import crypto
-from homunculus.admission import form, service, trail, unitscope
-from homunculus.admission.boardlink import board_link_of, kabul_record
+from homunculus.admission import form, service, trail, transfer, unitscope
+from homunculus.admission.boardlink import board_link_of, card_record
 from homunculus.admission.models import (
     CARE_TEAM_ACTIVE_INDEX, CARE_TEAM_ATTENDING_INDEX, OPEN_ADMISSION_STATES, OPEN_IDENTITY_INDEX,
     Admission, AdmissionState, CareTeamMember, CareTeamRole, DischargeDisposition, Handover,
-    HandoverStatus, Patient,
+    HandoverStatus, Patient, TransferReason,
 )
 from homunculus.admission.schemas import (
     AdmissionCreate, AdmissionDetail, AdmissionNoteFields, AdmissionResponse, AdmissionRow,
@@ -68,12 +67,13 @@ from homunculus.admission.schemas import (
     DischargeConfirmResponse,
     DischargeStart, EngineWrite, EngineWrites, HandoverNote, HandoverNoteOut, HandoverOpen,
     HandoverPatient, HandoverPerson, HandoverResponse, HandoverRow, HandoverSign, LabelAsk,
-    LabelResponse, LabelSettings, PatientResponse, PendingHandovers, PendingUnit, TransferInitiate,
+    LabelResponse, LabelSettings, PatientResponse, PendingHandovers, PendingUnit,
+    TRANSFER_NOTE_MAX, TransferRequest, TransferResponse,
 )
 from homunculus.admission.errors import (
     BED_CLOSED, BED_RESERVED, CARE_TEAM_ATTENDING_REQUIRED, CARE_TEAM_CONFLICT,
     CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
-    REQUEST_CONFLICT, TRANSFER_UNAVAILABLE, Refusal, field_invalid,
+    REQUEST_CONFLICT, Refusal, field_invalid,
 )
 from homunculus.admission.numbers import next_patient_number
 from homunculus.admission.boardkey import board_key
@@ -83,7 +83,6 @@ from homunculus.admission.service import WorkflowError
 from homunculus.auth.dependencies import Principal, caller_tenant_id, get_principal, require_permission
 from homunculus.auth.models import Group, GroupPermission, TenantMembership, User, UserGroup
 from homunculus.db import get_db
-from homunculus.api.patient_identity import IdentityRecord
 from homunculus.scope import Scope
 from homunculus.tenant import scope
 from homunculus.tenant.models import Bed, BedState, Room, Site, Tenant, Unit
@@ -224,16 +223,6 @@ async def _attempt(key: str, what: str, write) -> EngineWrite:
         return "failed"
 
 
-def _card(*, key: str, display_name: str, date_of_birth: str, sex: str, bed_label: str,
-          bed_id: uuid.UUID, unit_id: uuid.UUID) -> IdentityRecord:
-    """The admission's board identity: the card on its bed (`kabul_record`), under its board key
-    (`board_key`: the protocol number; a legacy admission's H-number)."""
-    return kabul_record(patient_number=key, display_name=display_name,
-                        birth_date=date.fromisoformat(date_of_birth), sex=sex,
-                        bed_label=bed_label, bed_id=str(bed_id), unit_id=str(unit_id),
-                        at=datetime.now(timezone.utc))
-
-
 async def _to_board(request: Request, hospital: str, *, card: dict, note: AdmissionNoteFields,
                     actor: str) -> EngineWrites:
     """After the admission is committed (spec §3.1 step 3): the card, the weight, the profile —
@@ -243,8 +232,8 @@ async def _to_board(request: Request, hospital: str, *, card: dict, note: Admiss
     reached nothing: the parts asked for are `failed`, logged at ERROR. Logged with the board key,
     never a name.
 
-    `card` is `_card`'s keywords as plain values, taken before the commit: nothing here reads the
-    session, which a failure after the commit may have rolled back (and so expired)."""
+    `card` is `card_record`'s keywords as plain values, taken before the commit: nothing here reads
+    the session, which a failure after the commit may have rolled back (and so expired)."""
     key = card["key"]
     link = board_link_of(request)
     if link is None:
@@ -253,7 +242,7 @@ async def _to_board(request: Request, hospital: str, *, card: dict, note: Admiss
         return _not_reached(weight_asked=note.weight_kg is not None,
                             profile_asked=bool(note.comorbidity_codes))
     board = await _attempt(key, "identity",
-                           lambda: link.put_identity(hospital, _card(**card)))
+                           lambda: link.put_identity(hospital, card_record(**card)))
     weight = ("skipped" if note.weight_kg is None else await _attempt(
         key, "weight", lambda: link.chart_weight(hospital, key, note.weight_kg, actor=actor)))
     profile = ("skipped" if not note.comorbidity_codes else await _attempt(
@@ -356,7 +345,7 @@ async def _board_again(db: AsyncSession, request: Request, hospital: str, admiss
         return _not_reached(weight_asked=weight_asked, profile_asked=bool(codes))
     log.warning("admission %s: its first send stopped before the board; the card and the "
                 "comorbidities are written again, the weight is not", key)
-    board = await _attempt(key, "identity (again)", lambda: link.put_identity(hospital, _card(
+    board = await _attempt(key, "identity (again)", lambda: link.put_identity(hospital, card_record(
         key=key, display_name=display_name, date_of_birth=date_of_birth, sex=sex,
         bed_label=bed_label, bed_id=bed_id, unit_id=unit_id)))
     profile = ("skipped" if not codes else await _attempt(
@@ -411,6 +400,23 @@ async def _engine_of(db: AsyncSession, request: Request, hospital: str, admissio
     return engine
 
 
+async def _stay_now(db: AsyncSession, earlier: Admission) -> Admission:
+    """The row a form's admission is answered and named by (A-19): the one the form made — or,
+    when a move has closed that one since (G2-B1b, final review I-1), the stay's row now. A move
+    leaves the form's row TRANSFERRED on the bed she left, its protocol gone to the arriving row
+    (O8), so its key is the H-number, where no card stands: answered with it, the screen showed
+    that number as the one to enter on the device, and readings went to a card nobody shows. The
+    chain is followed forward (`transfer.where_now`: bounded, inside the tenant), to the open row
+    or one discharged since. A chain that breaks off answers the form's row, as before."""
+    if earlier.state != AdmissionState.TRANSFERRED:
+        return earlier
+    end = await transfer.where_now(db, earlier.id, tenant_id=earlier.tenant_id)
+    if end is None:
+        return earlier
+    return (await db.execute(select(Admission).where(
+        Admission.id == end.admission_id, Admission.tenant_id == earlier.tenant_id))).scalar_one()
+
+
 async def _answer_again(db: AsyncSession, request: Request, response: Response, *,
                         hospital: str, tenant_id: uuid.UUID, request_id: uuid.UUID, digest: str,
                         reach: Scope, actor: str) -> AdmitResponse:
@@ -419,20 +425,36 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
     `_engine_of` finds it. Another form under the same id is refused `request_conflict`, the
     earlier admission's number beside the code when the caller's units hold its bed (so the screen
     can name it; never a name). The caller has rolled this send's transaction back: it keeps no
-    lock and gives back any number it took; this one ends its reads before it waits."""
+    lock and gives back any number it took; this one ends its reads before it waits.
+
+    A stay moved since (G2-B1b, final review I-1) is answered and named where it is now
+    (`_stay_now`): the arriving row's body, bed, state and protocol — the key her card stands
+    under. A caller whose units do not hold that bed (re-read R-1) gets the form's own row, with
+    the stay's protocol, and no number beside a conflict. The engine report stays the form's own
+    row's: it says what that send's writes did."""
     earlier = (await db.execute(select(Admission).where(
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one()
     number = (await db.execute(select(Patient.patient_number)
                                .where(Patient.id == earlier.patient_id))).scalar_one()
+    stay = await _stay_now(db, earlier)
+    unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
+                                .where(Bed.id == stay.bed_id))).scalar_one()
+    known = unitscope.reaches(reach, unit_id=unit_id, bed_id=stay.bed_id)
     if earlier.request_digest != digest:
-        unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
-                                    .where(Bed.id == earlier.bed_id))).scalar_one()
-        known = unitscope.reaches(reach, unit_id=unit_id, bed_id=earlier.bed_id)
-        extra = _numbers(number, earlier.protocol_no) if known else None
+        # Re-read R-2: beside the number, the bed its admission lies on now (an id, which the
+        # screen names from its structure): after a move it is not the bed the form named.
+        extra = {**_numbers(number, stay.protocol_no), "bed_id": str(stay.bed_id)} \
+            if known else None
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
                       "form.", extra=extra).http()
-    first = AdmissionResponse.model_validate(earlier)
-    key = board_key(earlier.protocol_no, number)
+    # Re-read R-1: the stay's row is shown only to a caller whose units hold its bed now. A stay
+    # moved out of them is answered with the form's own row (TRANSFERRED, on the bed the form
+    # named, which she reaches) and the stay's protocol, the number the card and the device keep
+    # (O8): nothing of the arriving row — its bed, its unit, its discharge — goes out of scope.
+    first = AdmissionResponse.model_validate(stay if known else earlier)
+    if not known:
+        first = first.model_copy(update={"protocol_no": stay.protocol_no})
+    key = board_key(stay.protocol_no, number)
     admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
     profile_asked = bool(earlier.comorbidity_codes)
     await db.commit()                  # no transaction, and no pooled connection, while it waits
@@ -699,12 +721,12 @@ async def get_admission_patient(
 async def _reach_admission(db: AsyncSession, user_id: uuid.UUID, caller_tenant: uuid.UUID,
                            admission: Admission) -> uuid.UUID:
     """403 `out_of_scope` unless the admission's bed is in the caller's units (spec §4.5). The
-    unit is the bed's room's, read here — never the row's `admitting_unit_id`, which a transfer
-    sets from its request body (A-12). The admission is the caller's tenant's already
-    (`_get_admission_or_404`), and so is its bed. Returns that unit: the one a handover of the
-    admission is stored under (G4-02 review), so the rule has one reader."""
-    unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
-                                .where(Bed.id == admission.bed_id))).scalar_one()
+    unit is the bed's room's, read here — never the row's `admitting_unit_id` (A-12: the closed
+    transfer routes set it from their body; G2-B1b's sets it from the bed, and the rule stands).
+    The admission is the caller's tenant's already (`_get_admission_or_404`), and so is its bed.
+    Returns that unit: the one a handover of the admission is stored under (G4-02 review), so the
+    rule has one reader."""
+    unit_id = await transfer.unit_of(db, admission.bed_id)          # the one reader of the rule
     try:
         unitscope.require_reach(await unitscope.caller_scope(db, user_id, caller_tenant),
                                 unit_id=unit_id, bed_id=admission.bed_id)
@@ -721,8 +743,8 @@ async def _locked(db: AsyncSession, admission: Admission, *also: uuid.UUID) -> A
 
     `also`: other beds the transaction writes or must find free — a transfer's target (review
     M-1), checked AVAILABLE only once it is locked, so an admission into it at the same moment is
-    waited for. No route passes one while the transfer routes are closed (A-37); it is kept for
-    the slice that reopens them. Every bed is locked in the order of its id, then the admission:
+    waited for. The one transfer route passes its target (G2-B1b). Every bed is locked in the
+    order of its id, then the admission:
     two transactions that both need two beds take them in the same order and cannot wait on each
     other in a circle.
 
@@ -1185,68 +1207,169 @@ async def care_team_candidates(
 
 
 # ---------------------------------------------------------------------------
-# Transfer (§4.6) — CLOSED (amendment A-37, the user's decision of 2026-10-27)
+# Transfer — one step (§4.6; Group 2 · B1b, spec 2026-11-09)
 # ---------------------------------------------------------------------------
-# Both routes answer 409 `transfer_unavailable` and write nothing. They keep their permission
-# guards (tests/test_route_permissions.py) and their tenant checks — another tenant's admission,
-# unit or bed is the 404 a missing one is (tests/test_tenant_isolation.py); the refusal comes
-# after those, before any lock or read. The service's transfer code (admission/service.py
-# `initiate_transfer`, `confirm_transfer_arrival`) is kept for the slice that reopens them.
-#
-# Why (the final review's C-1 and C-2): an arrival closed the source admission and sent its bed to
-# cleaning while the card stayed on that bed, so the bed could be released and admitted into
-# again — two cards on one bed, and the monitor's link broken; and a physician of one unit could
-# move another unit's patient into her own unit and then discharge her. No client calls them.
-#
-# A transfer slice reopens them only with:
-#   * `_reach_admission` on the source bed and `require_reach` on the target bed's REAL unit;
-#   * `target_unit_id` taken from the target bed, or refused when it differs;
-#   * the confirm bound to the bed named at initiate;
-#   * the card moved with `put_identity`;
-#   * `_last_card_off` (tenant/router.py) covering TRANSFERRED as well — but it reads the card's key
-#     from the closed row's `protocol_no`, which a TRANSFERRED row no longer holds (O8, below): for a
-#     transfer it must check that the card moved, never take a card off (that card is the patient's,
-#     still admitted at the target bed; taking it off would end that patient's alerts);
-#   * a transfer UI;
-#   * the arrival's audit row carrying the moved `protocol_no` — the service moves it to the arriving
-#     row (O8), so the TRANSFERRED row no longer holds it, and the card keeps its key across the move.
-# And the arrival's new admission must carry the source's `identity_digest` — flushed once the
-# source has left its open state, as the open-identity index holds one open row per person — or
-# the person's open admission is invisible to the duplicate refusal (A-37).
-def _transfer_closed() -> HTTPException:
-    return Refusal(409, TRANSFER_UNAVAILABLE, "Transfers are closed until a transfer slice "
-                   "brings their checks and their screen.").http()
+# A-37 closed the two-step routes after the final review's C-1 (an arrival left the card on the old
+# bed, which could then be freed and take a second card) and C-2 (a physician of one unit moved
+# another unit's patient into her own). One route reopens transfer with each of A-37's conditions:
+#   * the caller's units hold BOTH beds: the patient's, and the target's REAL unit read from the
+#     database (D6, T2, A-12) — the body names no unit to trust;
+#   * one step (D1): nothing is initiated, so no confirmation must be bound to the bed named;
+#   * the card follows (D3), the old place told first (T8) — after the commit;
+#   * a card that did not move is moved again, never taken off: by the same request, or at the old
+#     bed's release (T9, tenant/router.py `_last_card_off`);
+#   * the audit row carries the moved protocol (O8), the reason and whether a note was written,
+#     never the note (D8);
+#   * the arriving row carries the person's `identity_digest` (T6): her open admission stays
+#     visible to the duplicate refusal (A-37);
+#   * a handover still in hand names the arriving row, so B3b's critical gate reads her card's key
+#     (the owner, 2026-11-10; X17, `service.transfer_patient`), and takes her new unit when all its
+#     patients lie there (G4-02's rule: a handover's unit is its admissions' beds'; X22).
+async def _transfer_again(db: AsyncSession, request: Request, response: Response, *,
+                          caller_tenant: uuid.UUID, source_id: uuid.UUID, arriving: Admission,
+                          left: tuple[uuid.UUID, uuid.UUID], actor: str) -> TransferResponse:
+    """T9 (spec §5.5): a transfer sent again after its card did not move — the source is
+    TRANSFERRED, its arriving row open on the body's bed. Nothing is written in the database: the
+    locks are let go first, the card is moved again (`transfer.move_card`: idempotent), and the
+    arriving row is answered, 200 (X1), with how that went and the critical count as it is now.
+    Audited `admission.transfer_board_retry`, `via: transfer`."""
+    hospital = await trail.hospital_of(db, caller_tenant)
+    card = await transfer.card_of(db, arriving.id)
+    written = AdmissionResponse.model_validate(arriving)
+    critical = _open_critical(request, hospital, card["key"])
+    await db.rollback()                   # nothing is written; the locks go before the board step
+    board = await transfer.move_card(request, hospital, card, left=left)
+    trail.record(request, hospital, "admission.transfer_board_retry", patient_id=card["key"],
+                 payload={"source_admission_id": str(source_id), "admission_id": str(written.id),
+                          "board": board, "via": "transfer", "actor": actor})
+    response.status_code = status.HTTP_200_OK
+    return TransferResponse(**written.model_dump(), board=board, critical_alarm_open=critical > 0)
 
 
-@router.post("/{admission_id}/transfer/initiate", response_model=AdmissionResponse)
-async def transfer_initiate(
+@router.post("/{admission_id}/transfer", response_model=TransferResponse, status_code=201,
+             responses={200: {"model": TransferResponse,
+                              "description": "The same transfer sent again after its card did "
+                                             "not move: the card moved again, nothing written "
+                                             "(G2-B1b, T9)."}})
+async def transfer_admission(
     admission_id: uuid.UUID,
-    payload: TransferInitiate,
+    payload: TransferRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("admissions.move.initiate")),
+    user: User = Depends(require_permission("admissions.move.initiate",
+                                            "admissions.transfer.confirm")),
     caller_tenant: uuid.UUID = _tenant,
 ):
-    """Closed (A-37): 409 `transfer_unavailable` once the admission and the body's unit and bed
-    are found to be the caller's tenant's. Nothing is locked, read further or written."""
-    await _get_admission_or_404(db, admission_id, caller_tenant)
-    await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
-    raise _transfer_closed()
+    """G2-B1b (spec §5.1–§5.4): the patient moves to `target_bed_id` in one transaction, for a
+    physician (`admissions.move.initiate`) or a nurse (`admissions.transfer.confirm`) whose units
+    hold the patient's bed and the target bed (D5, D6). In the order of spec §5.2:
 
+    1. the admission and the bed are the caller's tenant's (another's is the 404 a missing one is);
+    2. the caller's units hold the patient's bed, and 3. the target bed's real unit — both read
+       from the database, on one read of her scope (X2) — else 403 `out_of_scope`;
+    4. the note: trimmed, at most `TRANSFER_NOTE_MAX` characters, required for OTHER — else 422
+       `field_invalid:note` (X3), before any lock;
+    5. both beds in the order of their ids, then the admission, locked and read afresh
+       (`_locked`): an admission into the target, a reservation of it, a second transfer of the
+       patient and a discharge start take the same locks, so one runs after the other and the
+       second is refused by the state the first left;
+    6. a TRANSFERRED source whose arriving row is open on this bed, with this request's reason and
+       note (final review M-5), is this transfer sent again: its card is moved again
+       (`_transfer_again`, T9) — any other request on it is refused by step 7;
+    7. the source is ACTIVE (409 `invalid_transition`: a DRAFT is signed first, a discharge
+       started is not moved), and the target is not its own bed (422
+       `field_invalid:target_bed_id`);
+    8. the target is open (409 `bed_closed`), RESERVED only with `confirm_reserved` (409
+       `bed_reserved`, the bed's id beside the code and never its note — B3a R5, X1), and free
+       (409 `bed_not_available`, the service's).
 
-@router.post("/{admission_id}/transfer/confirm", response_model=AdmissionResponse, status_code=201)
-async def transfer_confirm(
-    admission_id: uuid.UUID,
-    payload: TransferInitiate,
-    db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("admissions.transfer.confirm")),
-    caller_tenant: uuid.UUID = _tenant,
-):
-    """Closed (A-37): 409 `transfer_unavailable` once the admission and the body's unit and bed
-    are found to be the caller's tenant's — a transfer pending from before included. Nothing is
-    locked, read further or written."""
-    await _get_admission_or_404(db, admission_id, caller_tenant)
-    await _ensure_unit_and_bed(db, payload.target_unit_id, payload.target_bed_id, caller_tenant)
-    raise _transfer_closed()
+    A critical alarm nobody acknowledged is read under the locks and answered; it holds nothing
+    (D7): a patient often moves because she is worse, and her alerts move with her board key.
+
+    The answer is made before the commit from what was written. After the commit: the audit row
+    `admission.transfer` (it never raises, A-26), then the card moved (`transfer.move_card`, which
+    never raises either); `board` says whether it landed."""
+    actor, user_id = user.username, user.id
+    admission = await _get_admission_or_404(db, admission_id, caller_tenant)
+    scope.ensure_owned(await scope.tenant_of_bed(db, payload.target_bed_id), caller_tenant,
+                       BED_NOT_FOUND)
+    source_bed_id = admission.bed_id
+    source_unit = await transfer.unit_of(db, source_bed_id)
+    target_unit = await transfer.unit_of(db, payload.target_bed_id)
+    note = _strip(payload.note)
+    try:
+        reach = await unitscope.caller_scope(db, user_id, caller_tenant)
+        unitscope.require_reach(reach, unit_id=source_unit, bed_id=source_bed_id)         # C-2
+        unitscope.require_reach(reach, unit_id=target_unit, bed_id=payload.target_bed_id)  # D6
+        if note is not None and len(note) > TRANSFER_NOTE_MAX:
+            raise field_invalid("note", f"A transfer note is at most {TRANSFER_NOTE_MAX} "
+                                        "characters.")
+        if payload.reason is TransferReason.OTHER and note is None:
+            raise field_invalid("note", "The reason 'other' needs a note.")                 # D8
+    except Refusal as exc:
+        raise exc.http() from None
+    admission = await _locked(db, admission, payload.target_bed_id)
+    if admission.state == AdmissionState.TRANSFERRED:                        # §5.2 step 6, T9
+        arriving = await transfer.arriving_of(db, admission.id)
+        # Final review M-5: a retry is the same request — the bed, the reason and the note (its
+        # plaintext, trimmed; none and one are two notes). Another clinician's move of her to the
+        # same bed for her own reason is another decision: refused below, never answered as the
+        # first one's retry with her reason and note dropped.
+        if arriving is not None and arriving.bed_id == payload.target_bed_id \
+                and arriving.state in OPEN_ADMISSION_STATES \
+                and (arriving.transfer_reason, arriving.transfer_note) == (payload.reason.value,
+                                                                           note):
+            return await _transfer_again(db, request, response, caller_tenant=caller_tenant,
+                                         source_id=admission.id, arriving=arriving,
+                                         left=(source_bed_id, source_unit), actor=actor)
+    if admission.state != AdmissionState.ACTIVE:
+        raise Refusal(409, INVALID_TRANSITION, "Only an ACTIVE admission is transferred: a draft "
+                      "is signed first, and a discharge started is not moved.").http()
+    if payload.target_bed_id == source_bed_id:
+        raise field_invalid("target_bed_id", "That is the patient's own bed.").http()
+    bed, room, unit = await _bed_of(db, payload.target_bed_id)
+    if not (bed.is_active and room.is_active and unit.is_active):
+        raise Refusal(409, BED_CLOSED, "The bed, its room or its unit is closed.").http()
+    if bed.state == BedState.RESERVED and not payload.confirm_reserved:
+        raise Refusal(409, BED_RESERVED, "The bed is reserved: the transfer must confirm it.",
+                      extra={"bed_id": str(bed.id)}).http()
+    was_reserved = bed.state == BedState.RESERVED                            # B3a X9
+    hospital = await trail.hospital_of(db, caller_tenant)
+    key = await _key_of(db, admission)
+    critical = _open_critical(request, hospital, key)
+    name, born, sex = (await db.execute(
+        select(Patient.display_name, Patient.date_of_birth, Patient.sex)
+        .where(Patient.id == admission.patient_id))).one()
+    try:
+        arriving, team_moved, handovers_followed = await service.transfer_patient(
+            db, admission, target_bed=bed, target_unit_id=target_unit,
+            reason=payload.reason.value, note=note, reserved_ok=payload.confirm_reserved)
+    except WorkflowError as exc:
+        raise _wf(exc)
+    except ValueError as exc:
+        raise _not_now(exc) from None
+    handovers_moved = len(handovers_followed)         # the audit row's count (X17)
+    # Everything the answer, the audit row and the card need, as plain values before the commit.
+    written = AdmissionResponse.model_validate(arriving)
+    card = {"key": key, "display_name": name, "date_of_birth": born, "sex": sex,
+            "bed_label": bed.label, "bed_id": payload.target_bed_id, "unit_id": target_unit}
+    await db.commit()
+    # E4: the row's patient is the card's key. The moved protocol (O8), the places, the reason and
+    # whether a note was written — never a name, never the note (D8, B3a R8). The handovers the
+    # move re-pointed are counted and named, ids only, in the service's order (X17, X21): an
+    # inspection can tell which of them, signed or not, followed the patient.
+    trail.record(request, hospital, "admission.transfer", patient_id=key, payload={
+        "source_admission_id": str(admission_id), "admission_id": str(written.id),
+        "from_bed_id": str(source_bed_id), "from_unit_id": str(source_unit),
+        "to_bed_id": str(payload.target_bed_id), "to_unit_id": str(target_unit),
+        "protocol_no": written.protocol_no, "reason": payload.reason.value,
+        "note": note is not None, "critical_alarm_open": critical > 0,
+        "care_team_moved": team_moved, "handovers_moved": handovers_moved,
+        "handover_ids": [str(i) for i in handovers_followed], "actor": actor,
+        **({"bed_was_reserved": True} if was_reserved else {})})
+    board = await transfer.move_card(request, hospital, card, left=(source_bed_id, source_unit))
+    return TransferResponse(**written.model_dump(), board=board, critical_alarm_open=critical > 0)
 
 
 # ---------------------------------------------------------------------------
@@ -1269,9 +1392,13 @@ async def discharge_initiate(
     written. Audited `admission.discharge_start` (the disposition; never the note)."""
     admission = await _get_admission_or_404(db, admission_id, caller_tenant)
     await _reach_admission(db, user.id, caller_tenant, admission)
+    # G2-B1b (final review M-1, D1): the time is not before the stay's first kabul — reached back
+    # through the moves (`transfer.stay_began`, X18's walk) — not before the arriving row's own
+    # time, which is the move's record: the ward moves the patient, then records it.
+    began = await transfer.stay_began(db, admission.id, tenant_id=caller_tenant)
     try:
         form.check_discharge(payload, now=datetime.now(timezone.utc),
-                             admitted_at=admission.admission_datetime)
+                             admitted_at=began or admission.admission_datetime)
     except Refusal as exc:
         raise exc.http() from None
     admission = await _locked(db, admission)

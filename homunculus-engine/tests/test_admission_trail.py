@@ -44,3 +44,26 @@ def test_a_failing_store_is_logged_with_the_allow_listed_ids_and_nothing_else(ca
 
 def test_an_app_without_an_audit_store_writes_nothing_and_raises_nothing():
     trail.record(_request(None), "sentetik-hastane", "bed.release", payload={"bed_id": "b-1"})
+
+
+def test_a_moves_log_line_names_the_admission_it_closed_and_nothing_else(caplog):
+    """G2-B1b (X15): when the store fails after a move's commit, the log line names the admission
+    the move closed beside the one it opened. The places, the reason, the note's flag and the
+    protocol stay out, as every other field of a payload does. So does the list of the handovers
+    the move re-pointed (X21): the allow-list renders `key=value` for one id, and the audit row
+    itself carries the list."""
+    caplog.set_level(logging.ERROR, logger="homunculus.admission.trail")
+    trail.record(
+        _request(_StoreDown()), "sentetik-hastane", "admission.transfer", patient_id="H9900001",
+        payload={"source_admission_id": "a-0", "admission_id": "a-1", "from_bed_id": "b-0",
+                 "to_unit_id": "u-1", "reason": "OTHER", "note": True,
+                 "protocol_no": "202600000001", "handovers_moved": 1, "handover_ids": ["hv-7"],
+                 "actor": "doctor@sentetik.example.com"})
+    (logged,) = [r for r in caplog.records if r.name == "homunculus.admission.trail"]
+    message = logged.getMessage()
+    for shown in ("admission.transfer", "source_admission_id=a-0", "admission_id=a-1",
+                  "doctor@sentetik.example.com"):
+        assert shown in message, (shown, message)
+    for hidden in ("from_bed_id", "b-0", "to_unit_id", "OTHER", "note=", "202600000001",
+                   "handover_ids", "hv-7", "handovers_moved"):
+        assert hidden not in message, (hidden, message)

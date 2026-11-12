@@ -28,7 +28,7 @@ from pydantic import (
 from homunculus.admission.errors import field_invalid
 from homunculus.admission.models import (
     AdmissionState, AdmissionType, BloodGroup, CareTeamRole, Consent, DischargeDisposition,
-    HandoverStatus, Sex, SourceOfAdmission,
+    HandoverStatus, Sex, SourceOfAdmission, TransferReason,
 )
 
 
@@ -257,6 +257,9 @@ class AdmissionResponse(BaseModel):
     discharge_note: str | None = None
     # Group 2 · B1d: the protocol number, the card key of a new admission; None on a legacy one.
     protocol_no: str | None = None
+    # Group 2 · B1b (spec D8, §5.9): why the patient moved, on an arriving admission; None on any
+    # other. The move's note is never answered (spec §7: no screen reads it in this slice).
+    transfer_reason: TransferReason | None = None
 
     model_config = {"from_attributes": True}
 
@@ -465,9 +468,34 @@ class ShiftNurse(BaseModel):
 # ---------------------------------------------------------------------------
 # Transfer / discharge — §4.6, §4.7
 # ---------------------------------------------------------------------------
-class TransferInitiate(BaseModel):
+#: G2-B1b (spec D8, X3): a transfer note's bound, in characters once trimmed — B3a's note's. The
+#: route checks it and answers `field_invalid:note`.
+TRANSFER_NOTE_MAX = 200
+
+
+class TransferRequest(BaseModel):
+    """Group 2 · B1b (spec §5.1): one step moves the patient.
+
+    - `target_bed_id` names the bed only. Its unit is the bed's own, read by the route (T2,
+      A-12): a body naming a unit (the old routes' `target_unit_id`) is a 422 (`extra="forbid"`).
+    - `reason`: one of the six (D4).
+    - `note`: optional, and required for OTHER (D8, as B3a's X3). Trimmed, a blank one read as
+      none, at most `TRANSFER_NOTE_MAX` characters — the route checks both (X3).
+    - `confirm_reserved`: the clinician saw the target is reserved (B3a R5); a real boolean."""
+    model_config = ConfigDict(extra="forbid")
+
     target_bed_id: uuid.UUID
-    target_unit_id: uuid.UUID
+    reason: TransferReason
+    note: OptionalFormText = None
+    confirm_reserved: StrictBool = False
+
+
+class TransferResponse(AdmissionResponse):
+    """POST …/transfer: the arriving admission; whether its card moved to the new bed (`board`:
+    `ok`, or `failed` — the same request sent again moves it, T9); and whether the board showed
+    the patient a critical alarm nobody acknowledged (D7: said, never held)."""
+    board: EngineWrite
+    critical_alarm_open: bool
 
 
 class DischargeStart(BaseModel):

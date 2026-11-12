@@ -25,8 +25,8 @@ export default {
       view: "Kabul ve hasta kayıtlarını okur",
       admit: "Kabul kaydı açar",
       sign_off: "Kabulü hekim olarak onaylar",
-      move: { initiate: "Transfer ya da taburcu başlatır" },
-      transfer: { confirm: "Transferle gelişi onaylar" },
+      move: { initiate: "Nakil yapar ya da taburcu başlatır" },
+      transfer: { confirm: "Hastayı başka yatağa nakleder" },
       discharge: { confirm: "Taburcuyu onaylar; yatağı boşaltır" },
     },
     care_team: {
@@ -72,8 +72,8 @@ export default {
       view: "Qəbul və xəstə qeydlərini oxuyur",
       admit: "Qəbul qeydi açır",
       sign_off: "Qəbulu həkim kimi təsdiqləyir",
-      move: { initiate: "Köçürmə və ya evə yazılma başladır" },
-      transfer: { confirm: "Köçürmə ilə gəlişi təsdiqləyir" },
+      move: { initiate: "Xəstəni köçürür və ya evə yazılmanı başladır" },
+      transfer: { confirm: "Xəstəni başqa çarpayıya köçürür" },
       discharge: { confirm: "Evə yazılmanı təsdiqləyir; çarpayını boşaldır" },
     },
     care_team: {
@@ -119,8 +119,8 @@ export default {
       view: "Читает госпитализации и записи пациентов",
       admit: "Создаёт госпитализацию",
       sign_off: "Подписывает госпитализацию как врач",
-      move: { initiate: "Начинает перевод или выписку" },
-      transfer: { confirm: "Подтверждает прибытие по переводу" },
+      move: { initiate: "Переводит пациента или начинает выписку" },
+      transfer: { confirm: "Переводит пациента на другую койку" },
       discharge: { confirm: "Подтверждает выписку; освобождает койку" },
     },
     care_team: {
@@ -166,8 +166,8 @@ export default {
       view: "Read admissions and patient records",
       admit: "Create an admission",
       sign_off: "Sign off an admission as a physician",
-      move: { initiate: "Initiate a transfer or a discharge" },
-      transfer: { confirm: "Confirm a transfer arrival" },
+      move: { initiate: "Transfer a patient to another bed, or start a discharge" },
+      transfer: { confirm: "Transfer a patient to another bed" },
       discharge: { confirm: "Confirm a discharge and release the bed" },
     },
     care_team: {

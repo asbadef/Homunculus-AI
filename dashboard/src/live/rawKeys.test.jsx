@@ -449,7 +449,7 @@ describe("no screen shows a reader a translation key", () => {
     let mounted = await openAt("/kabul");
     expect(screen.getByText("Çatışmayan sahələr")).toBeInTheDocument();                 // kabul.missingTitle
     expect(screen.getByRole("button", { name: /^Reanimasiya/ })).toBeInTheDocument();  // the picker, by name
-    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Evə yazılma" })); await settle(); });
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "Köçürmə / Evə yazılma" })); await settle(); });
     expect(screen.getByText("Vəfat (exitus)", { exact: false })).toBeInTheDocument();  // kabul.disp.exitus
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Evə yazılmanı başlat: / })); });
     expect(screen.getByRole("dialog")).toHaveTextContent("Çıxış forması");             // kabul.f.disposition

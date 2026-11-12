@@ -42,7 +42,8 @@ async def hospital_of(db: AsyncSession, tenant_id: uuid.UUID) -> str:
 #: out. A new row type whose ids should be logged adds them here.
 LOGGED_KEYS = ("kind", "id", "admission_id", "bed_id", "unit_id", "room_id", "site_id",
                "handover_id",          # G2-B3b: the handover rows (`handover.*`)
-               "member_id")            # G2-B1c (X14): the care-team rows (`care_team.*`)
+               "member_id",            # G2-B1c (X14): the care-team rows (`care_team.*`)
+               "source_admission_id")  # G2-B1b (X15): the row a move closed (`admission.transfer`)
 
 
 def _ids(payload: dict) -> str:

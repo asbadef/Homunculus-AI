@@ -25,6 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import homunculus.scenarios
+from homunculus.admission import transfer as transfer_module
 from homunculus.admission.boardlink import BoardLink, RetireIncomplete, board_link_of, kabul_record
 from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import acknowledge_latched, sync_alerts
@@ -944,3 +945,123 @@ def test_at_rules_the_apps_admission_feeds_the_shadow_lane_and_its_frames_carry_
         (frame,) = frames()
         assert frame["shadow"] is not None
         assert lane.state == "ok"
+
+
+# ---------------------------------------------------------------- G2-B1b: a transfer's card moves
+NEW_BED = "5f0c6a1e-0000-4000-8000-0000000000b2"
+NEW_UNIT = "5f0c6a1e-0000-4000-8000-0000000000a2"
+LATER = T0 + timedelta(minutes=1)
+
+
+def _moved_record(at: datetime = LATER) -> IdentityRecord:
+    return record(bed_id=NEW_BED, unit_id=NEW_UNIT, at=at)
+
+
+async def _sink(_tenant: str, _board: dict) -> None:
+    """A stream nobody listens to."""
+
+
+def test_a_move_puts_the_card_on_the_new_bed_and_tells_the_old_place_first():
+    """Spec T8, F7: a removal with the old bed and unit and no name, then the card at the new
+    place — a screen scoped to the old unit alone is told too."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.published.clear()
+    assert asyncio.run(world.link.move(HOSPITAL, _moved_record(), left=(BED, UNIT))) == "ok"
+    (h1, removal), (h2, card) = world.published
+    assert (h1, h2) == (HOSPITAL, HOSPITAL)
+    assert removal == {"patient_id": "H2600001", "removed": True,
+                       "identity": {"bed_id": BED, "unit_id": UNIT}}
+    assert "Sentetik" not in repr(removal)
+    assert (card["patient_id"], card["identity"]["bed_id"], card["identity"]["unit_id"]) == (
+        "H2600001", NEW_BED, NEW_UNIT)
+    (shown,) = world.board()
+    assert (shown["identity"]["bed_id"], shown["identity"]["unit_id"]) == (NEW_BED, NEW_UNIT)
+    old_scope = build_scope("MEMBER", unit_ids=[UNIT])
+    assert sees_patient(removal, old_scope) and not sees_patient(card, old_scope)
+    assert world.link.stands_on(HOSPITAL, "H2600001", NEW_BED)
+    assert not world.link.stands_on(HOSPITAL, "H2600001", BED)
+
+
+def test_a_moved_patient_keeps_her_alerts_under_the_same_key():
+    """The board key does not change: the engine's alerts stay with the patient (spec §5.4)."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    for _ts, fhir in load_scenario(SCEN / "septic_shock.yaml"):
+        world.ingest(fhir)
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 1
+    assert asyncio.run(world.link.move(HOSPITAL, _moved_record(), left=(BED, UNIT))) == "ok"
+    assert world.alert("septic_shock")["severity"] == "critical"
+    assert world.link.open_critical(HOSPITAL, "H2600001") == 1
+    (card,) = world.board()
+    assert card["identity"]["bed_id"] == NEW_BED
+
+
+def test_a_move_of_a_discharged_number_is_refused_and_sends_nothing():
+    """As `put_identity` refuses it (A-11, A-29): a tombstone never comes back as a card."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    asyncio.run(world.link.discharge_identity(HOSPITAL, "H2600001"))
+    world.published.clear()
+    assert asyncio.run(world.link.move(HOSPITAL, _moved_record(), left=(BED, UNIT))) == "failed"
+    assert world.published == []
+    assert world.link.is_discharged(HOSPITAL, "H2600001")
+    assert not world.link.stands_on(HOSPITAL, "H2600001", BED)
+
+
+def test_a_move_the_identity_store_refuses_is_failed_and_sends_nothing():
+    """An older stamp than the record held is refused by the store: nothing moved, nothing sent,
+    the card still stands where it was."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record(at=LATER)))
+    world.published.clear()
+    assert asyncio.run(world.link.move(HOSPITAL, _moved_record(at=T0), left=(BED, UNIT))) \
+        == "failed"
+    assert world.published == []
+    assert world.link.stands_on(HOSPITAL, "H2600001", BED)
+
+
+def test_a_move_drops_the_strips_occupants_and_a_reset_that_raises_leaves_it_standing(caplog):
+    heard: list = []
+    world = World(occupancy_reset=heard.append)
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    heard.clear()
+    assert asyncio.run(world.link.move(HOSPITAL, _moved_record(), left=(BED, UNIT))) == "ok"
+    assert heard == [HOSPITAL]
+    broken = World(occupancy_reset=_broken)
+    asyncio.run(broken.link.put_identity(HOSPITAL, record()))
+    broken.published.clear()
+    assert asyncio.run(broken.link.move(HOSPITAL, _moved_record(), left=(BED, UNIT))) == "ok"
+    assert len(broken.published) == 2
+    assert _hook_errors(caplog, "occupancy_reset")
+
+
+def test_after_a_move_the_strip_links_the_new_beds_monitor_and_the_old_ones_to_nobody(tmp_path):
+    """Spec §5.4, F6: the strip links a monitor to whoever's record names its bed; a device row
+    belongs to the bed, so none changes."""
+    identities = InMemoryIdentityStore()
+    identities.apply(SHADOW_HOSPITAL, record(bed_id="bed-b1", unit_id="unit-1"))
+    link = BoardLink(identities=identities, engine=lambda _h: Engine(),
+                     store=lambda _h: AckStore(), audit=InMemoryAuditLog(), publish=_sink)
+    moved = record(bed_id="bed-b2", unit_id="unit-2", at=LATER)
+    assert asyncio.run(link.move(SHADOW_HOSPITAL, moved, left=("bed-b1", "unit-1"))) == "ok"
+    client, clock, _ = shadow_app(tmp_path, identities=identities)
+    shadow_post(client, clock)
+    beds = {b["bed_label"]: b for b in shadow_board(client)["beds"]}
+    assert (beds["B-2"]["link"], beds["B-2"]["patient_id"]) == ("one", "H2600001")
+    assert (beds["B-1"]["link"], beds["B-1"]["patient_id"]) == ("none", None)
+
+
+def test_a_move_from_a_bed_with_no_known_unit_names_no_unit_and_not_the_text_none():
+    """Task 4 review: `transfer.move_card` passes a None unit through to the removal frame (a
+    screen reads `unit_id: null` as "unknown"); `str(None)` would have named a unit "None"."""
+    world = World()
+    asyncio.run(world.link.put_identity(HOSPITAL, record()))
+    world.published.clear()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(board_link=world.link)))
+    card = {"key": "H2600001", "display_name": "Sentetik Hasta", "date_of_birth": "1970-01-01",
+            "sex": "female", "bed_label": "2B", "bed_id": NEW_BED, "unit_id": NEW_UNIT}
+    assert asyncio.run(transfer_module.move_card(request, HOSPITAL, card, left=(BED, None))) == "ok"
+    (_, removal), (_, moved_card) = world.published
+    assert removal["identity"] == {"bed_id": BED, "unit_id": None}
+    assert moved_card["identity"]["bed_id"] == NEW_BED
