@@ -995,3 +995,101 @@ async def test_a_discharge_after_moves_may_be_timed_back_to_the_stays_first_kabu
     assert r.status_code == 200, r.text
     assert datetime.fromisoformat(r.json()["discharge_at"]) == died
     assert r.json()["admission_datetime"] == arriving["admission_datetime"]
+
+
+# ---------------------------------------------------------------- the final review's test gaps
+async def _never_moves(self, tenant, record, *, left):
+    """`BoardLink.move` refusing every card: the move's board step fails."""
+    return "failed"
+
+
+async def test_a_release_of_the_first_bed_after_two_moves_leaves_her_card_where_she_lies(ward):
+    """§5.5, T9 (final review gap a): A → B → C, each card moved. A's release follows the chain
+    past B to C, finds her card standing elsewhere, and passes over it: the card stays at C, no
+    retry is run, the bed is freed."""
+    w, client, app = ward
+    one, ten = w.beds["1"].id, w.beds["10"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    await moved(w, client, await moved(w, client, source, "2"), "10")
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, ten) == [key] and await _cards_on(client, one) == []
+    assert audited(app, "admission.transfer_board_retry") == []
+
+
+async def test_a_release_after_two_moves_whose_cards_failed_moves_the_card_to_her_bed_now(
+        ward, monkeypatch):
+    """§5.5, T9 (final review gap a): A → B → C, both moves' board steps failed, so her card still
+    stands on A. A's release follows the chain past B to C and moves the card there — never to B,
+    which she has left too. B's release then passes over a card that is not on it."""
+    w, client, app = ward
+    one, two, ten = w.beds["1"].id, w.beds["2"].id, w.beds["10"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    with monkeypatch.context() as patched:
+        patched.setattr(BoardLink, "move", _never_moves)
+        second = await moved(w, client, source, "2")
+        third = await moved(w, client, second, "10")
+    assert (second["board"], third["board"]) == ("failed", "failed")
+    assert await _cards_on(client, one) == [key]
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, ten) == [key]
+    assert await _cards_on(client, one) == [] and await _cards_on(client, two) == []
+    (row,) = audited(app, "admission.transfer_board_retry")
+    assert (row.payload["admission_id"], row.payload["via"], row.payload["board"]) == (
+        third["id"], "bed.release", "ok")
+    r = await client.post(f"/tenant/beds/{two}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, ten) == [key]
+    assert len(audited(app, "admission.transfer_board_retry")) == 1
+
+
+async def test_a_release_moves_a_card_left_behind_to_a_patient_whose_discharge_has_started(
+        ward, monkeypatch):
+    """§5.5, X4 (final review gap a): her move's board step failed, then her discharge was started
+    on the new bed. The chain ends PENDING_DISCHARGE — still admitted — so the old bed's release
+    moves her card to the new bed and never takes it off (only a chain that ends DISCHARGED is
+    taken off)."""
+    w, client, app = ward
+    one, two = w.beds["1"].id, w.beds["2"].id
+    source = await signed(w, client)
+    key = source["board_key"]
+    with monkeypatch.context() as patched:
+        patched.setattr(BoardLink, "move", _never_moves)
+        arriving = await moved(w, client, source)
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/initiate",
+                          json={"disposition": "HOME"}, headers=w.auth["doctor"])
+    assert (r.status_code, r.json()["state"]) == (200, "PENDING_DISCHARGE"), r.text
+    assert await _cards_on(client, one) == [key]
+    r = await client.post(f"/tenant/beds/{one}/release", headers=w.auth["nurse"])
+    assert (r.status_code, r.json()["state"]) == (200, "AVAILABLE")
+    assert await _cards_on(client, two) == [key] and await _cards_on(client, one) == []
+    assert not app.state.board_link.is_discharged(SLUG, key)
+    assert audited(app, "admission.discharge_board_retry") == []
+    (row,) = audited(app, "admission.transfer_board_retry")
+    assert (row.payload["admission_id"], row.payload["board"]) == (arriving["id"], "ok")
+
+
+async def test_the_same_move_sent_twice_at_once_moves_once_and_answers_the_second_as_its_retry(
+        ward, db_session, monkeypatch):
+    """§5.2, T9, X1 (final review gap b): the same move sent twice at once — a dialog's resend
+    while the first was still on its way. The second waits on the first's locks, then meets the
+    move done: one move, one `admission.transfer` row, and the second answered 200 with the same
+    arriving row, its card moved again (`admission.transfer_board_retry`, via `transfer`)."""
+    w, client, app = ward
+    one, two = w.beds["1"].id, w.beds["2"].id
+    source = await signed(w, client)
+    first, second = await at_once(db_session, monkeypatch, "transfer_patient",
+                                  lambda: transfer(w, client, source),
+                                  lambda: transfer(w, client, source))
+    assert (first.status_code, second.status_code) == (201, 200), second.text
+    assert second.json()["id"] == first.json()["id"]
+    admissions, beds = await _the_ward(db_session)
+    assert sorted(a.state.value for a in admissions) == ["ACTIVE", "TRANSFERRED"]
+    assert (beds[one], beds[two]) == (BedState.HOUSEKEEPING, BedState.OCCUPIED)
+    assert len(audited(app, "admission.transfer")) == 1
+    (retry,) = audited(app, "admission.transfer_board_retry")
+    assert retry.payload["via"] == "transfer"
+    assert await _cards_on(client, two) == [source["board_key"]]
