@@ -34,7 +34,11 @@ request, and a round may hold the row they need for minutes (its transaction spa
 calls). With `lock_timeout_ms` the row is waited for that long at most, then `LedgerBusy` is
 raised and nothing is written: the route answers «busy, try again». It is `SET LOCAL lock_timeout`,
 not `FOR UPDATE NOWAIT`: a round that has INSERTED a new row and not committed makes the INSERT …
-ON CONFLICT wait for its transaction, which NOWAIT would not bound.
+ON CONFLICT wait for its transaction, which NOWAIT would not bound. The bound is on TAKING the row
+and nothing after it (review M3): once the row is held, `lock_timeout` is put back to the default,
+so the write that follows the HTTP calls is not under it. `forget_skip` is under the same bound
+(review M4). `LedgerBusy` ROLLS BACK THE CALLER'S WHOLE SESSION TRANSACTION, not just the call — a
+caller must hold no pending write it wants to keep (review M8).
 
 EVERY OUTCOME IS COMMITTED BEFORE THIS RETURNS: a POST the platform took must not be forgotten by
 a crash a moment later, or the next round would look it up again for nothing — and a ledger that
@@ -72,7 +76,12 @@ LOCK_NOT_AVAILABLE = "55P03"
 
 
 class LedgerBusy(Exception):
-    """Another deliverer holds this resource's row: nothing was written; try again later."""
+    """Another deliverer holds this resource's row: nothing was written; try again later.
+
+    The session's transaction has been ROLLED BACK — all of it, not only this call's statements
+    (review M8): whatever the caller had written and not committed is gone, and every object the
+    session held is expired. Raised by `_row` (so by `deliver` and `record_skip`) and by
+    `forget_skip`, and only when the caller passed a `lock_timeout_ms`."""
 
 
 def is_lock_timeout(error: BaseException) -> bool:
@@ -115,7 +124,9 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
     UPDATE` (protocol/router.py's pattern): the second waits for the first's commit and then reads
     what it wrote — `populate_existing`, so a row this session already holds is read again, never
     trusted from memory. With `lock_timeout_ms`, a wait longer than that is `LedgerBusy` (the
-    transaction rolled back, nothing written)."""
+    whole session transaction rolled back, nothing written); and once the row is held the bound is
+    lifted (`SET LOCAL lock_timeout TO DEFAULT`, review M3): it covers the wait for the row and
+    nothing the caller does with it afterwards — the write after the HTTP calls, minutes later."""
     key = (TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id)
     try:
@@ -127,6 +138,9 @@ async def _row(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
         ).on_conflict_do_nothing(constraint="uq_tres_deliveries_key"))
         row = (await db.execute(select(TresDelivery).where(*key).with_for_update()
                                 .execution_options(populate_existing=True))).scalar_one()
+        if lock_timeout_ms is not None:
+            # The row is ours: the bound has done its work (review M3).
+            await db.execute(text("SET LOCAL lock_timeout TO DEFAULT"))
     except DBAPIError as exc:
         if not is_lock_timeout(exc):
             raise
@@ -172,7 +186,12 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     (`client.CALL_DEADLINE_S`, 60 s), but a delivery may make SEVERAL calls — a PUT to a stale id,
     its 404, the search, the POST, a new token on a 401 between them — and holds the lock across
     all of them: minutes at the very worst, never without end. It holds one row, never the tenant's
-    ledger."""
+    ledger.
+
+    With `lock_timeout_ms` a row held by another deliverer for longer raises `LedgerBusy`, which
+    ROLLS BACK THE CALLER'S WHOLE SESSION TRANSACTION (review M8): the caller must hold no pending
+    write it wants to keep. The bound is on taking the row only; the HTTP calls and the write after
+    them run under the default (review M3)."""
     if mode not in ("validate", "send"):
         raise ValueError(f"deliver() is for the modes validate and send, not {mode!r}")
     now = now or datetime.now(timezone.utc)
@@ -221,7 +240,9 @@ async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: st
                       lock_timeout_ms: int | None = None) -> TresDelivery:
     """The resource was not built: its row reads `skipped` with the catalogue's reason code. With
     `keep_held`, a row the platform holds a record of (it has a `remote_id`) is left exactly as it
-    is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7)."""
+    is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7).
+    With `lock_timeout_ms`, `LedgerBusy` rolls back the caller's WHOLE session transaction (review
+    M8): the caller must hold no pending write it wants to keep."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
                      local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
     if keep_held and row.remote_id:
@@ -243,10 +264,23 @@ async def held(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, reso
 
 
 async def forget_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
-                      local_id: str) -> None:
-    """Removes a `skipped` row the platform holds no record of (no `remote_id`), and commits."""
-    await db.execute(delete(TresDelivery).where(
-        TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
-        TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id,
-        TresDelivery.status == "skipped", TresDelivery.remote_id.is_(None)))
+                      local_id: str, lock_timeout_ms: int | None = None) -> None:
+    """Removes a `skipped` row the platform holds no record of (no `remote_id`), and commits.
+
+    For a person's request the delete is under the same bound as taking a row (review M4): a round
+    holding the placeholder's row would otherwise make it wait for the round's whole transaction.
+    With `lock_timeout_ms` a wait longer than that is `LedgerBusy` — the caller's WHOLE session
+    transaction rolled back (review M8), the row untouched."""
+    try:
+        if lock_timeout_ms is not None:
+            await db.execute(text(f"SET LOCAL lock_timeout = '{int(lock_timeout_ms)}ms'"))
+        await db.execute(delete(TresDelivery).where(
+            TresDelivery.tenant_id == tenant_id, TresDelivery.environment == environment,
+            TresDelivery.resource_type == resource_type, TresDelivery.local_id == local_id,
+            TresDelivery.status == "skipped", TresDelivery.remote_id.is_(None)))
+    except DBAPIError as exc:
+        if not is_lock_timeout(exc):
+            raise
+        await db.rollback()
+        raise LedgerBusy(resource_type) from None
     await db.commit()

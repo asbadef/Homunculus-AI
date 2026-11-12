@@ -94,8 +94,12 @@ class Sender:
     refreshes `enabled_types` before each package (`_work`).
 
     `lock_timeout_ms` (plan F1, N12): set for a person's request («Şimdi gönder», «Yeniden dene»),
-    so that a row a round holds is waited for that long at most (`ledger.LedgerBusy`). `held`
-    reads the platform's id a reference needs; `forget_skip` removes a placeholder's skip."""
+    so that a row a round holds is waited for that long at most (`ledger.LedgerBusy`) — `send`,
+    `skip` and `forget_skip` alike; the bound is on TAKING the row, not on the delivery after it
+    (review M3, M4). `LedgerBusy` ROLLS BACK THE CALLER'S WHOLE SESSION TRANSACTION, not just the
+    call (review M8): a caller of a Sender with a lock timeout must hold no pending write it wants
+    to keep. `held` reads the platform's id a reference needs; `forget_skip` removes a
+    placeholder's skip."""
 
     def __init__(self, db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
                  environment: str, mode: str, now: datetime, enabled_types: Iterable[str],
@@ -131,7 +135,8 @@ class Sender:
 
     async def forget_skip(self, *, resource_type: str, local_id: str) -> None:
         await forget_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
-                          resource_type=resource_type, local_id=local_id)
+                          resource_type=resource_type, local_id=local_id,
+                          lock_timeout_ms=self.lock_timeout_ms)
 
 
 #: One stay's resources, taken to the platform in order through the `Sender` it is handed. It lets
@@ -152,7 +157,8 @@ async def no_packages(db: AsyncSession, settings: TresSettings) -> AsyncIterator
 class RoundReport:
     tenants: int = 0                    # worked: mode not off, the account whole
     incomplete: int = 0                 # passed over: the selected environment's account is not whole
-    refused: int = 0                    # passed over: the install does not allow the account's address
+    refused: int = 0                    # passed over: the install does not allow the account's address, or
+                                        # it would reach the live platform (tres_live_closed)
     parked: int = 0                     # passed over: the platform refused its login (session_refused_at)
     packages: int = 0                   # packages that ran to their end
     failed: int = 0                     # packages that raised, and tenants whose round itself did
@@ -208,9 +214,18 @@ async def park(db: AsyncSession, *, tenant_id: uuid.UUID, now: datetime, status:
     the settings are still the ones the caller began on (`updated_at` = `version`; plan F1, N15).
     A login that left with the old password and came back refused after a save parks nothing: the
     save has answered it, and the next round tries the new account. True when it parked. One log
-    line: the tenant and the status, never the platform's words (they may echo the account)."""
-    stale = [TresSettings.updated_at == version] if version is not None else []
-    parked = (await db.execute(update(TresSettings).where(TresSettings.tenant_id == tenant_id, *stale)
+    line: the tenant and the status, never the platform's words (they may echo the account).
+
+    A `version` of None parks NOTHING (review M2): a caller with no version to hold the save to
+    must not get «park whatever the settings are» — that is the race N15 closed, and a careless
+    caller would bring it back. The database is not touched (nothing to commit: the caller has
+    rolled back); the log says «not parked» as it does for a stale version."""
+    if version is None:
+        log.warning("TRƏS: the platform refused tenant %s's login (HTTP %s) with no settings version to "
+                    "hold the save to; not parked", tenant_id, status)
+        return False
+    parked = (await db.execute(update(TresSettings).where(TresSettings.tenant_id == tenant_id,
+                                                          TresSettings.updated_at == version)
                                .values(session_refused_at=now))).rowcount > 0
     await db.commit()
     if parked:

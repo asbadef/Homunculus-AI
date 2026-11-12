@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -716,6 +717,45 @@ async def test_the_sender_holds_a_hand_to_its_lock_timeout_and_reads_and_forgets
                               resource=patient("hmn-p-0001"))
         assert await hand.held(resource_type="patient", local_id="hmn-p-0001") == row.remote_id == "7001"
         await hand.skip(resource_type="patient", local_id="hmn-p-s-1.", reason="fin_missing")
+        # review M4: a round holding the placeholder's row — the hand's forget waits no longer
+        await _row(round_db, tenant_id=tenant_id, environment="test", resource_type="patient",
+                   local_id="hmn-p-s-1.", admission_id=None)
+        with pytest.raises(LedgerBusy):
+            await hand.forget_skip(resource_type="patient", local_id="hmn-p-s-1.")
+        assert await hand.held(resource_type="patient", local_id="hmn-p-s-1.") is None   # (still a skip, no id)
+        await round_db.commit()
         await hand.forget_skip(resource_type="patient", local_id="hmn-p-s-1.")
+        remaining = (await hand_db.execute(select(TresDelivery.local_id).where(
+            TresDelivery.local_id == "hmn-p-s-1."))).all()
+        assert remaining == []
         assert await hand.held(resource_type="patient", local_id="hmn-p-s-1.") is None
     await client.aclose()
+
+
+# ---------------------------------------------------------------- review M2: no version, no parking
+async def test_a_park_with_no_version_parks_nothing_and_touches_no_row(caplog):
+    """N15's race must not come back through a careless caller: `park` without the version the
+    caller began on has nothing to hold the save to, so it parks NOTHING — it does not fall back to
+    «any version». No database is touched."""
+    class NoDatabase:
+        def __getattr__(self, name):
+            raise AssertionError(f"park touched the database ({name}) with no version")
+
+    with caplog.at_level("WARNING"):
+        parked = await worker.park(NoDatabase(), tenant_id=uuid.uuid4(), now=T0, status=401, version=None)
+    assert parked is False
+    assert "not parked" in caplog.text and "401" in caplog.text
+
+
+@requires_db
+async def test_park_holds_a_save_to_its_version_and_parks_only_on_the_one_it_was_given(feed, db_session):
+    fake, tenants, _ = feed
+    tenant_id = tenants["acik"].id
+    _, version = await _parking(db_session, tenant_id)
+    assert await worker.park(db_session, tenant_id=tenant_id, now=T0, status=401, version=None) is False
+    assert (await _parking(db_session, tenant_id))[0] is None                      # no version: nothing set
+    assert await worker.park(db_session, tenant_id=tenant_id, now=T0, status=401,
+                             version=version + timedelta(seconds=1)) is False       # another version: nothing set
+    assert (await _parking(db_session, tenant_id))[0] is None
+    assert await worker.park(db_session, tenant_id=tenant_id, now=T0, status=401, version=version) is True
+    assert (await _parking(db_session, tenant_id))[0] == T0

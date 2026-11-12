@@ -537,6 +537,12 @@ async def test_a_deliverer_with_a_lock_timeout_answers_busy_and_writes_nothing(d
             await record_skip(hand, tenant_id=tenant_id, environment="test", resource_type="patient",
                               local_id=LOCAL, reason="fin_missing", lock_timeout_ms=200)
         assert fake.requests == []
+        # Review M5: «writes nothing» is read from a third session — the row a round holds is
+        # exactly what it was (a failed row, one attempt, no digest, no message), or no row at all.
+        async with maker() as reader:
+            seen = (await reader.execute(select(TresDelivery.status, TresDelivery.attempts, TresDelivery.payload_digest,
+                                                TresDelivery.last_error, TresDelivery.reason))).all()
+        assert [tuple(r) for r in seen] == ([("failed", 1, None, None, None)] if committed else [])
         await round_.commit()
         # the round is done: the same hand now goes through (its session is usable again)
         row = await deliver(hand, client, tenant_id=tenant_id, environment="test", mode="send",
@@ -562,3 +568,86 @@ async def test_held_reads_the_platforms_id_and_forget_skip_removes_only_an_unhel
     db_session.expire_all()
     rows = (await db_session.execute(select(TresDelivery.local_id, TresDelivery.status))).all()
     assert [tuple(r) for r in rows] == [(LOCAL, "sent")]
+
+
+# ---------------------------------------------------------------- the bound is on taking the row (review M3, M4)
+async def _lock_timeout(db) -> str:
+    return (await db.execute(text("SHOW lock_timeout"))).scalar_one()
+
+
+class _Probe:
+    """A client that only reports the transaction's `lock_timeout` at each call it is asked for —
+    the window of a delivery in which the HTTP calls are made."""
+
+    def __init__(self, db) -> None:
+        self.db, self.seen = db, []
+
+    async def find(self, fhir_type: str, local_id: str) -> None:
+        self.seen.append(await _lock_timeout(self.db))
+
+    async def create(self, fhir_type: str, resource: dict) -> str:
+        self.seen.append(await _lock_timeout(self.db))
+        return "7001"
+
+
+@requires_db
+async def test_the_lock_timeout_bounds_taking_the_row_and_nothing_after_it(db_session):
+    """Review M3: `SET LOCAL lock_timeout` is for the wait on the row. Once the row is held it is
+    put back to the default, so the rest of the delivery transaction — the write after the HTTP
+    calls, which may take a minute — is not under the 2-second bound; and after the commit too."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.commit()
+    default = await _lock_timeout(db_session)
+    await db_session.commit()
+    row = await _row(db_session, tenant_id=tenant.id, environment="test", resource_type="patient", local_id=LOCAL,
+                     admission_id=None, lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
+    assert await _lock_timeout(db_session) == default != "2s"      # the bound ended with taking the row
+    assert row.status == "pending"
+    await db_session.commit()
+    assert await _lock_timeout(db_session) == default
+    # the whole delivery of a person's request: at no call to the platform is the bound on
+    probe = _Probe(db_session)
+    delivered = await deliver(db_session, probe, tenant_id=tenant.id, environment="test", mode="send",
+                              resource_type="patient", fhir_type="Patient", local_id=LOCAL, resource=patient(),
+                              now=T0, lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
+    assert delivered.status == "sent" and probe.seen == [default, default]
+    assert await _lock_timeout(db_session) == default
+    # a skip of a person's request, and a row that is skipped again unchanged
+    await record_skip(db_session, tenant_id=tenant.id, environment="test", resource_type="patient",
+                      local_id="hmn-p-s-1.", reason="fin_missing", lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
+    assert await _lock_timeout(db_session) == default
+
+
+@requires_db
+async def test_forgetting_a_skip_for_a_person_is_under_the_same_bound_and_leaves_the_row_when_busy(db_session):
+    """Review M4: `forget_skip` deletes a placeholder's row; a round holding that row (FOR UPDATE)
+    must not make «Şimdi gönder» wait behind it. `LedgerBusy`, the row untouched, the session
+    usable; afterwards the same call goes through and the bound is gone."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.flush()
+    placeholder = "hmn-p-s-1."
+    db_session.add(TresDelivery(tenant_id=tenant.id, environment="test", resource_type="patient",
+                                local_id=placeholder, status="skipped", reason="fin_missing"))
+    await db_session.commit()
+    tenant_id = tenant.id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with maker() as round_, maker() as hand, maker() as reader:
+        default = await _lock_timeout(hand)
+        await hand.commit()
+        await _row(round_, tenant_id=tenant_id, environment="test", resource_type="patient", local_id=placeholder,
+                   admission_id=None)                                  # the round's lock, uncommitted
+        started = asyncio.get_running_loop().time()
+        with pytest.raises(LedgerBusy):
+            await forget_skip(hand, tenant_id=tenant_id, environment="test", resource_type="patient",
+                              local_id=placeholder, lock_timeout_ms=200)
+        assert asyncio.get_running_loop().time() - started < 5          # it did not wait for the round
+        assert (await reader.execute(select(func.count()).select_from(TresDelivery))).scalar_one() == 1
+        await reader.commit()
+        await round_.commit()
+        # the round is done: the same call now goes through, and leaves no bound behind
+        await forget_skip(hand, tenant_id=tenant_id, environment="test", resource_type="patient",
+                          local_id=placeholder, lock_timeout_ms=200)
+        assert await _lock_timeout(hand) == default
+        assert (await reader.execute(select(func.count()).select_from(TresDelivery))).scalar_one() == 0
