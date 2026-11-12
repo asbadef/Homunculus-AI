@@ -183,10 +183,15 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
 
 async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str,
                       resource_type: str, local_id: str, reason: str,
-                      admission_id: uuid.UUID | None = None) -> TresDelivery:
-    """The resource was not built: its row reads `skipped` with the catalogue's reason code."""
+                      admission_id: uuid.UUID | None = None, keep_held: bool = False) -> TresDelivery:
+    """The resource was not built: its row reads `skipped` with the catalogue's reason code. With
+    `keep_held`, a row the platform holds a record of (it has a `remote_id`) is left exactly as it
+    is: a type switched off stops what is sent next, it does not rewrite what was sent (review M7)."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
                      local_id=local_id, admission_id=admission_id)
+    if keep_held and row.remote_id:
+        await db.commit()
+        return row
     if row.status != "skipped" or row.reason != reason:
         row.status, row.reason = "skipped", reason
         row.attempts, row.last_error, row.next_attempt_at = 0, None, None

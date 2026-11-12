@@ -80,8 +80,9 @@ class Sender:
 
     THE TENANT'S TYPE SWITCHES ARE ENFORCED HERE, the one door every resource goes through (review
     #5): `send` of a type the tenant has switched off asks the platform nothing and records a skip
-    with the reason TYPE_OFF — whatever the package builder forgot. The round refreshes
-    `enabled_types` before each package (`_work`)."""
+    with the reason TYPE_OFF — whatever the package builder forgot — unless the platform already
+    holds that resource: its row (`remote_id`, `sent`) is left as it is (review M7). The round
+    refreshes `enabled_types` before each package (`_work`)."""
 
     def __init__(self, db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
                  environment: str, mode: str, now: datetime, enabled_types: Iterable[str]) -> None:
@@ -92,8 +93,10 @@ class Sender:
     async def send(self, *, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                    admission_id: uuid.UUID | None = None, force: bool = False) -> TresDelivery:
         if resource_type not in self.enabled_types:
-            return await self.skip(resource_type=resource_type, local_id=local_id, reason=TYPE_OFF,
-                                   admission_id=admission_id)
+            # Recorded only where the platform holds nothing: a sent row keeps its id and status.
+            return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
+                                     resource_type=resource_type, local_id=local_id, reason=TYPE_OFF,
+                                     admission_id=admission_id, keep_held=True)
         return await deliver(self._db, self._client, tenant_id=self.tenant_id,
                              environment=self.environment, mode=self.mode,
                              resource_type=resource_type, fhir_type=fhir_type, local_id=local_id,

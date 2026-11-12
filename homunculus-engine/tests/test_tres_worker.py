@@ -568,3 +568,20 @@ async def test_a_token_route_that_is_down_parks_nothing(feed, db_session):
         report, _, _ = await round_(source_of(sends("hmn-p-0001")), transport=httpx.MockTransport(down))
         assert (report.tenants, report.parked, report.failed) == (1, 0, 1) and len(asked) == n
         assert (await _parking(db_session, tenants["acik"].id))[0] is None
+
+
+@requires_db
+async def test_a_type_switched_off_never_overwrites_a_row_the_platform_holds(feed, db_session):
+    """Review M7: the record stays as the platform has it — its id, its status; only a resource the
+    platform does not hold is recorded as skipped."""
+    fake, tenants, round_ = feed
+    await round_(source_of(sends("hmn-p-0001")))
+    settings = await db_session.get(TresSettings, tenants["acik"].id)
+    settings.enabled_types = ["practitioner"]
+    await db_session.commit()
+    report, _, _ = await round_(source_of(sends("hmn-p-0001"), sends("hmn-p-0002")))
+    assert report.packages == 2 and fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]
+    db_session.expire_all()
+    rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
+    assert [(r.local_id, r.status, r.remote_id, r.reason) for r in rows] == [
+        ("hmn-p-0001", "sent", "7001", None), ("hmn-p-0002", "skipped", None, "type_off")]
