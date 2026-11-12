@@ -254,3 +254,230 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
 - **O4.** az/ru/en strings are read by a native reader after the deploy (as ESLEME O62).
 - **O5.** Shared edits with other lanes at merge: `denetim.js`, `nginx.conf`, the pin tests, the guide's §
   number, `PatientScreen.jsx` (Nakil), the migration's `down_revision` (Kalite).
+
+## 11. As built (2026-11-12, plan `docs/superpowers/plans/2026-11-11-g3-cihaz-olcum-kaydi.md`)
+
+Branch `feat/g3-cihaz-olcum-kaydi`, head `33064adc` (`git log 7db97782..33064adc`: from the plan's commit to the final
+review's last fix). Main was merged in twice: `cde137b3` (main `6ae20d83`: G4-03 Kalite `0020`, the i18n chunks, G2-B1b
+Nakil) and `d4ffc4df` (main `da70c56f`: G4-04 İş yükü `0022`). **On the branch only — not on main, not on the VM
+(2026-11-12)**; both are the owner's word, through Lane A. The guide's section is §3.27 of
+`docs/homunculus-rehber-TR.md`.
+
+### 11.1 Commits by task
+
+Each task's feature commit, then its review fixes.
+
+| Task | What | Commits |
+|---|---|---|
+| B1 | the store: the row, the protocol, the in-memory store, the contract | `626b8758`; `2a95536d`, `27edff2d` |
+| B2 | migration `0021`, `PostgresReadingStore`, `admission_keys.py` | `5595e278`; `6090ea06` |
+| B3 | `_apply_reading` extracted from `/ingest`, no change in behaviour | `956163e1` |
+| B4 | both doors file the record; D14's re-send | `99da6d74` |
+| B5 | the unmatched door and the policy switch | `9a18efbd`; `84a84ebe` |
+| B6 | the list, the link, the rejection | `72a506d6`; `95a305b1`, `99559e24`, `7741a1e8` |
+| B7 | «hatalı giriş» on device rows | `9986fb0b`; `1e712846`, `1e753442` |
+| B8 | `GET /patients/{id}/readings`; trends' `device` | `2ad03761`; `02c88951`, dashboard `9300ca6b` |
+| B9 | the vital task reads device rows | `a1f33371`; `b9a7372c` |
+| B10 | `reconcile`, its hourly loop, the backfill script | `de87da68`; `dede43d7` |
+| W1 | client calls, `kayit` strings, refusal codes (part A); Denetim's three types, the reworded sentence (part B) | `bcedf99d`, `11dfba71`; `30e9cf85` |
+| W2 | the «Ölçüm kaydı» box, `CorrectDialog` | `126ff709`; `bfa865e1`, `f990a27a` |
+| W3 | the trend table's «cihaz» and «Düzelt» | `4342c92c`; `a7d7593a`, `a844663c`, `ed33b5db` |
+| W4 | the «Eşleşmeyen ölçümler» step, the rail badge | `ab3bc0db`; `5900388a`, `ed33b5db`, `7b0f53e0` |
+| W5 | Görevlerim's partial-NEWS2 wording | `e3bf312d`; `23f1210b` |
+| Final review | whole-slice review: I-1, minors 3–9 | `906f23dd`, `6d96ee95`, `33064adc` |
+
+### 11.2 The decisions as they ended up — changes against the text above
+
+- **D7 amended (B5 review, `84a84ebe`): the unmatched door answers 200 even when its table write fails.** `/ingest`
+  writes the `reading_unmatched` audit row (with the value), tries the table row, logs a failure with its exception class
+  and reason only, and answers the normal 200 (`dropped`). D7's «except on the unmatched path, which answers 500» no
+  longer holds. Reason: the bridge's uplink is serial — on a 500 it stops and retries every 2 s, so one listed reading
+  would stall the ward feed for every patient (no new values, no alerts), and each retry would write another
+  `reading_unmatched` row. `reconcile` is the repair, and the only one for that row: it runs at start-up and hourly (a
+  durable store only), over the audit rows written in the last 48 h, read from an id floor (`first_id_at_or_after`, a
+  binary search; an audit without it is read from the start); a claim older than the window pulls the bound back to its
+  own time (B10 review, `dede43d7`). It files row by row: a row the table refuses is counted `skipped` and logged once a
+  pass by class (final review, minor 4). A failing pass is one WARNING per streak. Also part of D7 as built: a door's
+  table row is filed by `_apply_reading`'s `on_written` right after the `ingest` row, before the alert, first-seen and
+  notification rows and the frame (B6 independent review, I-2), so a tail that fails later leaves a row the re-send is
+  recognised by; that `duplicate` re-send then finishes the tail once — first-seen stamp, notification, frame; no
+  `ingest` or `alert` row (`_finish_resent`, `7741a1e8`).
+- **D12 amended (B6 review, `95a305b1`): a LINKED reading is judged at the wall clock.** It keeps its own measurement
+  time — stored, audited as `obs_ts`, drawn at it in trends and the record, anchoring the vital task at it — but
+  `_apply_reading` evaluates it with `judge_at=now`, and a restart replays an `ingest` row that names a `reading` at the
+  row's write time (`rehydrate._replay_ingest`), so the replay agrees. D12's «alert behaviour equals a back-dated hand
+  entry: judged at its own time» no longer holds for a link. Reason: judged at its old time, a linked value ran the
+  antibiotic clock, the sepsis and shock rules and the alerts' episodes backwards — an active or acknowledged
+  `antibiotic_overdue` was replaced by `antibiotic_due` («300 min remaining»: false reassurance), and an acknowledged
+  overdue's episode ended. Judged now, a stale value simply fails NEWS2's freshness. Not covered: the shadow lane (open
+  item c). The record counts a linked reading as arrived when it was linked (`resolved_at`), so its «alındı» is the
+  link's time (B8 review, `02c88951`).
+- **New refusal: 409 `reading_before_stay` (final review I-1, `906f23dd`).** Protocol numbers are sequential, so a typo
+  is often the next number, handed to a new patient hours after the round typed with it was measured. A set measured
+  before the start of the stay of the patient who holds the number now — the first kabul, walked back along transfers
+  (the task store's `ADMITTED_AT`), minus `BEDSIDE_SKEW` (2 min) — cannot be linked to that stay; the check precedes the
+  claim. Such a set is visible to every `clinical.chart` holder, as an unknown number's set is, so the ward it was
+  measured on can link it to its own patient or reject it. New store methods `stay_start` and `open_admissions`
+  (protocol, memory, Postgres, contract); `open_stays` walks back to the first kabul; `admission_keys.OPEN_STAYS` was
+  renamed `OPEN_ADMISSIONS`. No screen back-dates an admission (the kabul form sends no `admission_datetime`; the server
+  stamps the moment the admission is saved), so a round measured just before a patient's kabul is charted by hand at
+  its time (24 h at most) and the set rejected — the guide says so.
+- **D11 as built.** Visibility is decided per number and measurement time: a number with no identity record → every
+  `clinical.chart` holder; a number that is a patient's now — admitted since the set arrived (its reason stays
+  `unknown`), or discharged — → only callers whose scope reaches that patient (a discharged one at the tombstone's last
+  unit), the scope card built uncounted (B6 independent review, I-3); except a set measured before that patient's stay
+  (above) → everybody. The scope is resolved once per request (503 when unreadable), each number's record read once per
+  request. The link's target: in scope (404, audited `scope_denied`), not discharged (409), on a board — an identity
+  record or a measured patient (E-5) — and, under the policy `unmatched`, never a nameless card (404; final review,
+  minor 5).
+- **Twins (D13, D14 as built).** One device reading the trail holds twice (a `seen` that failed open; older data) — two
+  `ingest` rows with one `device_key`: patient, code, instant, the device as the table keeps it (cut to `SOURCE_MAX`),
+  value — is one reading everywhere. The retract route writes one `chart_retract` naming the entry chosen and takes
+  every copy: the engine replay and the live rebuild skip them (`skip_device`), trends mark every copy, the record
+  shows every table row with the same `device_identity` withdrawn, the vital task skips every copy, and `reconcile`
+  voids every copy's row (`_withdrawn_entries`); each void is tried per copy in its own `try` (`1e712846`). A retry of
+  a finished withdrawal («already») also marks the record, with the trail's own withdrawal (`1e753442`). **A withdrawn
+  reading re-sent is answered `duplicate`**, from a per-hospital in-memory set of withdrawn device keys (filled at
+  rehydrate, added to at each withdrawal) asked before the store — so it holds when the store fails open or, in
+  memory, forgot at a restart. D14's `seen` also matches a row FILED under the patient (`received_key` OR
+  `patient_key`; B6 independent review, I-1).
+- **One reading enters a patient once (D12 as built).** The link asks its target the narrower `filed_under` (a row whose
+  `patient_key` is the patient — never a waiting, claimed or rejected row, so a set linked to the very number it arrived
+  under does not match itself; `7741a1e8`). A reading the target already holds — or holds withdrawn (final review,
+  minor 3; asked of memory first) — is not applied: its row is closed `rejected` with `RESOLVE_ALREADY_HELD`, the value
+  kept, and named under `already_held` in the link's `reading_assigned` row. Before each reading of a set the target's
+  identity is read again (a discharge in between releases the rest: 409 `reading_target_discharged`) and the claim is
+  checked to be still this request's own (`_still_ours`: `assigned`, no patient, the same `resolved_by` and
+  `resolved_at`; B10 review) — a lost claim stops the set with 409 `reading_not_unmatched`. A set that stops part-way
+  gets a best-effort `reading_assigned` row for the readings that went in (a failed append is logged by class only).
+  The linked `ingest` row carries `"reading": id` and `"actor"`, the person (B6 independent review, I-4). A raise
+  mid-set releases only the readings not yet attempted; the one in progress stays claimed, for `reconcile` to finalize
+  from its `ingest` row or release after `CLAIM_STALE` (`72a506d6`). `reconcile` finishes a claim only with a row of
+  that claim's own person written after the claim was made (`dede43d7`).
+- **Bounds (B6, B8 reviews; final review, minors 7 and 8).** The list reads at most `UNMATCHED_ROWS_MAX`
+  (`LIST_MAX * SET_MAX` = 10 000) rows, the newest, cut in the database, and answers the newest `LIST_MAX` (200) sets
+  with `"truncated": true` (`count` is then the sets among the rows read: a lower bound); the visibility decision is
+  asked once per number and time. The record reads at most `RECORD_ROWS_MAX` (5 000) rows, to the answer's own `until`,
+  with `"truncated": true` when cut. Trends read the device `ingest` rows on their own budget, `TRENDS_DEVICE_LIMIT`
+  (5 000, the newest kept), so they never cut the hand entries or the withdrawals; the answer gains `device_truncated`
+  beside `manual_truncated`. A durable store's list and record reads run off the event loop (`asyncio.to_thread`); the
+  doors' check-then-file stays synchronous on purpose (`_resent`'s docstring). The dashboard says each cut as a neutral
+  note (`kayit.umTruncated`, `recordTruncated`, `entriesTruncated`), and the rail badge and the step's button show the
+  engine's `count`, never `sets.length`, and nothing unless the last read succeeded (`6d96ee95`).
+- **D15 as built (B9 review, `b9a7372c`).** The anchor reads the `chart` and `ingest` rows of `NEWS2_INPUT_CODES` minus
+  the withdrawn ones (twins by device key). The tenant-wide read keeps the newest `HAND_LIMIT * 4` (20 000) rows; when
+  it comes back full, each board patient it gave no stamp is read again on its own (`hand_entries`), and the cut is
+  warned once while it lasts — O3's risk is reduced for a busy feeder, the anchor still counts every reading of one
+  (open item b). A task's `entries` lists each instant once.
+- **D19 as built.** `--open-only` is required (E-11); each open stay is bounded by its start, walked back to the first
+  kabul; a moved stay's readings from before the move are filed with `admission_id` NULL — the stamp is the open
+  admission row's, which began at the move (final review, minor 6; open item d).
+- **Migration `0021` as built.** `vital_readings` with **seven** indexes — the spec's five, E-2's
+  `ix_vital_readings_tenant_entry`, and `ix_vital_readings_claims (tenant, id) WHERE state = 'assigned' AND patient_key
+  IS NULL` (B2 review, `6090ea06`: `claims()` runs at every reconcile) — plus `ix_audit_tenant_patient_id` on `audit`.
+  One statement per `op.execute`. After the merges the chain is `… 0019 → 0020 → 0022 → 0021`: `down_revision = "0022"`,
+  one head, `0021`; an order check reads the revision graph, never the names.
+- **Smaller.** `POST /clinical/{id}` and its preview refuse a path id longer than `PATIENT_ID_MAX` (400; minor 4). Every
+  log line of the slice names the hospital and an exception class, never a number or a value (B6 independent review,
+  M1). The policy switch reaches the container: `deploy/local/docker-compose.yml` passes `READINGS_UNKNOWN_KEY` (empty
+  by default); a value other than `card` or `unmatched` is warned about and ignored — the list stays — and the policy
+  in effect is logged once at start (`prodserver._unknown_readings`). Spec O2 is closed (E-8: an `ingest` row's device
+  replays as sent). O3 is reduced (above), O4 stays open (item e), O5's shared edits were settled at the two merges.
+
+### 11.3 The plan's departures, briefly
+
+E-1 the three list routes are a factory router's, pinned by `CALLER_RESOLVED_ROUTES` and `test_tenant_isolation.py`,
+not by `EXPECTED`; E-2 the sixth index, `(tenant, entry_id)`, for the withdrawal's mark; E-3 the claim also guards a
+rejection, and an orphaned claim is released after `CLAIM_STALE` (10 min); E-4 `linkable` on a list set, `received_late`
+on a record set, decided by the engine; E-5 the link's target must be on a board; E-6 one rejection is one set; E-7
+`hours` outside 24/72/168 is a coded 400 `reading_hours`; E-8 O2 fixed — an `ingest` row's device replays as sent; E-9
+the dev proxy line travels with nginx's, and W1 has two parts; E-10 the dashboard reads through hooks and writes through
+the board store; E-11 the backfill requires `--open-only` and bounds each stay by its start; E-12 `source` and `unit`
+are cut to 64 and 16 characters at the door.
+
+### 11.4 The pins, after the merge of main `da70c56f`
+
+`test_route_permissions.py` `EXPECTED` **77** (this slice adds none, E-1; other lanes moved it from 75) ·
+`test_board_permissions.py` `BOARD_EXPECTED` **28** (+ `GET /patients/{patient_id}/readings`) ·
+`test_route_inventory.py` `CALLER_RESOLVED_ROUTES` **13** (+ the three `/readings/unmatched…`) ·
+`test_tenant_isolation.py` `UNSCOPED_BY_DESIGN` **43** (with the set `UNMATCHED_READINGS`, 3) · `test_permissions.py`
+`SPEC_KEYS` **30** (no new permission, D10) · `test_nginx_routes.py` `API_PATHS` **35** (+ `/readings`), the log map's
+`/patients/:key/readings`, the dev proxy's `/readings` · `denetim.js` `EVENT_TYPES` **61** (+ `reading_unmatched`,
+`reading_assigned`, `reading_rejected`) · the `kayit` namespace **79** keys in each of tr, az, ru, en.
+
+### 11.5 Open items for the owner
+
+- **(a) A back-dated reading can still turn `antibiotic_overdue` into `antibiotic_due` — engine-wide, older than this
+  slice.** A buffered Connex round arriving late at `/ingest`, or «Düzelt»'s corrected value charted at the reading's
+  time, is judged at its own measurement time (the door's `min(stamp, wall clock)`, G2-A2 X10; the bedside door's
+  back-dating, G3-01 D7), so it can replace an active or acknowledged overdue with a «due» — the false reassurance the
+  D12 amendment removed for links only. The fix touches G2-A2 X10 and G3-01 D7: the owner's decision.
+- **(b) A continuous feed and the vital task.** «Any NEWS2 input counts» (D15): when a MEDIBUS ventilator feed goes live
+  into the real engine, that patient's vital task never comes due. To be decided before such a feed is switched on.
+- **(c) The shadow lane** (`mirror_observation`) still judges a linked reading at its measurement time, inside its own
+  engine. Non-clinical; left as it is.
+- **(d) Pre-move readings.** Readings of a transferred patient from before the move, filed by `reconcile` or the
+  backfill (not by the door), carry `admission_id` NULL; the record box still shows them (it reads by card key).
+- **(e) az/ru/en strings** await a native reader (O4).
+- **(f) The NCE feed** has been silent since 2026-09-05; its revival is the owner's session (B1d O1–O6), which also
+  settles what the device does on `NF`. The slice is proven on the local stack only.
+
+### 11.6 Deploy notes for Lane A
+
+What the blocks must say; Lane A writes them, the owner's «onay» runs them.
+
+- **Images: api + web only.** The bridge, the NCE reader, the hub and the workers are untouched — the device query
+  path did not change (D18). Order: bundle → dump → api (its start command runs `alembic upgrade head`, then serves) →
+  web → checks. In a pasted heredoc every stdin consumer (`docker compose exec|run`, `psql`, `ssh`) takes `</dev/null`.
+- **Migration `0021`, after `0022`.** `alembic heads` prints one head, `0021`, before the deploy. Schema only, one
+  statement per `op.execute`. `ix_audit_tenant_patient_id` is a plain `CREATE INDEX IF NOT EXISTS` on `audit`: it takes
+  a SHARE lock that Postgres holds until the transaction commits — and env.py runs every pending revision of one
+  `alembic upgrade head` in a single transaction, so on a server that also lacks `0020` and `0022` the lock lasts until
+  the whole `upgrade head` commits. Audit writes wait that long; the API does not serve until the upgrade has finished.
+  The VM's `audit` table was about 2 400 rows when the spec was written (§8): a moment. Rollback is a downgrade to
+  `0022` (below).
+- **`READINGS_UNKNOWN_KEY` stays empty in production** (the API's `.env`): on Postgres the policy is then `unmatched` —
+  an unknown number goes to the list and makes no card. The API logs the policy once at start («… kept in the
+  unmatched list and makes no card (policy unmatched)»). `card` is for a replay of recorded data into a deployment with
+  no admissions only.
+- **Block A-1 (before) counts today's nameless cards AND those of them with an alert on the card**, so the owner knows
+  what will stop updating. A sketch from the plan, extended (Lane A checks it on the local stack; it prints two numbers,
+  never a patient id): `docker compose exec -T api python -c "import os,json,urllib.request as u;
+  t=os.environ['TENANTS'].split(',')[0].split(':')[0]; r=u.Request('http://127.0.0.1:8000/patients',
+  headers={'Authorization':'Bearer '+t}); ps=[p for p in json.load(u.urlopen(r))['patients'] if p.get('identity') is
+  None]; print(len(ps), sum(1 for p in ps if p.get('alerts')))" </dev/null`. After the deploy such a card stays (the
+  restart replays its old `ingest` rows), receives nothing new and is no link target.
+- **Checks after the start.** `select version_num from alembic_version` = `0021`; the seven `vital_readings` indexes and
+  `ix_audit_tenant_patient_id` exist; the API's log has the policy line (`policy unmatched`) and no `vital_readings:`
+  line at ERROR or WARNING level; `GET /readings/unmatched` without a credential through nginx answers 401 with a JSON
+  body (not the dashboard's HTML); a web asset grep finds the `kayit` namespace (e.g. the key `umOpenCount`). **Not**
+  «`count(*) from vital_readings` = 0»: the start-up reconcile files the last 48 h of `ingest` rows and bedside `chart`
+  rows at once (logged at INFO as `vital_readings: reconcile (hastane …): recorded N`).
+- **Optional, the same day (D19):** `docker compose run --rm --no-deps -T api python scripts/backfill_vital_readings.py
+  --tenant <slug> --open-only --dry-run </dev/null`, read the one `VITAL_READINGS_BACKFILL {…}` line (counts only:
+  `stays`, `recorded`, `skipped` …), then the same without `--dry-run`. It files the open stays' readings since each stay
+  began; rows the start-up pass filed already are passed over; a second run files nothing. Exit 1: run it again; exit
+  2: refused (no `--tenant`, no `--open-only`, no Postgres `DATABASE_URL`), nothing read.
+- **The ward is told beforehand:** the «Eşleşmeyen ölçümler» list in «Yatak başı ölçüm» and its badge; «Düzelt» on a
+  device value; a device round now clears the vital task while the NEWS2 stays partial until respiration rate and
+  consciousness are entered by hand; a wrong digit that happens to be another in-patient's open protocol attaches the
+  reading to that patient — the name on the device and «Düzelt» are the remedies; a set measured before a patient's
+  stay cannot be linked to that stay.
+- **Rollback (D20):** api + web to the previous images; `alembic downgrade 0022` (the revision before `0021` now — not
+  `0019` or `0020`) drops the table with its rows and the audit index; no audit content is touched. The rollback block
+  **first prints three counts** (as G3-01's R-1, a non-zero first count is worth the owner's confirmation before
+  anything is touched):
+  - `select count(*) from audit where event_type = 'chart_retract' and payload->>'origin' = 'device'` — withdrawn
+    device values: under the old images each **counts again** (the old replay skips withdrawn `chart` rows only) and
+    can raise its alert again;
+  - `select count(*) from vital_readings where state = 'assigned' and patient_key is not null` — linked readings: they
+    **stay** (ordinary `ingest` rows), but the old replay judges them at their measurement time, not at the link's (the
+    D12 amendment does not survive a rollback);
+  - `select count(*) from vital_readings where state = 'unmatched'` — waiting readings: **no longer visible** (their
+    `reading_unmatched` audit rows remain); under the old images an unknown number makes a nameless card again and a
+    discharged number's value is dropped again.
+
+### 11.7 As run (local walk)
+
+The local walk's record lives in `/c/tmp/homunculus-plans/g3-cihaz/walk/notes.md`; its summary is added here by the
+controller.

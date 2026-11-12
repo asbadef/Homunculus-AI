@@ -340,6 +340,17 @@ kötüleşme, laboratuvar bunu yakalayana kadar saatler geçebilirken, sürekli 
   kendiliğinden kullanmaz, başka sürümler kurulu olabilir (ör. SQLAlchemy 2.0.51); listeye
   hizalamak için `homunculus-engine/` içinde: `pip install -c constraints.txt -e ".[dev]"`.
 
+**Ölçüm kaydı**
+- *Basit:* Bir yatışta ölçülen her vital değerin, kaynağıyla («cihaz» ya da «elle») birlikte tutulduğu kalıcı liste.
+- *Homunculus'ta:* Hasta ekranındaki «Ölçüm kaydı» kutusu (G3-05, 3.27). Asıl kaynak denetim kaydıdır; kayıt onun
+  yatışa bağlanmış özetidir (`vital_readings` tablosu). Yanlış bir değer silinmez, «Düzelt» ile üstü çizilir.
+
+**Eşleşmeyen ölçüm**
+- *Basit:* Cihaza girilen numaranın Homunculus'ta kaydı olmadığı (yanlış ya da eksik bir hane) ya da numara taburcu
+  edilmiş bir hastanın olduğu için bir hastaya yazılamayan cihaz ölçümü.
+- *Homunculus'ta:* Değeri kaybolmaz; «Yatak başı ölçüm» sayfasındaki «Eşleşmeyen ölçümler» listesinde bekler, bir kişi
+  onu doğru hastaya bağlar ya da gerekçesiyle reddeder (3.27). Alarm üretmez, kart açmaz.
+
 ---
 
 ### 3.5 Kimlik ve yetki terimleri
@@ -585,7 +596,8 @@ Dalga 3'te geldi: 3.6.
   alarmları «taburcu» nedeniyle kapanır (G2-A11). O numara için bir monitör ölçüm göndermeyi
   sürdürse bile hiçbir alarm, çağrı ya da kart doğmaz. Düşürülen her ölçüm denetim kaydında ayrı bir satır olarak görünür
   (olay türü `reading_dropped_discharged`; ekranda henüz Türkçe bir etiketi yok); ölçümün değeri o
-  satıra yazılmaz.
+  satıra yazılmaz. G3-05'ten beri cihazdan gelen böyle bir ölçüm değeriyle saklanır ve «Eşleşmeyen ölçümler»
+  listesine gider (`reading_unmatched`, 3.27); alarm, çağrı ya da kart yine doğmaz.
   Ekran **kilitliyken de çalar**; oturum kapanınca durur, o an çalmakta olan vuruşlar da kesilir.
   Pano ilk yüklemesini aldıysa, sunucuyla akış daha açılmadan da çalar; akış koparsa panonun son
   bildiğini çalmaya devam eder; pano hiç okunamıyorsa çalmaz. Tarayıcı sesi askıya alıp geri
@@ -1070,7 +1082,9 @@ klinik kavramların kendisi yukarıda, kaynaklarıyla (3.1–3.3).
    servise tek bir kaldırma çerçevesi gider. O numaranın sonraki ölçümleri `/ingest` ve `/clinical`
    kapısında motordan önce düşer: HTTP 200 `{"patient_id", "dropped": "discharged"}`, ölçüm başına
    bir `reading_dropped_discharged` denetim satırı (konu sinyal kodu, değer yok); alarm, çağrı ya da
-   çerçeve doğmaz. Eskalasyon döngüsü böyle bir hasta için çağrı yapmaz — retire çağrısı hiç
+   çerçeve doğmaz. G3-05'ten beri `/ingest`'te bu satırın yerini değeri taşıyan bir `reading_unmatched` satırı
+   alır ve ölçüm «Eşleşmeyen ölçümler» listesinde bekler (3.27); `/clinical` eskisi gibi düşürür.
+   Eskalasyon döngüsü böyle bir hasta için çağrı yapmaz — retire çağrısı hiç
    gelmediyse alarmı kendisi kapatır; yeniden başlatma da kimlik deposuyla uyuşur (tekrar oynatma
    `discharged` nedenli satırı uygular, sonra motor bir kez kimlik deposuna karşı taranır). HIS
    (Comed) taburcusu değişmez: kartı 24 saat kalır, ölçümleri değerlendirilmeye devam eder.
@@ -1491,8 +1505,8 @@ hesaplamaz. Örneklerdeki numaralar uydurmadır.
     ekranda nasıl gösterdiği sahibin NCE oturumunda doğrulanacak (spec §12, O4);
   - **bulunamadı** (bilinmeyen ya da taburcu edilmiş numara) → `NF`: tasarım gereği cihaz numarayı
     doğrulayamaz, hemşire yatak başında düzeltir; cihazın `NF`'de ne gösterdiği ve kaydetmeye izin
-    verip vermediği de aynı oturumda doğrulanacak (spec §12, O3). Yine de kaydederse ölçüm bugünkü gibi
-    adsız «kimlik kaydı yok» kartına düşer;
+    verip vermediği de aynı oturumda doğrulanacak (spec §12, O3). Yine de kaydederse ölçüm, G3-05'ten beri
+    hastane kurulumunda adsız bir kart açmaz, değeriyle «Eşleşmeyen ölçümler» listesine gider (3.27);
   - **API cevap vermedi** → köprü kendi aynasından cevaplar; aynada da yoksa numarayı adsız geri
     yollar. Ölçüm kaybolmaz; «bilmiyoruz» ile «bulunamadı» ayrı kalır. API konteyneri durmuşsa
     (örneğin bir kurulum sırasında) da cevap en çok yaklaşık 2 sn sürer: 2 sn sınırı ad çözümünü ve
@@ -1744,8 +1758,8 @@ uydurmadır.
     şüpheli enfeksiyon işareti ister ve o işaret geri alınamaz.
   - Yanlış değer daha eski bir ölçümü gölgeliyorsa, geri alma eskisini son ölçüm olarak geri
     getirir ve yeni bir alarm doğabilir; doğarsa hemşireye bildirilir.
-  - Geri alma bir kişinin işidir: cihaz kimliği (köprünün jetonu) yapamaz, cihazdan gelen bir
-    değer geri alınamaz, taburcu edilmiş bir numarada da yapılmaz.
+  - Geri alma bir kişinin işidir: cihaz kimliği (köprünün jetonu) yapamaz; taburcu edilmiş bir
+    numarada da yapılmaz. Cihazdan gelen bir değer G3-05'ten beri geri alınabilir («Düzelt», 3.27).
 - **«elle».** Elle girilen değeri «elle» diye işaretleyenler: trend kartı (son değer elle
   girilmişse); büyük grafiğin okuması (imlecin altındaki ölçüm elle girilmişse); tablo (elle
   girilen her satır, üstü çizili olan da). Hasta ekranının «Ölçülen değerler» kutusu ve «Yatak başı
@@ -1891,9 +1905,11 @@ aynı gün sunucuya çıktı. Örneklerdeki adlar uydurmadır.
 bir hemşirenin ya da hekimin elle açtığı görev, ve **bir sonraki vital ölçüm**. **Durum:** 11 Kasım 2026'dan beri hastane
 sunucusunda çalışıyor (göç 0017). Örneklerdeki değerler uydurmadır.
 
-- **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **elle girilen** NEWS2 değeridir (3.12'deki
-  form; geri alınan giriş sayılmaz). Monitörden ya da HBYS'den gelen değer dayanak değildir. Son 48 saatte elle
-  giriş yoksa dayanak kabul zamanıdır; o da yoksa ekran «ölçüm kaydı yok» der. Vade = dayanak + hastanın NEWS2
+- **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **ölçülen** NEWS2 girdisidir: elle girilen
+  (3.12'deki form) ya da — G3-05'ten beri — cihazdan gelen (3.27); geri alınan değer sayılmaz. Monitör şeridinin
+  doğrulanmamış değerleri (Aşama A/B) gerçek motora girmediği için dayanak değildir. Cihaz solunum sayısını ve bilinci
+  göndermediği için cihaz turundan sonra NEWS2 «eksik» kalır. Son 48 saatte ölçüm yoksa dayanak kabul zamanıdır; o da
+  yoksa ekran «ölçüm kaydı yok» der. Vade = dayanak + hastanın NEWS2
   bandının aralığı. Ölçüm kaydedilince görev kendiliğinden ilerler.
 - **Aralığı hastane belirler, sistem değil.** Yönetim › Görevler sekmesinde (`structure.manage`) beş bant var:
   NEWS2 0, 1–4, tek parametrede 3, 5–6, ≥ 7. Yalnız «0 → 720 dk» varsayılan doludur; kaynağı kasadaki NEWS2
@@ -2749,6 +2765,116 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
 - **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
 - **Kaynak:** `docs/superpowers/specs/2026-11-12-g4-is-yuku-design.md` (§5 değişiklikleriyle); plan
   `docs/superpowers/plans/2026-11-12-g4-is-yuku.md`.
+
+### 3.27 Cihaz ölçüm kaydı: cihazdan gelen ölçüm hastanın yatışına yazılır (Grup 3 · G3-05)
+
+- **Ne:** Servislerde vitaller çoğunlukla elle yazılmaz: hemşire Connex Spot cihazına hastanın **protokol numarasını**
+  girer (ya da etiketin barkodunu okutur), ölçer, cihaz değerleri gönderir. Bu dilimden önce o değerler yalnız denetim
+  kaydında ve motorun belleğinde duruyordu; hangi yatışa ait oldukları hiçbir yerde yazılı değildi. Artık her ölçüm,
+  hastanın o yatışına bağlı kalıcı bir **ölçüm kaydına** yazılır; numarası hiçbir hastayla eşleşmeyen ölçüm de
+  değeriyle bir listede bekler. Kayıt tutar ve gösterir; tanı koymaz, tedavi önermez.
+- **Durum:** kodda (`feat/g3-cihaz-olcum-kaydi`); main'de ve hastane sunucusunda değil — ikisi de sahibin sözüyle.
+  Sunucuda göç `0021` çalışmalıdır (`0022`'den sonra gelir). Örneklerdeki numaralar, adlar ve değerler uydurmadır.
+- **Sözcükler.**
+  - *Cihaz numarası:* cihazın kimlik alanına girilen numara. Homunculus'un kabulde verdiği 12 haneli **protokol
+    numarasıdır** (3.10; etiketin barkodu da odur). Comed'in protokol numarası aranmaz: cihaza o girilirse ölçüm hiçbir
+    yatışla eşleşmez ve listeye düşer.
+  - *Ölçüm kaydı:* bir yatışta ölçülen her değerin kaynağıyla birlikte tutulduğu liste. Kaynak ya **«cihaz»** (hangi
+    cihaz olduğuyla) ya **«elle»** (kimin girdiğiyle) olur.
+  - *Eşleşmeyen ölçüm:* bir hastaya yazılamayan cihaz ölçümü: cihaza girilen numaranın Homunculus'ta kaydı yoktur
+    (yanlış ya da eksik bir hane) ya da numara taburcu edilmiş bir hastanındır. **Değeri kaybolmaz**; bir listede bekler.
+  - *Bağla / Reddet:* eşleşmeyen bir ölçümü doğru hastaya yazmak, ya da gerekçesiyle kapatmak.
+  - *Düzelt:* yanlış bir değeri işaretleyip istenirse yerine doğrusunu girmek. Yanlış değer silinmez; üstü çizili kalır.
+- **Hasta ekranında «Ölçüm kaydı» kutusu.** «Ölçülen değerler»in hemen altında; hasta ekranını gören herkes görür.
+  Her ölçüm seti (bir saat, bir kaynak) bir satırdır, en yenisi üstte; dönem 24 saat, 72 saat ya da 7 gün; kutu
+  dakikada bir yenilenir. Satırda ölçüm saati, kaynak («cihaz · CONNEX-3A» ya da «elle · hem.ayse») ve değerler yazar.
+  Değer, ölçümünden 5 dakikadan geç kayda girdiyse — cihazın beklettiği bir tur, listeden bağlanan bir ölçüm — yanında
+  «alındı 09:40» görünür (bağlanan ölçümde bağlandığı saat). Geri alınan değer üstü çizili, «hatalı giriş — gerekçe ·
+  kim · saat» ile durur. Dönemde çok fazla kayıt varsa kutunun altında «Bu dönemin en eski ölçümleri gösterilmiyor
+  (çok fazla kayıt).» yazar. Vital eğrisinin tablosu da cihazdan gelen satırı «cihaz» diye işaretler.
+- **«Düzelt».** Kayıt girme yetkisi (`clinical.chart`) olan biri «Düzelt»i kutuda her değerin yanında (cihazın
+  değerinde de, elle girilende de), vital eğrisinin tablosunda cihazdan gelen değerin yanında görür (tablodaki elle
+  girilmiş değerde düğme eskisi gibi «Hatalı giriş»tir, 3.12). Gerekçe (10–200 karakter) yazılır; istenirse doğru değer
+  de girilir. Olan şudur:
+  - yanlış değer bütün skorlardan ve uyarılardan çıkar: hasta motorda o değer hiç gelmemiş gibi yeniden kurulur
+    (3.12'deki «hatalı giriş»in aynısıdır; oradaki kurallar burada da geçer — örneğin gönderilmiş bir bildirim geri
+    çağrılmaz);
+  - kayıtta **üstü çizili**, gerekçesi, kimin ne zaman işaretlediğiyle kalır;
+  - doğru değer aynı ölçüm saatine **«elle»** olarak yazılır; cihazın değeri gibi görünmez. Doğru değer yalnız ölçüm
+    24 saatten yeniyse buradan girilebilir; daha eski bir ölçüm yalnız işaretlenir;
+  - cihaz aynı ölçümü yeniden gönderirse (cihaz beklettiği ölçümleri yeniden yollar) geri gelmez: sistem onu tanır ve
+    almaz. Aynı ölçüm denetim kaydında iki kez yazılı kalmışsa (nadir), ikisi birlikte geri alınır.
+- **«Eşleşmeyen ölçümler».** «Yatak başı ölçüm» sayfasının (`/olcum`) içinde bir adımdır, ayrı bir sayfa değildir.
+  Sol raydaki «Yatak başı ölçüm» girişinde bekleyen set sayısı gri bir rozetle görünür: dakikada bir yenilenir, alarm
+  rengi değildir; son okuma başarısız olduysa rozet sayı göstermez. Liste son 7 günde gelenleri gösterir; her set için
+  cihaza **girildiği haliyle** numara («Girilen numara …»), neden («numara hiçbir yatışla eşleşmedi» ya da «taburcu
+  edilmiş hastanın numarası»), cihaz, ölçüm saati ve değerler yazar. Çok fazla set varsa yalnız en yeni 200'ü
+  gösterilir ve liste bunu söyler. Yalnız `clinical.chart` taşıyan bir kişi görür ve işlem yapar; cihaz kimliği yapamaz.
+  - **«Hastaya bağla»:** hasta listesinden hasta seçilir; sistem yatak başındaki soruyu sorar («Bu ölçüm bu hastaya mı
+    ait? Soyad ad ve doğum yılı hastayla eşleşiyor mu?»); «Evet, bağla» denince ölçüm o hastaya yazılır: **kendi ölçüm
+    saatiyle** ve kaynağı **cihaz** olarak (grafikte de o saatte görünür, vital ölçüm görevini o saatten sayar).
+    Skorlar ve uyarılar onu bağlandığı an, geç gelmiş bir değer olarak değerlendirir: 3.12'deki tazelik kuralıyla
+    eski bir değer NEWS2'ye girmez, ve hiçbir saat (antibiyotik süresi, bir alarmın başlangıcı) onun için geriye
+    işlemez.
+  - **24 saatten eski** bir ölçüm bağlanamaz, yalnız reddedilir (liste «24 saatten eski: bağlanamaz, yalnız
+    reddedilir.» der). Taburcu edilmiş bir hastaya da bağlanamaz: kapanmış bir yatışa bağlama bu dilimde yok.
+  - **Yatıştan önce ölçülen set.** Protokol numaraları sırayla verilir; yanlış girilen numara çoğu zaman bir
+    *sonraki* numaradır ve o numara saatler sonra yeni bir hastaya verilebilir. Bu yüzden numaranın şimdiki sahibinin
+    yatışı başlamadan önce (2 dakikalık saat payıyla; nakil olduysa yatışın ilk kabulünden) ölçülmüş bir set **o
+    yatışa bağlanamaz** («Ölçüm, hastanın bu yatışı başlamadan önce alınmış: bu yatışa bağlanamaz.»). Böyle bir set,
+    numarası bilinmeyen bir set gibi herkese görünür: ölçüldüğü servis onu kendi hastasına bağlayabilir ya da
+    reddedebilir. Ölçüm gerçekten o hastanınsa (örneğin hasta ölçüldükten sonra kabul edildiyse) yine bağlanamaz:
+    kabul formunda kabul saati girilecek bir alan yoktur, yatış kabulün kaydedildiği an başlar. Değerler istenirse
+    hasta ekranındaki «Ölçüm gir» ile ölçüm saatine elle girilir (en çok 24 saat geriye; kaynağı «elle» olur) ve set
+    gerekçesiyle reddedilir.
+  - **«Reddet»:** gerekçe (10–200 karakter) yazılır; ölçüm hiçbir hastaya bağlanmaz, değerleri ve gerekçe kayıtta
+    kalır.
+  - Bir ölçüm hastanın kaydında zaten varsa (cihaz aynı ölçümü doğru numarayla da göndermişse) ikinci kez girilmez;
+    listeden kapanır, değeri kalır. «Düzelt» ile geri alınmış bir değer de bağlamayla geri gelmez.
+  - **Kim görür:** numarasının Homunculus'ta kaydı olmayan seti kayıt girme yetkisi olan herkes görür (ortada bir hasta
+    yoktur; yalnız numara, cihaz ve değerler). Numara şimdi yatan bir hastanınsa set yalnız o hastayı görenlere
+    görünür (yatıştan önce ölçülmüşse herkese). Taburcu edilmiş bir hastanın numarasıyla gelen seti yalnız o hastanın
+    son biriminin çalışanları görür.
+  - Bağlama ve reddetme denetim kaydına kimin yaptığıyla yazılır; «Denetim bütünlüğü» üç olayı adıyla gösterir
+    («Eşleşmeyen ölçüm listeye alındı», «… hastaya bağlandı», «… reddedildi»).
+- **Görevlerim.** Cihazdan gelen ölçüm artık «vital ölçüm» görevini karşılar (3.16); hemşirenin cihazın değerlerini
+  yeniden yazması gerekmez. Cihaz yalnız SpO₂, sistolik tansiyon, nabız ve ateş gönderir; **solunum sayısını ve
+  bilinci göndermez.** Cihaz turundan sonra görev sıfırlanır, ama NEWS2 «eksik» kalır ve görev penceresi bunu söyler
+  («NEWS2 eksik: bazı girdiler yok. Cihaz turu solunum sayısını ve bilinci göndermez; bunlar elle girilir.»). Listede
+  bekleyen bir ölçüm görevi sıfırlamaz; bağlanınca sayılır.
+- **Panoda ne değişir (hastane kurulumunda).** Bilinmeyen bir numarayla gelen ölçüm artık **adsız bir «kimlik kaydı
+  yok» kartı açmaz**; listeye gider, alarm üretmez. Kurulum gününde panoda duran adsız bir kart yerinde kalır, ama yeni
+  ölçüm almaz ve listeden ona bağlanamaz. Taburcu edilmiş bir numaraya gelen cihaz ölçümünün **değeri artık saklanır**
+  (önceden yalnız «bir ölçüm geldi ve düşürüldü» yazılıyordu); yine alarm, bildirim ya da kart doğmaz. Kayıtlı verinin
+  yeniden oynatıldığı bir kurulumda eski davranış, API'nin ortamında `READINGS_UNKNOWN_KEY=card` ile geri açılır;
+  hastanede bu değişken boş kalır. Veritabanısız bir geliştirme kurulumunda eski davranış sürer.
+- **Sınırlar.**
+  - Numarada **kontrol hanesi yoktur**: yanlış girilen bir hane başka bir yatan hastanın açık protokolüne denk gelirse
+    ölçüm o hastaya yazılır ve listeye düşmez. Korunma, cihazın ekranda gösterdiği addır (3.10) ve «Düzelt»tir.
+  - Servis birimlerinin türü henüz yoktur (yalnız beş yoğun bakım türü; servis birimleri HBYS'nin H4 adımıdır). Bir
+    servis hastası ancak bugün var olan bir birime Homunculus'ta kabul edildiyse ölçümü ona yazılır ya da bağlanır.
+  - Taburcu olmuş bir yatışın ölçümleri tabloda saklanır, ama onları gösteren bir ekran henüz yoktur.
+  - Cihazdan solunum sayısı, vital kartlarında kaynak etiketi («cihaz» / «elle» yalnız kutuda ve eğri tablosundadır),
+    set başına NEWS2 ve kat başına cihaz listesi bu dilimde yoktur.
+- **Arka planda.** Denetim kaydı asıl kaynaktır; yeni tablo (`vital_readings`, göç `0021`) onun özetidir: önce denetim
+  satırı, sonra tablo. Tablo bir an yazılamazsa istek başarısız sayılmaz — eşleşmeyen ölçümde de: cihaz bağlantısı
+  sıra ile gönderir ve bir hata bütün servisin akışını durdururdu. Sistem açılışta ve saatte bir eksikleri denetim
+  kaydından tamamlar. Kurulum günü, yatan hastaların eski ölçümleri isteğe bağlı bir betikle kayda doldurulabilir
+  (`scripts/backfill_vital_readings.py --open-only`).
+- **Açık:**
+  - Geç gelen bir ölçüm — cihazın beklettiği bir tur ya da «Düzelt»in ölçüm saatine yazdığı doğru değer — kendi ölçüm
+    saatinde değerlendirilir; bu, açık bir «antibiyotik gecikti» uyarısını «antibiyotik zamanı» uyarısına
+    çevirebilir. Bu dilimden önce de böyleydi (geriye tarihli her elle girişte de); düzeltmesi sahibin kararını
+    bekliyor. Listeden bağlanan ölçümde bu olmaz (yukarıda).
+  - Bir ventilatör köprüsü (MEDIBUS) gerçek motora sürekli veri göndermeye başlarsa, «her NEWS2 girdisi sayılır»
+    kuralı yüzünden o hastanın vital ölçüm görevi hiç vadeye gelmez; köprü canlıya alınmadan önce karar gerekir.
+  - Nakil olmuş bir hastanın nakilden önceki ölçümleri saatlik tamamlamayla ya da kurulum betiğiyle kayda yazılırsa
+    hangi kabul satırına ait oldukları boş kalır; kutu onları yine gösterir.
+  - Azerbaycanca, Rusça ve İngilizce metinler ana dili okuması bekliyor.
+  - NCE akışı 5 Eylül 2026'dan beri sessiz; bu dilim yalnız yerel kurulumda denendi. Akışın yeniden açılması sahibin
+    oturumudur (B1d O1–O6).
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-g3-cihaz-olcum-kaydi-design.md` (§11 «As built»); plan
+  `docs/superpowers/plans/2026-11-11-g3-cihaz-olcum-kaydi.md`.
 
 ---
 
