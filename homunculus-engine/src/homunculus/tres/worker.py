@@ -38,8 +38,9 @@ one tenant's failure end the round for the tenants after it. The app's
 client factory is `egress.open_client` (the lock and the allowed hosts bound in): a tenant whose
 address the install does not allow is passed over, counted in `refused`.
 
-Log lines carry tenant ids, counts and exception classes — never a message, which may echo a
-value (D25).
+Log lines carry tenant ids, counts, statuses, exception classes and, for an unexpected exception,
+WHERE it was raised — its last five frames as `file:line:function` (review M9) — never a message
+and never a local value, either of which may echo a record (D25).
 
 The session factory must not expire its objects on commit (`homunculus.db.AsyncSessionLocal` does
 not): the ledger commits after every resource, and the settings rows are read after it."""
@@ -47,6 +48,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import traceback
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass
@@ -135,6 +138,19 @@ class RoundReport:
     retry_after: float | None = None    # the longest wait a 429 asked for; None when none came
 
 
+#: How many of an exception's innermost frames a log line names.
+FRAMES = 5
+
+
+def _where(exc: BaseException) -> str:
+    """Where `exc` was raised: its last FRAMES frames, outermost first, as `file:line:function`
+    (the file's base name). Nothing else of the traceback — not the source line, not a local value,
+    and the caller never logs the message (D25)."""
+    frames = traceback.extract_tb(exc.__traceback__)[-FRAMES:]
+    return " > ".join(f"{os.path.basename(frame.filename)}:{frame.lineno}:{frame.name}"
+                      for frame in frames) or "?"
+
+
 class _Pacer:
     """The spacing of one client's requests: nothing before the first, PACE_S before each next."""
 
@@ -210,7 +226,8 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
         except Exception as exc:  # noqa: BLE001 — one bad package must not end the round
             report.failed += 1
             consecutive += 1
-            log.error("TRƏS: a package failed for tenant %s (%s)", sender.tenant_id, type(exc).__name__)
+            log.error("TRƏS: a package failed for tenant %s (%s at %s)", sender.tenant_id,
+                      type(exc).__name__, _where(exc))
             await db.rollback()
             # The rollback expired every row this session held, the settings the source reads
             # among them: read them again before the source runs on.
@@ -268,8 +285,8 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 await _work(db, client, sender, settings, source, report, version)
             except Exception as exc:  # noqa: BLE001 — one tenant's failure must not end the others'
                 report.failed += 1
-                log.error("TRƏS: the round failed for tenant %s (%s); the next tenant goes on",
-                          tenant_id, type(exc).__name__)
+                log.error("TRƏS: the round failed for tenant %s (%s at %s); the next tenant goes on",
+                          tenant_id, type(exc).__name__, _where(exc))
                 await db.rollback()
             finally:
                 await client.aclose()
@@ -296,7 +313,8 @@ async def tres_loop(session_factory: Callable[[], AsyncSession], *, source: Pack
             report = await run_round(session_factory, egress=True, source=source, now=clock(),
                                      client_factory=client_factory, sleep=sleep)
         except Exception as exc:  # noqa: BLE001 — a bad round must never kill the loop
-            log.error("TRƏS round failed (%s); the next one runs in %.0f s", type(exc).__name__, ROUND_S)
+            log.error("TRƏS round failed (%s at %s); the next one runs in %.0f s", type(exc).__name__,
+                      _where(exc), ROUND_S)
             continue
         if report.retry_after is not None:
             wait = max(ROUND_S, report.retry_after)

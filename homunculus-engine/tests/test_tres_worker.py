@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -133,6 +134,7 @@ async def test_the_loop_waits_five_minutes_survives_a_bad_round_and_backs_off_af
     assert clock.sleeps == [ROUND_S, ROUND_S, ROUND_S, 1200.0, ROUND_S, ROUND_S]
     assert len(seen) == 5 and all(k["egress"] is True and k["now"] == T0 for k in seen)
     assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
+    assert re.search(r"test_tres_worker\.py:\d+:fake_round", caplog.text)          # where (review M9)
 
 
 # ---------------------------------------------------------------- the rounds (Postgres)
@@ -592,3 +594,24 @@ async def test_a_type_switched_off_never_overwrites_a_row_the_platform_holds(fee
     rows = (await db_session.execute(select(TresDelivery).order_by(TresDelivery.local_id))).scalars().all()
     assert [(r.local_id, r.status, r.remote_id, r.reason) for r in rows] == [
         ("hmn-p-0001", "sent", "7001", None), ("hmn-p-0002", "skipped", None, "type_off")]
+
+
+@requires_db
+async def test_a_failure_is_logged_with_its_last_frames_and_never_its_words(feed, caplog):
+    """Review M9: the class alone says too little to find a fault; the frames say where, as
+    `file:line:function` — never the message or a local value, which may hold PHI (D25)."""
+    fake, tenants, round_ = feed
+
+    async def failing(db, settings):
+        raise RuntimeError("Sentetik Ayşe")
+        yield
+
+    with caplog.at_level("ERROR"):
+        await round_(source_of(breaks))
+        await round_(failing)
+    (package_line,) = [r.getMessage() for r in caplog.records if "a package failed" in r.getMessage()]
+    (tenant_line,) = [r.getMessage() for r in caplog.records if "the round failed for tenant" in r.getMessage()]
+    assert "RuntimeError" in package_line and re.search(r"test_tres_worker\.py:\d+:breaks", package_line)
+    assert re.search(r"worker\.py:\d+:_work", package_line)
+    assert "RuntimeError" in tenant_line and re.search(r"test_tres_worker\.py:\d+:failing", tenant_line)
+    assert "Sentetik" not in caplog.text
