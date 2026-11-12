@@ -1,14 +1,15 @@
 # G3-06 · Saat geri gitmez — time-based rules never go backwards on a back-dated reading — design
 
 **Date:** 2026-11-12 · **Branch:** `feat/g3-saat-geri-gitmez` (from main `88f6544c`) · **Migration:** none
-**Status:** Approved by the owner 2026-11-12 («İkisine de evet»; link anchoring: «Ölçüm saatinden»). The owner's
-one change to the first draft: a LINKED reading also anchors at its measurement time, so the link passes the same
-requested instant as the doors (D4). The implementation plan follows. Group 3, slice 6 (the number is free on the
-roadmap, `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`). Code references were read at
-`88f6544c`.
+**Status:** Approved by the owner 2026-11-12 («İkisine de evet»; link anchoring: «Ölçüm saatinden»; a linked set:
+«Bağlama anında değerlendir, saat ölçümden»). The owner's one change to the first draft: a LINKED set is **judged at
+the link moment** and a recognition it completes is **anchored at the reading's measurement time** (D2, D4). The
+implementation plan follows. Group 3, slice 6 (the number is free on the roadmap,
+`docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`). Code references were read at `88f6544c`.
 **Amends:** G2-A2 X9e (and the wording of X10 and X10b), G3-01 D10 and D12, G2-A1 X12's restore test, and G3-05's
-D12 amendment (a link is no longer judged at the wall clock, and the replay drops its «write time» case for linked
-rows). Closes G3-05 §11.5 open items (a) and (c). G3-01 D7 (the 24 h back-dating bound) stays as it is.
+D12 amendment **for anchoring only**: a linked set is still judged at the link, and its recognition is now anchored
+at its measurement. Closes G3-05 §11.5 open items (a) and (c). G3-01 D7 (the 24 h back-dating bound) stays as it
+is.
 
 ## 1. Why
 
@@ -60,42 +61,54 @@ What main does today:
 | # | Decision | Why |
 |---|---|---|
 | D1 | **One floor per patient for every rule.** At the top of each evaluation the engine computes `at = max(now, self._judged_at.get(pid, now))` and stores `at`. Every rule that takes an instant gets `at`: septic shock, sepsis and the 3 h fluid window, the anchor's drop and restore test (D2), the antibiotic clock and the model. NEWS2, the patient-relative layer and the hold already do. `_news2_judged_at` is renamed `_judged_at` and stays in `_PER_PATIENT`, so `forget`, `copy` and `adopt` carry it. **The values keep their own timestamps**: the state stores a reading at its stamp, freshness is measured from each reading's stamp, and trends, the readings record, the vital task and the audit's `obs_ts` are untouched. The engine never reads a clock. `at` is only ever an instant a caller asked for, so a back-dated reading is judged at the patient's last judged instant, not at the wall clock. | One instant per patient, so no rule can disagree with another about "now". X9e already proved the pattern on NEWS2. A late value is information about the past; it is no reason to judge the present as if it were the past. |
-| D2 | **Anchor of a recognition that a back-dated reading completes: the measurement time (owner: «ölçüm saatinden»).** The anchor is the *requested* instant, the `now` the caller passed before flooring. At the doors and at the link (D4) that is the reading's stamp (`min(stamp, wall)`). The clock is judged at `at`. A recognition completed by a reading measured 6 h ago, on a patient judged up to now, shows `antibiotic_overdue` at once. A patient's first evaluation has no floor (`at` = the requested instant), so a fresh patient is judged exactly as today. **The restore rule, exactly:** (1) a drop is remembered with the dropping evaluation's floored instant, `_dropped_anchor[pid] = (anchor, at)`; (2) a recognition restores the dropped anchor if and only if `0 <= (at - dropped_at).total_seconds() <= ANCHOR_RESTORE_S`, where `at` is the recognising evaluation's floored instant; (3) otherwise its anchor is its requested instant, and the remembered drop is spent either way, as today. Within one engine the floor never goes back, and `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the difference is never negative. The `0 <=` is written out as a guard. | The owner's choice. The engine's anchor is already the requested instant (`pipeline.py:134`); what changes is the instant the clock is read at. Time zero is an open question in the vault (`Homunculus/wiki/concepts/antimicrobial-timing-sepsis.md`, «Time-zero must be defined and defensible»), so this is an operational rule, not a clinical claim. The restore window measures how far apart a toggle and its correction were (X12). Floored instants measure that in the engine's own one-way time. Requested instants do not, which is the latent bug (§1). |
+| D2 | **Anchor of a recognition that a back-dated reading completes: the measurement time (owner: «ölçüm saatinden»).** `Engine.ingest` gains a keyword `anchor_at` (default: its `now`). A recognition's anchor is `min(anchor_at, at)`; the `min` is a guard, since every caller passes `anchor_at <= now <= at`. **At the doors** `anchor_at` is the requested instant itself, `min(stamp, wall)`: one instant for both. **At the link** (D4) it is `min(stamp, wall_now)`, while the set is judged at `wall_now`. Either way the anchor is the reading's stamp, and the clock is judged at `at`. A recognition completed by a reading measured 6 h ago shows `antibiotic_overdue` at once, on a patient judged up to now and on a linked set alike. A patient's first evaluation at a door has no floor (`at` = the requested instant), so a fresh patient is judged at the doors exactly as today. **The restore rule, exactly:** (1) a drop is remembered with the dropping evaluation's floored instant, `_dropped_anchor[pid] = (anchor, at)`; (2) a recognition restores the dropped anchor if and only if `0 <= (at - dropped_at).total_seconds() <= ANCHOR_RESTORE_S`, where `at` is the recognising evaluation's floored instant; (3) otherwise its anchor is its anchor instant, and the remembered drop is spent either way, as today. Within one engine the floor never goes back, and `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the difference is never negative. The `0 <=` is written out as a guard. | The owner's choice. At the doors the engine's anchor is already the requested instant (`pipeline.py:134`); what changes there is the instant the clock is read at, and at the link the anchor moves from the link to the measurement. Time zero is an open question in the vault (`Homunculus/wiki/concepts/antimicrobial-timing-sepsis.md`, «Time-zero must be defined and defensible»), so this is an operational rule, not a clinical claim. The restore window measures how far apart a toggle and its correction were (X12). Floored instants measure that in the engine's own one-way time. Requested instants do not, which is the latent bug (§1). |
 | D3 | **A withdrawal re-judges at its own instant.** There is a new method `Engine.rejudge(patient_id, now)`. It runs the same evaluation as `ingest`, adds no reading, uses the instant `max(now, floor)` and returns the alerts. A patient the engine does not hold answers `[]` and is not created. `_adopt_rebuilt` calls it right after `engine.adopt` and before the hook, with no `await` in between (`app.py:1416–1417`). This is what makes the restart agree (D4): **the trail-replayers re-judge at every `chart_retract` row.** `rehydrate` rejudges there at the row's write time and runs the hook at that same write time. `rebuild_patient` rejudges at the patient's earlier withdrawals: the route already reads them (`app.py:1512–1513`). G3-01 D10's «as if never charted» still holds for the state, the anchor and the profile. **The alerts are judged at the withdrawal's instant.** So a withdrawal can bring up an alert the clock has reached since the last reading: an `antibiotic_due` whose hour has run out is `antibiotic_overdue` after the withdrawal. It is stamped and told to the nurse like any alert a withdrawal uncovers (G3-01 X3, `_stamp_uncovered`, `_tell_uncovered`). | The reviewers' scenario: without this the rebuild ends at «60 min remaining» and the overdue ends or latches. Without the replay's half, a restart after the withdrawal would bring the «60 min remaining» back. |
-| D4 | **One requested instant for every door, the link included (owner: «Ölçüm saatinden» for links too).** X10's `min(stamp, wall)` at `/ingest` and `/clinical` stays as it is; it is now the *requested* instant, and the engine floors it. **The link passes the same instant:** `_apply_reading` loses its `judge_at` parameter (the link was its only caller) and judges every reading at `min(obs.timestamp, wall_now)`. A recognition that a linked reading completes is therefore anchored at the reading's measurement time. **The replay has no linked-row case any more:** `rehydrate._replay_ingest` hands every `ingest` and `chart` row `min(stamp, written)`, capped by D6 (X10b), in id order. **Restart equals live for a link, exactly.** Live, the link asks `min(stamp, wall_now)`; the replay asks `min(stamp, ts)`, where the row's `ts` is written after `wall_now`. A linked reading is at most 24 h old (G3-05 D12's bound), so its stamp is earlier than both, and both requests are the stamp. The floor then rises in the replay as it rose live, and with D3 a restart equals live (to within the request for the doors' clamp of a future stamp, as X10b says). **On a patient the engine has not judged yet**, a linked set is judged at its own time, as the door judges a buffered round for such a patient (D2: a first evaluation has no floor). A linked set measured hours ago can therefore raise NEWS2 at its own time, where G3-05's amendment judged it stale at the wall clock; the hold then keeps that alert as it keeps any NEWS2 alert whose inputs go stale (G2-A2 X9–X12). On a patient already judged, the set is stale at the floor, as before. The hook's instant does not change anywhere: the request's wall clock at the doors, the link and the withdrawal, and the row's write time in the replay. | The floor now does what `judge_at=wall_now` was introduced for (G3-05 B6 review): no clock goes backwards. One rule for every door, and the anchor follows the measurement wherever the reading came from. The floor belongs to the engine; the doors keep saying what they ask for, and the trail keeps recording it. |
-| D5 | **Shadow lane: no code change.** `Engine.copy` carries `_judged_at` (the install starts the shadow engine from the real engine's floor, `infinity_rules.py:395`), so `mirror_observation` (`:486`) and `sample` (`:611`) can no longer go back. `_settle`'s `adopt` (`:640–644`) resets an unlinked patient to the real engine's floor, which is right: the patient goes back to the real picture. The lane never writes the real engine (`adopt` only reads `other`). The mirror's requested instant (`min(stamp, wall)`) is now the real engine's for every reading, a linked one included (D4), so the shadow engine and the real one anchor a recognition at the same instant. `retract_observation` still does not re-judge (the lane judges at its next sample, `:500–509`). | This closes G3-05 open item (c). The lane is non-clinical (Aşama B D1). |
-| D6 | **The floor is never set more than 2 min past the wall clock.** The doors cannot set it there (`min(stamp, wall)`), and neither can the link (wall) or the lane (`min(stamp, lane wall)`; the install uses `min(captured_at, now)` over samples stamped `<= now`, `:399–410`). The replay can, in two ways: `_written_at` falls back to the row's `obs_ts` when its `ts` cannot be read (`rehydrate.py:161–167`), and a row written while the server's clock ran ahead carries a `ts` past the restart. **So the replay caps the instant it hands the engine** (ingest and rejudge) **at its `now` + `REPLAY_SKEW`** (`= BEDSIDE_SKEW`, 2 min, `clinical.py:170`). `rehydrate` uses the `now` it already has (`:61`). `rebuild_patient` gains a keyword `now` (default: the clock), and the route passes its own, read before the rebuild: `app.py:1543` moves above `:1534`. **The instant handed to the lifecycle hook (`written`) is not capped** (§7). | With D1, a floor in the future would age every later reading of that patient to it, and keep doing so. That is X10's harm, made permanent. |
+| D4 | **The doors keep one instant; the link passes two (owner: «Bağlama anında değerlendir, saat ölçümden»).** **Doors:** X10's `min(stamp, wall)` at `/ingest` and `/clinical` stays as it is. It is now the *requested* instant: the engine floors it for the judgement and uses it unfloored as the anchor (D2). **Link:** `_apply_reading` keeps `judge_at` (the link is its only caller, `app.py:966`) and calls `engine.ingest(obs, now=judge_at, anchor_at=min(obs.timestamp, wall_now))`. The link judges at `wall_now`, floored like everything else (G3-05 D12 as amended, kept for the judgement), and anchors at the reading's stamp. A set measured 6 h ago is therefore not current at the link: NEWS2 finds it stale and it cannot raise NEWS2 by itself, on a patient the engine has never judged too. A recognition it completes runs its hour from the measurement, so an hour already past shows «gecikti» at once. **Replay:** `rehydrate._replay_ingest` hands an ordinary row `now = min(stamp, written)`. A linked row (`payload.reading` present) gets `now = written`, as G3-05 does today, and `anchor_at = min(stamp, written)`. Both instants are capped by D6, in id order. **Restart equals live for a link.** The anchor is exactly equal: a linked reading is at most 24 h old (G3-05 D12's bound), so its stamp is earlier than both `wall_now` and the row's `ts`, written after it. Both sides anchor at the stamp, and D6's cap never bites on it, since the stamp is before the restart. The judgement instant is equal to within the request: `wall_now` live, the row's `ts` in the replay. That is G3-05's own tolerance, and the floor follows both alike. With D3, a restart equals live. The hook's instant does not change anywhere: the request's wall clock at the doors, the link and the withdrawal, and the row's write time in the replay. | The owner's decision. A late set's values are old by the time it is linked, and judging them as current would page on stale data. Its measurement is still when the criteria were met. The floor belongs to the engine; the doors keep saying what they ask for, and the trail keeps recording it. |
+| D5 | **Shadow lane: the mirror passes the real engine's two instants.** `Engine.copy` carries `_judged_at` (the install starts the shadow engine from the real engine's floor, `infinity_rules.py:395`), so `mirror_observation` (`:486`) and `sample` (`:611`) can no longer go back. `mirror_observation` gains a keyword `judge_at` (default None) and calls `engine.ingest(obs, now=min(obs.timestamp, now) if judge_at is None else judge_at, anchor_at=min(obs.timestamp, now))`. `_apply_reading` hands it the link's `judge_at` (`app.py:1869`). A linked set is then judged at the link and anchored at its stamp in the shadow engine too, while a door's reading keeps one instant there as well. `_settle`'s `adopt` (`:640–644`) resets an unlinked patient to the real engine's floor, which is right: the patient goes back to the real picture. The lane never writes the real engine (`adopt` only reads `other`). `retract_observation` still does not re-judge (the lane judges at its next sample, `:500–509`). | This closes G3-05 open item (c): the shadow engine judges and anchors every reading where the real one does. The lane is non-clinical (Aşama B D1). |
+| D6 | **The floor is never set more than 2 min past the wall clock.** The doors cannot set it there (`min(stamp, wall)`), and neither can the link (wall) or the lane (`min(stamp, lane wall)`; the install uses `min(captured_at, now)` over samples stamped `<= now`, `:399–410`). The replay can, in two ways: `_written_at` falls back to the row's `obs_ts` when its `ts` cannot be read (`rehydrate.py:161–167`), and a row written while the server's clock ran ahead carries a `ts` past the restart. **So the replay caps every instant it hands the engine** (ingest's `now` and `anchor_at`, and rejudge's `now`) **at its `now` + `REPLAY_SKEW`** (`= BEDSIDE_SKEW`, 2 min, `clinical.py:170`). `rehydrate` uses the `now` it already has (`:61`). `rebuild_patient` gains a keyword `now` (default: the clock), and the route passes its own, read before the rebuild: `app.py:1543` moves above `:1534`. **The instant handed to the lifecycle hook (`written`) is not capped** (§7). | With D1, a floor in the future would age every later reading of that patient to it, and keep doing so. That is X10's harm, made permanent. |
 | D7 | **No migration, no route, no permission, no UI change, no new audit type.** No pin moves (route and board permission lists, `SPEC_KEYS`, nginx `API_PATHS`, `denetim.js` `EVENT_TYPES`). | It changes when a rule is judged, nothing stored or shown by its shape. |
 
 ## 3. The evaluation, exactly (`pipeline.py`)
 
-`ingest` keeps its signature. Its `now` parameter keeps its name, and the docstring calls it the requested instant.
-The body after `state.ingest(obs)` moves into `_evaluate`, which `rejudge` shares:
+`ingest` keeps its positional signature and gains one keyword, `anchor_at`. Its `now` parameter keeps its name, and
+the docstring calls it the requested instant. The body after `state.ingest(obs)` moves into `_evaluate`, which
+`rejudge` shares:
 
 ```python
-def ingest(self, obs, now):                      # `now`: the instant the caller asks for
-    state = self._repo.get_or_create(obs.patient_id)
-    state.ingest(obs)
-    return self._evaluate(obs.patient_id, state, now)
+def ingest(self, obs, now, *, anchor_at=None):   # `now`: the instant the caller asks the rules to judge at
+    state = self._repo.get_or_create(obs.patient_id)   # `anchor_at`: the anchor of a recognition it completes
+    state.ingest(obs)                                   #   (None: `now` — the doors' one instant)
+    return self._evaluate(obs.patient_id, state, now, now if anchor_at is None else anchor_at)
 
 def rejudge(self, patient_id, now):              # D3: the state as it is, no reading added
     if patient_id not in self._repo.patient_ids():
         return []                                # never creates the patient
-    return self._evaluate(patient_id, self._repo.get_or_create(patient_id), now)
+    return self._evaluate(patient_id, self._repo.get_or_create(patient_id), now, now)
 
-def _evaluate(self, patient_id, state, requested):
+def _evaluate(self, patient_id, state, requested, anchor_at):
     at = max(requested, self._judged_at.get(patient_id, requested))     # D1
     self._judged_at[patient_id] = at
     # today's body, in today's order, every `now` and `judge_at` replaced by `at`, except:
-    #   anchor set:  self._recognized_at[pid] = self._new_anchor(pid, requested, at)   (D2)
-    #   anchor drop: self._dropped_anchor[pid] = (dropped, at)                          (D2)
+    #   anchor set:  self._recognized_at[pid] = self._new_anchor(pid, min(anchor_at, at), at)   (D2)
+    #   anchor drop: self._dropped_anchor[pid] = (dropped, at)                                   (D2)
 
-def _new_anchor(self, patient_id, requested, at):
+def _new_anchor(self, patient_id, anchor, at):
     dropped = self._dropped_anchor.pop(patient_id, None)
     if dropped is not None and 0 <= (at - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
         return dropped[0]
-    return requested
+    return anchor
 ```
+
+The instants each caller passes:
+
+| Caller | `now` (judged at, floored) | `anchor_at` |
+|---|---|---|
+| `/ingest`, `/clinical` (`_apply_reading` without `judge_at`, `chart_observations`), the admission weight | `min(stamp, wall)` | the same (default) |
+| the link (`_apply_reading` with `judge_at=wall_now`) | `wall_now` | `min(stamp, wall_now)` |
+| the shadow mirror (D5) | as the real engine's caller | as the real engine's caller |
+| the replay, an ordinary row | `min(stamp, written, ceiling)` | the same (default) |
+| the replay, a linked row (`payload.reading`) | `min(written, ceiling)` | `min(stamp, written, ceiling)` |
+| `rejudge` (the withdrawal; the replay at a `chart_retract` row) | the withdrawal's `now` / `min(ts, ceiling)` | the same |
 
 The rule modules do not change: `rules/septic_shock.py`, `rules/antibiotic_clock.py`, `rules/news2.py`,
 `rules/patient_relative.py` and `model/scorer.py` already take the instant as a parameter, and the engine now hands
@@ -105,14 +118,15 @@ the 3 h fluid window (`septic_shock.py`, Sepsis-3 and SSC 2026) keep their sourc
 ## 4. Changes by file
 
 - `src/homunculus/pipeline.py`:
-  - `_evaluate`, `rejudge` and `_new_anchor(pid, requested, at)` (§3);
+  - `ingest`'s keyword `anchor_at`, `_evaluate`, `rejudge` and `_new_anchor(pid, anchor, at)` (§3);
   - `_judged_at` in `_PER_PATIENT` (`:49–50`) and `__init__` (`:60–61`);
   - the comment at `:97–102` and the `forget` docstring (`:283–289`) reworded.
 - `src/homunculus/api/rehydrate.py`:
   - `REPLAY_SKEW` (D6);
-  - `_replay_ingest(engine, rec, written, ceiling)` hands the engine `min(obs.timestamp, written, ceiling)` for
-    every row (`:107–125`). The linked branch goes (D4): the `linked` test at `:123` and the docstring paragraph at
-    `:116–119`;
+  - `_replay_ingest(engine, rec, written, ceiling)` (`:107–125`): an ordinary row is judged at
+    `min(obs.timestamp, written, ceiling)`. A linked row (the `linked` test at `:123` stays) is judged at
+    `min(written, ceiling)` and anchored at `min(obs.timestamp, written, ceiling)` (D4). The docstring paragraph at
+    `:116–119` gains the anchor;
   - `rehydrate` gains a `chart_retract` branch: when the row's `ts` reads and the engine holds the patient, it calls
     `engine.rejudge(pid, min(ts, ceiling))`, then `sync_alerts(engine, store, pid, ts)`. A row whose `ts` cannot be
     read is passed over: `_written_at`'s `obs_ts` fallback is not used for it, and the withdrawal still applies
@@ -124,16 +138,17 @@ the 3 h fluid window (`septic_shock.py`, Sepsis-3 and SSC 2026) keep their sourc
 - `src/homunculus/api/app.py`:
   - `_adopt_rebuilt` calls `engine.rejudge(patient_id, now)` between `:1416` and `:1417`;
   - `retract_entry` reads `now` before the rebuild and passes it to `rebuild_patient` (D6);
-  - the link path (D4): `_apply_reading` loses `judge_at` (`:1821`) and calls
-    `engine.ingest(obs, now=min(obs.timestamp, wall_now))` for every reading (`:1859`); the readings router's
-    `apply` lambda drops `judge_at=now` (`:965–967`), and its comment (`:962–964`, a link «judged NOW» and the shadow
-    lane «not covered») is rewritten;
-  - docstrings: `_apply_reading`'s «WHEN THE RULES JUDGE» (`:1831–1839`) becomes one rule for the door and the
-    link, and the instant comment (`:1856–1858`) loses its linked case.
+  - the link path (D4): `_apply_reading` keeps `judge_at` (`:1821`). Its engine call (`:1859`) becomes
+    `requested = min(obs.timestamp, wall_now)`, then
+    `engine.ingest(obs, now=requested if judge_at is None else judge_at, anchor_at=requested)`. Its mirror call
+    (`:1869`) hands `judge_at` to `lane.mirror_observation` (D5). The readings router's `apply` lambda keeps
+    `judge_at=now` (`:965–967`); its comment (`:962–964`, where the shadow lane is «not covered») is rewritten;
+  - docstrings: `_apply_reading`'s «WHEN THE RULES JUDGE» (`:1831–1839`) and the instant comment (`:1856–1858`)
+    say the link is judged at the link and anchored at the measurement.
   - `/ingest` and `/clinical` change no code.
 - `src/homunculus/api/clinical.py`: the `chart_observations` docstring (`:355–356`). No code change.
-- `src/homunculus/api/infinity_rules.py`: the `mirror_observation` docstring (`:480–482`: `now` is the door's wall
-  clock, and the engine floors it). No code change.
+- `src/homunculus/api/infinity_rules.py`: `mirror_observation(hospital, obs, *, now, real, judge_at=None)`
+  (`:479–491`). It passes the real engine's two instants (D5), and its docstring (`:480–482`) says so.
 - Docs, at implementation: a short section of `docs/homunculus-rehber-TR.md`; the roadmap row; G3-05's §11.5 (a) and
   (c) marked as closed by this slice.
 
@@ -149,14 +164,14 @@ the 3 h fluid window (`septic_shock.py`, Sepsis-3 and SSC 2026) keep their sourc
 - **G3-01 D10.** «Every score as if the value had never arrived» holds for the state. The alerts are judged at the
   withdrawal's instant (D3).
 - **G3-01 D12.** The restart scores as the live rebuild did, now including the rejudge at each `chart_retract` row.
-- **G3-05 D12 as amended (B6 review, `95a305b1`; G3-05 spec §11.2).** «A LINKED reading is judged at the wall
-  clock … and a restart replays an `ingest` row that names a `reading` at the row's write time» no longer holds.
-  A linked reading asks the doors' instant, `min(stamp, wall)`, the floor keeps every rule from going back, and the
-  replay judges a linked row like any other (D4). What the amendment was for still holds, now by the floor: an
-  active or acknowledged `antibiotic_overdue` is never replaced by `antibiotic_due`. What changes: a recognition a
-  linked reading completes is anchored at its measurement, not at the link; and on a patient not judged yet, a linked
-  set is judged at its own time (D4). Unchanged from that amendment: the reading keeps its own stamp (state, trail,
-  trends, record, vital task), and the record's «alındı» is the link's time (`resolved_at`).
+- **G3-05 D12 as amended (B6 review, `95a305b1`; G3-05 spec §11.2) — kept for the judgement, amended for the
+  anchor only** (owner, 2026-11-12: «Bağlama anında değerlendir, saat ölçümden»).
+  - **Kept:** «a LINKED reading is judged at the wall clock», and the restart replays a linked `ingest` row's
+    judgement at the row's write time. Now floored like every judgement and capped by D6.
+  - **Amended:** a recognition that a linked reading completes is anchored at the reading's measurement
+    (`min(stamp, wall_now)`, replayed as `min(stamp, written)`), not at the link.
+  - **Also unchanged:** the reading keeps its own stamp (state, trail, trends, record, vital task), and the
+    record's «alındı» is the link's time (`resolved_at`).
 - **G3-05 §11.5.** (a) and (c) are closed.
 - **Unchanged:** G3-01 D7 (24 h back-dating, 2 min skew), G3-05 D12's 24 h link bound, G2-A2 D3 (the board judges
   freshness at the wall clock), and G2-A2 O12 (no ahead-of-clock refusal at the doors; X10 still clamps).
@@ -227,12 +242,11 @@ to decide, and this slice does not change it.
 4. **The reverse can also happen on such a trail.** A `due` the old board showed may be replayed as `overdue`. No
    `first_seen` row stands behind it, so it is stamped and told at the patient's next reading (the stamp loop of
    `_apply_reading`, `app.py:1886–1889`, and `notifier.for_new`).
-5. **A linked row on such a trail is replayed at its measurement, not at its write time (D4).**
-   - A recognition it completed is anchored at the measurement, an earlier anchor than the old board's, so the
-     antibiotic recommendation reads «gecikti» sooner.
-   - On a patient with no earlier evaluation, its set is judged at its own time: a NEWS2 alert the old board did not
-     show may be raised by it in the replay. The patient's later rows then hold or end it, as under the new rules.
-     With no `first_seen` row behind it, it is stamped and told at the patient's next reading, as in item 4.
+5. **A linked row on such a trail is still judged at its write time, but anchored at its measurement (D4).**
+   - A recognition it completed gets an earlier anchor than on the old board, so the antibiotic recommendation reads
+     «gecikti» sooner. As in item 4, an overdue the old board did not have is stamped and told at the patient's next
+     reading.
+   - Its judgement is unchanged, so it raises no NEWS2 alert the old board did not show.
    - Block A-1 counts the linked rows in the trail.
 
 ## 8. Testing
@@ -269,13 +283,18 @@ to decide, and this slice does not change it.
 - **`/clinical` back-dated.** The same with a bedside set whose `recorded_at` is 3 h back.
 - **«Düzelt».** A device value is withdrawn, then the corrected value is charted at the reading's own time. The
   overdue stays overdue and stays acknowledged.
-- **A link anchors at the measurement** (D4). Infection is charted and the patient is judged up to now. A set
-  measured 6 h ago, linked from the list, completes sepsis. The answer and the card show `antibiotic_overdue` at
-  once, never `antibiotic_due`, and `recognized_at` equals the set's stamp. The shadow engine's anchor equals it
-  too. A second app on the same audit shows the same anchor and alerts.
-- **A link on a patient not judged yet** is judged at its own time, as the door is: a 6 h-old IMMEDIATE set answers
-  `["news2"]` (compare `test_the_door_still_judges_a_back_dated_reading_at_its_own_time`). On a patient judged up to
-  now, the same set answers `[]`.
+- **A link is judged at the link and anchored at the measurement** (D4). Infection is charted. A set measured 6 h
+  ago, linked from the list, completes sepsis. The answer and the card show `antibiotic_overdue` at once, never
+  `antibiotic_due`, and `recognized_at` equals the set's stamp. The case runs twice: on a patient judged up to now,
+  and on one whose only entry before the link is the suspected-infection chart, 7 h back. A patient the engine has
+  never judged cannot have sepsis completed by a link: the criterion needs infection charted. The never-judged case
+  is NEWS2's, pinned by G3-05's test (§8.2).
+  - The shadow engine (stage `rules`, the patient linked to a monitor) holds the same anchor and the same
+    antibiotic finding.
+  - A second app on the same audit holds the same anchor exactly, and the same alerts.
+- **A replayed linked row** (`rehydrate`, unit level): it is judged at its write time and anchored at its stamp. A
+  linked row whose `ts` is 1 h past the restart is judged at the restart's `now` + 2 min at most (D6), and its anchor
+  is its stamp.
 - **The withdrawal re-judges** (the reviewers' scenario). MAP at −90, temperature at −5 (overdue), the temperature
   withdrawn: the answer's `alerts` and the card show `antibiotic_overdue`, never «60 min remaining».
 - **Restart equals live** after each API case above, by a second app on the same audit. Alerts are compared by
@@ -309,22 +328,16 @@ These are known at design time. Each is fixed by moving its instants or its help
     engine has not judged yet. The premise holds and the test stays; the docstring says so.
   - A sibling test: the same set at the door for a patient already judged is judged at the floor, so it is stale
     for NEWS2.
-- **`test_readings_api.py`, the G3-05 tests that pin «a link is judged at the wall clock»** (D4):
-  - `test_a_back_dated_link_is_judged_now_and_leaves_an_overdue_antibiotic_overdue` (`:644–672`). Every assertion
-    stands: `_overdue` judges the patient up to 5 min ago, so the linked SpO₂ from 6 h back is judged at that floor.
-    The overdue stays, no `alert_cleared` row is added, the point keeps its stamp, and the restart agrees. Only the
-    name, the docstring and the comment `# judged now` change: the link is judged at the patient's floor
-    (`…_is_judged_at_the_floor_and_leaves_…`).
-  - `test_a_stale_linked_set_does_not_score_by_itself_but_a_fresh_one_does` (`:674–690`). Its premise moves. In the
-    `world` fixture `KEY` has no reading before the link, so the 6 h-old set is now judged at its own time and the
-    first link answers `["news2"]`, not `[]`. The test is split:
-    - on a patient given a current reading first, its assertions stand (the 6 h-old set `[]`, the 10 min-old set
-      `["news2"]`);
-    - on a patient not judged yet, the 6 h-old set answers `["news2"]` (§8.1).
+- **`test_readings_api.py`, the G3-05 tests that pin «a link is judged at the wall clock»:** they keep their premise
+  and their assertions. D4 keeps the link's judgement, and none of them completes a recognition through a link, so
+  the new anchor touches none of them.
+  - `test_a_back_dated_link_is_judged_now_and_leaves_an_overdue_antibiotic_overdue` (`:644–672`). The anchor was
+    set by `_overdue`'s charted MAP, not by the link. Only its docstring gains «and anchored at its measurement».
+  - `test_a_stale_linked_set_does_not_score_by_itself_but_a_fresh_one_does` (`:674–690`) is unchanged. On `KEY`,
+    which the engine has not judged before the link, the 6 h-old set is judged at the link and answers `[]`. This is
+    the owner's «Bağlama anında değerlendir» pinned.
   - `test_a_linked_set_enters_the_engine_at_its_own_time_with_the_device_as_its_source` (`:338–370`) and
-    `test_a_restart_replays_the_same_picture` (`:629–642`) do not change. Their set is 30 min old on a fresh patient,
-    judged at its stamp either way. The first one's comparison with the same set sent to `/ingest` now holds by
-    construction: one requested instant for both.
+    `test_a_restart_replays_the_same_picture` (`:629–642`) are unchanged.
 - **`test_pipeline.py`:** the X9e test (`:576–600`) keeps its assertions; its comment says the floor is no longer
   NEWS2's only.
 
@@ -372,7 +385,8 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
   - an upper bound on the patients whose antibiotic picture the first restart can move (§7, items 3–4):
     `select count(distinct patient_id) from audit where event_type = 'alert' and subject in ('antibiotic_due',
     'antibiotic_overdue') and ts::timestamptz > now() - interval '48 hours'`;
-  - the linked readings the first restart replays at their measurement instead of their write time (§7, item 5):
+  - the linked readings whose recognition, if they completed one, the first restart anchors at their measurement
+    instead of their write time (§7, item 5):
     `select count(*) from audit where event_type = 'ingest' and payload->>'reading' is not null`.
   In a pasted heredoc the `psql` call takes `</dev/null`.
 - **The first restart replays the old trail under the new rule** (§7).
@@ -386,8 +400,9 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
     hour runs from the measurement (the owner's choice);
   - after «hatalı giriş» or «Düzelt», the alerts are judged as of that moment, so an antibiotic hour that ran out
     since the last reading reads «gecikti»;
-  - a set linked from «Eşleşmeyen ölçümler» counts at its measurement time, as a device's own reading does: it can
-    show «gecikti» at once, and on a patient with no reading yet it can raise a NEWS2 alert from that time.
+  - a set linked from «Eşleşmeyen ölçümler» is scored at the moment it is linked, so an hours-old set is too old to
+    count in the NEWS2 score; but if it completes the sepsis criteria, the antibiotic hour runs from its
+    measurement, and «gecikti» can appear at once.
 - **Rollback:** the previous api image. Nothing stored changes. Under the old image a back-dated reading is judged at
   its own time again (the false «kalan süre» comes back), and the next restart replays the trail under the old rules.
 
