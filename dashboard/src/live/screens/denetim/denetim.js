@@ -51,13 +51,18 @@ export function actorOf(payload, t) {
 /** The «Konu» cell (follow-up D2). A scope row's subject is the id of the user whose access changed: the page shows
  *  that user's name from the payload (written since D1), else the id masked as a user's. A UUID subject of any other
  *  type is masked as an id, without the word — the page cannot tell whose id it is (a task's, say). Anything else
- *  shows as it is. */
-export function subjectOf(rec, t) {
+ *  shows as it is. G4-04 (spec D4: names are read at display): a nurse–bed assignment's subject is its unit, named by
+ *  `unitName(id)` — the structure the shell already holds — when it knows the unit; else masked as any other id. */
+export function subjectOf(rec, t, unitName = () => null) {
   const subject = typeof rec?.subject === "string" ? rec.subject.trim() : "";
   if (rec?.event_type === "scope") {
     const user = rec?.payload?.user;
     if (typeof user === "string" && user.trim()) return nameOrMask(t, user);
     return subject ? maskUser(t, subject) : "—";
+  }
+  if (rec?.event_type === "shift.assign" && isUuid(subject)) {
+    const name = unitName(subject);
+    if (typeof name === "string" && name.trim()) return name;
   }
   return isUuid(subject) ? maskPatient(subject) : rec?.subject || "—";
 }

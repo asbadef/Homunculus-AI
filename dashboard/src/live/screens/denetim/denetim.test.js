@@ -105,6 +105,17 @@ describe("the subject (follow-up D2)", () => {
     expect(subjectOf(row({ subject: "", payload: {} }), tr)).toBe("—");
   });
 
+  // G4-04 review 11 (spec D4: names are read at display): a nurse–bed assignment's subject is its unit — named from the
+  // structure the shell already holds, else masked as any other id.
+  it("names a shift assignment's unit from the structure held, else masks its id as an id", () => {
+    const UNIT = "33333333-3333-4333-8333-333333333301";
+    const assign = row({ event_type: "shift.assign", subject: UNIT, payload: { unit_id: UNIT, actor: "charge" } });
+    expect(subjectOf(assign, tr, (id) => (id === UNIT ? "Reanimasiya" : null))).toBe("Reanimasiya");
+    expect(subjectOf(assign, tr, () => null)).toBe(`${MASK}3301`);
+    expect(subjectOf(assign, tr)).toBe(`${MASK}3301`);
+    expect(subjectOf(row({ event_type: "task_done", subject: UNIT }), tr, () => "Reanimasiya")).toBe(`${MASK}3301`);
+  });
+
   it("masks a UUID subject of any other type as an id — the page cannot tell whose it is — and shows any other as it is", () => {
     expect(subjectOf(row({ event_type: "task_done", subject: NURSE_ID }), tr)).toBe(`${MASK}61a2`);
     expect(subjectOf(row({ event_type: "admin", subject: "user.update" }), tr)).toBe("user.update");
