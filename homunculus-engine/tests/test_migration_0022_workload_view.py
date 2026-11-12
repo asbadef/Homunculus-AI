@@ -97,7 +97,9 @@ def _closed(conn) -> set[uuid.UUID]:
 
 
 def _index(conn) -> list[str]:
-    return list(conn.execute(text("SELECT indexdef FROM pg_indexes WHERE indexname = :i"),
+    """The index as the chain built it, in `public` (`clean_db`'s schema): never the parity test's `MODELS` copy, which
+    a run killed hard before its `finally` can leave behind."""
+    return list(conn.execute(text("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = :i"),
                              {"i": NURSE_BED_ACTIVE_INDEX}).scalars())
 
 
@@ -211,6 +213,7 @@ def test_the_model_and_the_chain_build_the_same_index_and_closed_at(clean_db):
     engine, cfg = clean_db
     command.upgrade(cfg, "head")
     with engine.begin() as conn:
+        conn.execute(text(f"DROP SCHEMA IF EXISTS {MODELS} CASCADE"))     # a run killed before its `finally`
         conn.execute(text(f"CREATE SCHEMA {MODELS}"))
     try:
         with engine.begin() as conn:
