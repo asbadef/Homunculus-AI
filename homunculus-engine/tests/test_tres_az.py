@@ -59,6 +59,10 @@ def test_sex_has_the_platforms_two_codes_only(sex, expected):
     # only ASCII digits: Arabic-Indic, Persian and full-width digits are `\d` to Python, not to the platform
     ("+٩٩٤٥٠١٢٣٤٥٦٧", None), ("٠٥٠١٢٣٤٥٦٧", None), ("۰۵۰۱۲۳۴۵۶۷", None), ("+994５０１２３４５６７", None),
     ("+99450123456٧", None),
+    # batch-3 review (B): a national number never begins with the trunk prefix 0 — a domestic number
+    # missing a digit («050 123 456», nine characters) must not go as «+994050123456», in any form
+    ("050123456", None), ("050 123 456", None), ("+994050123456", None), ("994050123456", None),
+    ("0050123456", None),
 ])
 def test_a_phone_is_plus_994_and_nine_digits_or_not_sent(typed, expected):
     assert az.phone(typed) == expected

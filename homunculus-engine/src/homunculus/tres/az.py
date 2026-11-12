@@ -14,7 +14,9 @@ not fit is a skip, never a correction.
 * Sex: `male` → `K`, `female` → `Q` (the platform's own codes); `other` and `unknown` have none.
 * Phone: `+994` and the nine (ASCII) digits of the national number, from `+994…`, `994…`, the domestic
   form with its leading `0`, or the nine digits alone — spaces, dashes, dots and brackets dropped.
-  Anything else is not sent (a phone is not required: no skip)."""
+  The national number never begins with `0` (the domestic prefix): nine digits that do are a
+  domestic number missing a digit, never `+9940…`. Anything else is not sent (a phone is not
+  required: no skip)."""
 from __future__ import annotations
 
 import re
@@ -32,8 +34,12 @@ SEX_CODES = {"male": "K", "female": "Q"}
 _PHONE_PUNCTUATION = re.compile(r"[\s\-.()]")
 # ASCII digits only: `\d` alone takes Arabic-Indic, Persian and full-width digits too, and they would
 # go into the value sent (D20: nothing is transliterated, so nothing is passed off as ASCII either).
-_PHONE_FORMS = (re.compile(r"\+994([0-9]{9})"), re.compile(r"994([0-9]{9})"), re.compile(r"0([0-9]{9})"),
-                re.compile(r"([0-9]{9})"))
+# The nine digits of the national number never begin with 0, the domestic trunk prefix (batch-3
+# review, B): «050 123 456» is a domestic number missing a digit, and as nine digits it would have
+# gone as «+994050123456» — in every form, so the rule is on the nine digits themselves.
+_NATIONAL = r"([1-9][0-9]{8})"
+_PHONE_FORMS = (re.compile(r"\+994" + _NATIONAL), re.compile(r"994" + _NATIONAL), re.compile(r"0" + _NATIONAL),
+                re.compile(_NATIONAL))
 
 
 def normal_fin(value: str | None) -> tuple[str | None, str | None]:
