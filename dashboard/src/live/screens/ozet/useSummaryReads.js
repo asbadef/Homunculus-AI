@@ -3,7 +3,9 @@
 // `useSummaryReads`: the tree (through the shell's StructureProvider — every screen keeps the one tree), `/tasks`,
 // `/handovers/pending` and the caller's own scope (`/scope/me`, which every signed-in user may read: the units table's
 // reach, ozet.js `reachSource`), read when the page opens, on «Yenile», and every SUMMARY_POLL_MS while the page is
-// visible (and at once when it is shown again). A read that fails keeps nothing of its last answer: the page says
+// visible (and at once when it is shown again). G4-04: `extra` — `{may, read(api), valid}` — is one more read of
+// another page's in the same round («İş yükü»: GET /shift-schedule, then /tasks over its shift), answered as `extra`.
+// A read that fails keeps nothing of its last answer: the page says
 // «okunamadı», never an older number as today's. `fullAt`: when the last round in which every source this session may
 // read answered came back — the header's «HH:MM itibarıyla».
 //
@@ -20,10 +22,13 @@ export const LOADING = Object.freeze({ phase: "loading", data: null, atMs: null,
 const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 const isReport = (answer) => Number.isInteger(answer?.episodes);
 
-export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMMARY_POLL_MS }) {
+/** `extra` (G4-04): `{may, read(api), valid}` with stable `read` and `valid` (module constants) — one more read in the
+ *  round, answered as `extra`; null (the summary page) reads nothing more, and `extra` stays LOADING. */
+export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMMARY_POLL_MS, extra = null }) {
   const [tasks, setTasks] = useState(LOADING);
   const [pending, setPending] = useState(LOADING);
   const [scope, setScope] = useState(LOADING);
+  const [more, setMore] = useState(LOADING);
   const [fullAt, setFullAt] = useState(null);
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);
@@ -51,12 +56,13 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
       one(rights.tasks, () => store.api.tasks(), isTasksAnswer, setTasks),
       one(rights.pending, () => store.api.pendingHandovers(), isPendingAnswer, setPending),
       one(true, () => store.api.myScope(), isScopeAnswer, setScope),
+      one(Boolean(extra?.may), () => extra.read(store.api), extra?.valid, setMore),
     ]);
     if (current()) {
       if (answered.every(Boolean)) setFullAt(Date.now());
       setBusy(false);
     }
-  }, [store, rights.structure, rights.tasks, rights.pending, reloadStructure]);
+  }, [store, rights.structure, rights.tasks, rights.pending, reloadStructure, extra?.may, extra?.read, extra?.valid]);
 
   useEffect(() => {
     alive.current = true;
@@ -71,7 +77,7 @@ export function useSummaryReads({ store, rights, reloadStructure, everyMs = SUMM
     };
   }, [read, everyMs]);
 
-  return { tasks, pending, scope, fullAt, busy, refresh: read };
+  return { tasks, pending, scope, extra: more, fullAt, busy, refresh: read };
 }
 
 /** One read of a page for a period, `read(api, period)`: on open, on a period change and on `retry` (a user's action —
