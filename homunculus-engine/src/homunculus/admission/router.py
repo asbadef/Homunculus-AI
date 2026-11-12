@@ -431,20 +431,28 @@ async def _answer_again(db: AsyncSession, request: Request, response: Response, 
 
     A stay moved since (G2-B1b, final review I-1) is answered and named where it is now
     (`_stay_now`): the arriving row's body, bed, state and protocol — the key her card stands
-    under. The engine report stays the form's own row's: it says what that send's writes did."""
+    under. A caller whose units do not hold that bed (re-read R-1) gets the form's own row, with
+    the stay's protocol, and no number beside a conflict. The engine report stays the form's own
+    row's: it says what that send's writes did."""
     earlier = (await db.execute(select(Admission).where(
         Admission.tenant_id == tenant_id, Admission.request_id == request_id))).scalar_one()
     number = (await db.execute(select(Patient.patient_number)
                                .where(Patient.id == earlier.patient_id))).scalar_one()
     stay = await _stay_now(db, earlier)
+    unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
+                                .where(Bed.id == stay.bed_id))).scalar_one()
+    known = unitscope.reaches(reach, unit_id=unit_id, bed_id=stay.bed_id)
     if earlier.request_digest != digest:
-        unit_id = (await db.execute(select(Room.unit_id).join(Bed, Bed.room_id == Room.id)
-                                    .where(Bed.id == stay.bed_id))).scalar_one()
-        known = unitscope.reaches(reach, unit_id=unit_id, bed_id=stay.bed_id)
         extra = _numbers(number, stay.protocol_no) if known else None
         raise Refusal(409, REQUEST_CONFLICT, "This request id came before with another admission "
                       "form.", extra=extra).http()
-    first = AdmissionResponse.model_validate(stay)
+    # Re-read R-1: the stay's row is shown only to a caller whose units hold its bed now. A stay
+    # moved out of them is answered with the form's own row (TRANSFERRED, on the bed the form
+    # named, which she reaches) and the stay's protocol, the number the card and the device keep
+    # (O8): nothing of the arriving row — its bed, its unit, its discharge — goes out of scope.
+    first = AdmissionResponse.model_validate(stay if known else earlier)
+    if not known:
+        first = first.model_copy(update={"protocol_no": stay.protocol_no})
     key = board_key(stay.protocol_no, number)
     admission_id, weight_asked = earlier.id, earlier.weight_kg is not None
     profile_asked = bool(earlier.comorbidity_codes)

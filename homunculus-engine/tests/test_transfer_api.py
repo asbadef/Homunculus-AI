@@ -968,6 +968,41 @@ async def test_the_kabul_form_sent_again_after_a_move_answers_where_she_lies_now
                                                                     FIRST_PROTOCOL)
 
 
+async def test_a_kabul_form_sent_again_after_a_move_out_of_the_nurses_units_shows_nothing_of_the_stay(
+        ward):
+    """Re-read R-1 (I-1's scope): the stay was moved to a unit the nurse who sent the form does not
+    reach, then discharged there. Her resend is answered with the form's own row — TRANSFERRED, on
+    the bed she sent it for, in her unit — and the stay's protocol, the number the card and the
+    device keep (O8). Nothing of the arriving row reaches her: not its bed, not its unit, not its
+    discharge."""
+    w, client, _ = ward
+    one, rea, n1 = str(w.beds["1"].id), str(w.units["rea"].id), str(w.beds["N1"].id)
+    body = form(w, "1", request_id=uuid.uuid4())
+    first = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert first.status_code == 201, first.text
+    source = first.json()
+    r = await client.post(f"/admissions/{source['id']}/sign-off", headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    arriving = await moved(w, client, source, "N1", "admin")
+    discharge_note = "Sentetik taburcu notu"
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/initiate",
+                          json={"disposition": "HOME", "note": discharge_note},
+                          headers=w.auth["admin"])
+    assert r.status_code == 200, r.text
+    r = await client.post(f"/admissions/{arriving['id']}/discharge/confirm",
+                          headers=w.auth["admin"])
+    assert r.status_code == 200, r.text
+    again = await client.post("/admissions", json=body, headers=w.auth["nurse"])
+    assert again.status_code == 200, again.text
+    answer = again.json()
+    assert (answer["id"], answer["state"], answer["bed_id"], answer["admitting_unit_id"]) == (
+        source["id"], "TRANSFERRED", one, rea)
+    assert (answer["protocol_no"], answer["board_key"]) == (FIRST_PROTOCOL, FIRST_PROTOCOL)
+    assert (answer["discharge_disposition"], answer["discharge_note"]) == (None, None)
+    assert n1 not in again.text and discharge_note not in again.text
+    assert arriving["id"] not in again.text
+
+
 # ---------------------------------------------------------------- the discharge time after a move (final review M-1)
 async def test_a_discharge_after_moves_may_be_timed_back_to_the_stays_first_kabul_never_before(
         ward, db_session):

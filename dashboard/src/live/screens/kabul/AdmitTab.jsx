@@ -94,8 +94,11 @@ const PARTS = ["board", "weight", "profile"];
 /** The bed an admit answer is named after: the form's — or, when the answer names another bed, the
  *  bed she lies in now, by the structure's name ("" when it does not hold it), never the bed she
  *  left. G2-B1b, final review I-1: the same form sent again after a physician signed it and the
- *  patient was moved is answered with her stay where it is now (the server's `_stay_now`). */
+ *  patient was moved is answered with her stay where it is now (the server's `_stay_now`). An
+ *  answer still TRANSFERRED (re-read R-1: the stay was moved out of the nurse's units, and the
+ *  server answers the form's own row, on the bed she left) names no bed at all. */
 function answeredBed(answer, sent, index) {
+  if (answer?.state === "TRANSFERRED") return "";
   if (!answer?.bed_id || normId(answer.bed_id) === normId(sent.bedId)) return sent.bed;
   return bedLabel(index, answer.bed_id) ?? "";
 }

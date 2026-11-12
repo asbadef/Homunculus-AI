@@ -1149,6 +1149,20 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
   });
 
+  // Re-read R-1: a stay moved out of the nurse's units is answered with the form's own row, still
+  // TRANSFERRED on the form's bed, and the stay's protocol. That bed is the one she left: not named.
+  const transferredHere = () => withProtocol({ id: "a-1", state: "TRANSFERRED", bed_id: BED(1) });
+
+  it("names no bed for an answer still TRANSFERRED — the stay moved out of the nurse's units (R-1)", async () => {
+    await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByText(/^Çarpayı:/)).toBeNull();
+    expect(toasts().getAllByText("qəbul edildi, protokol nömrəsi 202600000001").length).toBeGreaterThan(0);
+    expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
+  });
+
   it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {
     await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(admitted()) });
     fillRequired();
