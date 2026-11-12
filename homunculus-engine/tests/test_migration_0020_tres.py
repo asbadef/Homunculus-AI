@@ -42,9 +42,6 @@ TABLES = {SETTINGS, DELIVERIES, DEPARTMENTS, IDENTITIES}
 KEY, INDEX = "uq_tres_deliveries_key", "ix_tres_deliveries_tenant_status"
 #: A stay's rows are read by its admission (the tab, the preview); and an admission's delete SETs NULL here.
 ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
-#: Batch-3 review A2: the feed's read of one stay's bedside rows (source.py `load`,
-#: `iter_records_of(…, patient_id=<key>)`) — on `audit`, 0004's table.
-AUDIT_INDEX = "ix_audit_tenant_patient_id"
 CHECKS = {"ck_tres_settings_mode", "ck_tres_settings_environment", "ck_tres_settings_settle",
           "ck_tres_deliveries_environment", "ck_tres_deliveries_status", "ck_tres_deliveries_operation"}
 
@@ -341,7 +338,6 @@ def test_the_downgrade_runs_from_f0s_cut_and_the_upgrade_brings_everything_back(
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN send_from"))
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN retried_at"))
         conn.execute(text(f"ALTER TABLE {SETTINGS} DROP COLUMN reached_to"))    # batch-3 review A3
-        conn.execute(text(f"DROP INDEX {AUDIT_INDEX}"))                          # batch-3 review A2
         for statement in F0_CUTS[cut]:
             conn.execute(text(statement))
     assert set(inspect(engine).get_table_names()) - before == {SETTINGS, DELIVERIES}
@@ -351,91 +347,7 @@ def test_the_downgrade_runs_from_f0s_cut_and_the_upgrade_brings_everything_back(
     assert set(inspect(engine).get_table_names()) - before == TABLES
     columns = {c["name"] for c in inspect(engine).get_columns(SETTINGS)}
     assert {"send_from", "retried_at", "reached_to", "session_refused_at"} <= columns
-    indexes = {i["name"] for t in (DELIVERIES, DEPARTMENTS, "audit") for i in inspect(engine).get_indexes(t)}
-    assert {INDEX, ADMISSION_INDEX, DEPARTMENTS_INDEX, AUDIT_INDEX} <= indexes
+    indexes = {i["name"] for t in (DELIVERIES, DEPARTMENTS) for i in inspect(engine).get_indexes(t)}
+    assert {INDEX, ADMISSION_INDEX, DEPARTMENTS_INDEX} <= indexes
     command.downgrade(cfg, "0019")                                   # and the full cut still goes down
     assert set(inspect(engine).get_table_names()) == before
-    assert AUDIT_INDEX not in {i["name"] for i in inspect(engine).get_indexes("audit")}
-
-
-# ---------------------------------------------------------------- batch-3 review A2: one stay's trail, by its index
-def _audit_index_columns(engine) -> list[str] | None:
-    for index in inspect(engine).get_indexes("audit"):
-        if index["name"] == AUDIT_INDEX:
-            return index["column_names"]
-    return None
-
-
-@requires_db
-def test_0020_indexes_the_audit_by_tenant_patient_and_id_and_its_downgrade_drops_the_index_alone(clean_db):
-    engine, cfg = clean_db
-    command.upgrade(cfg, "0019")
-    assert _audit_index_columns(engine) is None
-    command.upgrade(cfg, "0020")
-    assert _audit_index_columns(engine) == ["tenant", "patient_id", "id"]
-    with engine.connect() as conn:                                   # a full index: no predicate
-        definition = conn.execute(text("SELECT indexdef FROM pg_indexes WHERE indexname = :n"),
-                                  {"n": AUDIT_INDEX}).scalar_one()
-    assert " WHERE " not in definition.upper()
-    command.downgrade(cfg, "0019")
-    assert _audit_index_columns(engine) is None and "audit" in inspect(engine).get_table_names()
-
-
-def _plans(engine, captured: list[tuple[str, dict]]) -> list[str]:
-    """`EXPLAIN` of each SELECT the audit store sent, with its own parameters, as text lines."""
-    plans = []
-    with engine.connect() as conn:
-        for statement, parameters in captured:
-            rows = conn.exec_driver_sql("EXPLAIN " + statement, parameters).scalars().all()
-            plans.append("\n".join(rows))
-    return plans
-
-
-@requires_db
-def test_the_feeds_read_of_one_stay_uses_the_index_on_a_hospitals_worth_of_trail(clean_db):
-    """The source's actual read — `iter_records_of` through `PostgresAuditLog` with the source's own
-    kinds and page, the SQL captured as the store sends it — EXPLAINed on a trail of 30 000 bedside
-    rows of 300 other patients and 600 of the stay's (so two pages: the second `id > …`), ANALYZEd.
-    The planner must CHOOSE the index (not merely be able to use it): with it, each read is the
-    stay's rows alone; without it, a walk of the tenant's whole history."""
-    from sqlalchemy import event
-
-    from homunculus.api.audit import iter_records_of
-    from homunculus.api.audit_postgres import PostgresAuditLog
-    from homunculus.tres import source
-    from homunculus.tres.stay import CHART, RETRACT
-    from tests.conftest import TEST_DATABASE_URL
-
-    engine, cfg = clean_db
-    command.upgrade(cfg, "head")
-    with engine.begin() as conn:
-        conn.execute(text(
-            "INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload) "
-            "SELECT '2026-11-12T00:00:00+00:00', 'kabul-hastane', "
-            "CASE WHEN g % 20 = 0 THEN 'chart_retract' ELSE 'chart' END, "
-            "'H26' || lpad((g % 300)::text, 5, '0'), 'heart_rate', '{}'::jsonb FROM generate_series(1, 30000) AS g"))
-        conn.execute(text(
-            "INSERT INTO audit (ts, tenant, event_type, patient_id, subject, payload) "
-            "SELECT '2026-11-12T00:00:00+00:00', 'kabul-hastane', 'chart', '202600000101', 'heart_rate', "
-            "'{\"value\": 88.0}'::jsonb FROM generate_series(1, 600)"))
-        conn.execute(text("ANALYZE audit"))
-    log = PostgresAuditLog(TEST_DATABASE_URL)
-    captured: list[tuple[str, dict]] = []
-
-    def capture(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().upper().startswith("SELECT"):
-            captured.append((statement, dict(parameters)))
-
-    event.listen(log._engine, "before_cursor_execute", capture)
-    try:
-        rows = list(iter_records_of(log, tenant="kabul-hastane", event_types=(CHART, RETRACT), page=source.PAGE,
-                                    patient_id="202600000101"))
-        assert len(rows) == 600 and len(captured) == 2                 # a full page, then the rest
-        assert "after_id" not in captured[0][1] and "after_id" in captured[1][1]
-        plans = _plans(log._engine, captured)
-    finally:
-        log.dispose()
-    for plan in plans:
-        print(plan)                                                  # the evidence, on -s / a failure
-        assert AUDIT_INDEX in plan, plan
-        assert "Seq Scan" not in plan, plan

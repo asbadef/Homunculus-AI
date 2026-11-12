@@ -28,29 +28,20 @@ the test with them. Phases F0 and F1 create the four tables they have models for
 * `tres_practitioner_identity` (F1, D16): one row per (tenant, user) (FK tenants and users, both ON
   DELETE CASCADE) — the FİN (Fernet ciphertext, nullable), the family and the given name, who and
   when.
-* `ix_audit_tenant_patient_id` on `audit` (tenant, patient_id, id) (F1, amendment 25, A2): the
-  feed reads each due stay's bedside rows by its board key (`iter_records_of(…, patient_id=…)`:
-  `tenant = … AND patient_id = … AND event_type IN (…) AND id > … ORDER BY id LIMIT …`). 0013's
-  (tenant, event_type, id) serves it only by walking every `chart` row of the tenant, for every
-  due stay of every round — a read that grows with the hospital's whole history until the audit
-  read's 30-second statement timeout stalls the feed. A FULL index, not a partial one on the two
-  kinds: the audit store reads through psycopg2 today (parameters written into the statement, so a
-  custom plan each time), but a prepared statement with a generic plan — asyncpg's way, should
-  the store ever move to it — cannot prove a partial index's predicate from its parameters, and the
-  index would silently stop serving. The one object of this revision on a table it
-  does not own: `IF NOT EXISTS` up and `IF EXISTS` down, as 0008's and 0013's audit indexes; a
-  plain CREATE INDEX inside the migration's transaction, which holds back writes to `audit` while
-  it builds — at the API's start, before it serves.
+
+NO AUDIT INDEX HERE (plan F1, amendment 25, A2): the feed's read of one stay's bedside rows is
+served by main's `ix_audit_tenant_patient_id` on `audit` (tenant, patient_id, id), which main's
+0021_vital_readings creates; this file is renumbered onto it at the merge. A second CREATE INDEX
+would lock `audit` again, and this downgrade dropping it would take main's index away.
 
 NO PERMISSION ROW is written for `tres.manage` (D23): it is in no default group, and the system
 group holds every key by rule at token issuance (auth/permissions.py) — as `summary.view` before it.
 
 PURELY ADDITIVE: an image from before this revision serves against it (it never reads the new
-tables, and an index changes no answer); only its start command's `alembic upgrade head` refuses
-the unknown revision. Downgrade drops exactly these four tables — and with them every tenant's
-account, the whole ledger and both maps — and the audit index (no audit row is touched), each `IF
-EXISTS`, so that it also runs from an earlier cut of this file (O19: F0's has neither of F1's
-tables, nor `send_from` / `retried_at` / `reached_to`, nor the audit index).
+tables); only its start command's `alembic upgrade head` refuses the unknown revision. Downgrade
+drops exactly these four tables — and with them every tenant's account, the whole ledger and both
+maps — each `IF EXISTS`, so that it also runs from an earlier cut of this file (O19: F0's has
+neither of F1's tables, nor `send_from` / `retried_at` / `reached_to`).
 ONE STATEMENT PER op.execute (asyncpg; see 0004, 0010, 0013) — this revision needs none.
 
 Revision ID: 0020
@@ -77,9 +68,6 @@ ADMISSION_INDEX = "ix_tres_deliveries_admission_id"
 DEPARTMENTS = "tres_department_map"
 DEPARTMENTS_TENANT_INDEX = "ix_tres_department_map_tenant_id"
 IDENTITIES = "tres_practitioner_identity"
-#: The audit trail's table (0004) and the feed's read of one stay's rows on it (amendment 25, A2).
-AUDIT = "audit"
-AUDIT_PATIENT_INDEX = "ix_audit_tenant_patient_id"
 #: homunculus.tres.models.ALL_TYPES_JSON — written out: a migration does not import the models.
 ALL_TYPES = ('["patient", "practitioner", "encounter", "condition", "procedure", "vital", "lab", '
              '"composition"]')
@@ -178,7 +166,6 @@ def upgrade() -> None:
                   server_default=sa.text("now()")),
         sa.Column("updated_by", UUID(as_uuid=True), nullable=True),
     )
-    op.create_index(AUDIT_PATIENT_INDEX, AUDIT, ["tenant", "patient_id", "id"], if_not_exists=True)
 
 
 def downgrade() -> None:
@@ -187,8 +174,7 @@ def downgrade() -> None:
     # `tres_deliveries` only, with none of F1's tables, indexes or settings columns — and is taken
     # down to 0019 and up again. A plain DROP would stop on the first object that cut never had.
     # The settings columns `send_from`, `retried_at` and `reached_to` go with their table (no drop
-    # of their own). The audit index goes alone: `audit` is 0004's and stays.
-    op.drop_index(AUDIT_PATIENT_INDEX, table_name=AUDIT, if_exists=True)
+    # of their own).
     op.drop_table(IDENTITIES, if_exists=True)
     op.drop_index(DEPARTMENTS_TENANT_INDEX, table_name=DEPARTMENTS, if_exists=True)
     op.drop_table(DEPARTMENTS, if_exists=True)

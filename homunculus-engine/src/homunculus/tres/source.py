@@ -285,6 +285,11 @@ class StaySource:
             TresPractitionerIdentity.tenant_id == tenant_id, TresPractitionerIdentity.user_id.in_(attendings))
             .execution_options(populate_existing=True))).scalars()} if attendings else {}
         key = board_key(last.protocol_no, person.patient_number)
+        # One stay's rows: `tenant = … AND patient_id = … AND event_type IN (…) AND id > … ORDER BY id
+        # LIMIT …`, for every due stay of every round (amendment 25, A2). It is served by main's
+        # `ix_audit_tenant_patient_id` on audit (tenant, patient_id, id), from main's migration
+        # 0021_vital_readings — which this branch does NOT carry until the merge renumbers 0020 onto
+        # it; until then (0013's (tenant, event_type, id) only) the read walks the tenant's chart rows.
         records = await asyncio.to_thread(lambda: list(iter_records_of(
             self.audit, tenant=tenant.slug, event_types=(CHART, RETRACT), page=PAGE, patient_id=key)))
         clinicians = tuple(
