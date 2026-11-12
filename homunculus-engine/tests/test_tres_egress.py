@@ -54,6 +54,7 @@ def test_the_allowed_hosts_are_the_platforms_two_unless_the_install_names_its_ow
     ("https://tres.test:8443", False), ("https://other.test", False), ("http://tres.test", False),
     ("https://u:p@tres.test", False), ("https://tres.test/?x=1", False), ("https://tres.test/#a", False),
     ("https://tres.test.other.test", False), ("https://other.test\\@tres.test", False), ("", False),
+    ("https://xn--a.gov.az", False), ("https://TRES.TEST.", False),
 ])
 def test_an_address_is_allowed_only_on_an_allowed_host_and_port_443(base_url, allowed):
     assert address_allowed(base_url, frozenset({"tres.test"})) is allowed
@@ -97,3 +98,10 @@ def test_the_apps_own_factory_is_the_guarded_one(monkeypatch):
     assert isinstance(narrowed.state.tres_client_factory(stand_in), TresClient)
     with pytest.raises(TresEgressRefused):
         narrowed.state.tres_client_factory(sandbox)
+
+
+def test_an_address_is_judged_by_its_wire_form_and_never_raises():
+    """Review M1: the host as it goes on the wire (`raw_host`), so a host IDNA cannot read is just
+    not allowed — unless the install named exactly that host."""
+    assert address_allowed("https://xn--a.gov.az", frozenset({"tres.test"})) is False
+    assert address_allowed("https://XN--A.gov.az/fhir", frozenset({"xn--a.gov.az"})) is True

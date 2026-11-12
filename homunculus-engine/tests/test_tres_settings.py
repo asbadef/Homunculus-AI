@@ -75,6 +75,9 @@ def body(**over) -> dict:
     (body(test={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}), "tres_host_not_allowed"),
     (body(live={**EMPTY, "base_url": "https://127.0.0.1"}), "tres_host_not_allowed"),
     (body(live={**EMPTY, "base_url": "https://ehr.example.az.example.org"}), "tres_host_not_allowed"),
+    # review M1: a host IDNA cannot read (httpx's `.host` raises) is a bad address, never a 500
+    (body(test={**EMPTY, "base_url": "https://xn--a.gov.az"}), "tres_base_url"),
+    (body(live={**EMPTY, "base_url": "https://xn--hr-e-health-xyz.gov.az"}), "tres_base_url"),
 ])
 def test_a_bad_body_has_its_code(sent, code):
     assert settings_refusal(TresSettingsIn(**sent), hosts=HOSTS) == code
@@ -258,6 +261,7 @@ async def test_an_empty_field_clears_and_a_save_that_changes_nothing_is_not_audi
     (body(live={**EMPTY, "base_url": "https://ehr.example.az:8443"}), "tres_base_url"),
     # the platform's own live host, but this install names others (TRES_HOSTS): refused
     (body(live={**EMPTY, "base_url": "https://ehr.e-health.gov.az"}), "tres_host_not_allowed"),
+    (body(test={**EMPTY, "base_url": "https://xn--a.gov.az"}), "tres_base_url"),       # review M1: not a 500
 ])
 async def test_a_bad_value_is_refused_with_its_code_and_writes_nothing(ward, db_session, sent, code):
     w, client, app = ward

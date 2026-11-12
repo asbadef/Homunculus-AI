@@ -54,8 +54,10 @@ def address_allowed(base_url: str, hosts: frozenset[str]) -> bool:
         url = httpx.URL(base_url)
     except httpx.InvalidURL:
         return False
+    # The host as it goes on the wire (`raw_host`, ASCII — punycode for a name in another script),
+    # never `.host`, which decodes it and raises for a label IDNA cannot read (review M1).
     # httpx reads «:443» on https as no port at all.
-    return not url.userinfo and url.port is None and (url.host or "").lower() in hosts
+    return not url.userinfo and url.port is None and url.raw_host.decode("ascii").lower() in hosts
 
 
 class TresEgressRefused(Exception):

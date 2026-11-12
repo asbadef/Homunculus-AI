@@ -74,8 +74,8 @@ def _host(base_url: str | None) -> str | None:
     if not base_url:
         return None
     try:
-        return httpx.URL(base_url).host or None
-    except httpx.InvalidURL:
+        return httpx.URL(base_url).raw_host.decode("ascii").lower() or None   # the wire form (M1)
+    except (httpx.InvalidURL, ValueError):
         return None
 
 

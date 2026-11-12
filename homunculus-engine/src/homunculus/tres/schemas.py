@@ -84,10 +84,13 @@ def base_url_ok(value: str) -> bool:
         return False
     try:
         url = httpx.URL(value)
-    except httpx.InvalidURL:
+        # The host must also read as a name (review M1): `.host` decodes punycode, and an «xn--»
+        # label IDNA cannot read raises (IDNAError, a ValueError) — a 422 here, never a 500.
+        url.host  # noqa: B018
+    except (httpx.InvalidURL, ValueError):
         return False
     # httpx reads «:443» on https as no port at all.
-    return bool(url.host) and not url.userinfo and url.port is None
+    return bool(url.raw_host) and not url.userinfo and url.port is None
 
 
 def settings_refusal(payload: TresSettingsIn, *, hosts: frozenset[str]) -> str | None:
