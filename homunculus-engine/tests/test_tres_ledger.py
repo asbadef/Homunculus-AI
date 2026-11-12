@@ -237,9 +237,10 @@ def _no_session(status: int):
 
 
 @requires_db
-@pytest.mark.parametrize("handler", [_down(None), _down(429), _down(500), _down(502), _down(503),
-                                     _no_session(401), _no_session(403), _no_session(503)],
-                         ids=["no-answer", "429", "500", "502", "503", "token-401", "token-403", "token-503"])
+@pytest.mark.parametrize("handler", [_down(None), _down(429), _down(408), _down(302), _down(502), _down(503),
+                                     _down(504), _no_session(401), _no_session(403), _no_session(503)],
+                         ids=["no-answer", "429", "408", "302", "502", "503", "504", "token-401", "token-403",
+                              "token-503"])
 async def test_an_outage_is_raised_again_and_the_row_keeps_what_it_had(db_session, handler):
     tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
     db_session.add(tenant)
@@ -268,7 +269,7 @@ async def test_an_outage_is_raised_again_and_the_row_keeps_what_it_had(db_sessio
 
 
 @requires_db
-@pytest.mark.parametrize("status", [400, 404, 409, 422])
+@pytest.mark.parametrize("status", [400, 403, 404, 409, 422])
 async def test_a_refusal_about_the_resource_is_counted(db_session, status):
     tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
     db_session.add(tenant)
@@ -440,4 +441,32 @@ async def test_a_search_that_cannot_prove_an_absence_is_counted_and_nothing_is_p
     assert (row.status, row.attempts) == ("stuck", 5)
     assert [line for line in fake.fhir_requests if line[0] != "GET"] == []    # nothing POSTed, nothing PUT
     assert len(fake.stored("Patient")) == 3
+    await client.aclose()
+
+
+# ---------------------------------------------------------------- a 5xx about one resource (review I2)
+@requires_db
+@pytest.mark.parametrize("status", [500, 501, 505])
+async def test_a_server_error_about_the_resource_is_counted_and_raised_for_the_rounds_five(db_session, status):
+    """A platform that answers 500 to THIS input every time would otherwise hold the row forever and
+    end every round before the stays behind it. Counted like a refusal, and raised again so that
+    the round counts it towards its five in a row."""
+    tenant = Tenant(name="Sentetik TRƏS Hastanesi", slug="tres-hastane", country_code="AZ")
+    db_session.add(tenant)
+    await db_session.commit()
+
+    def internal(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/token":
+            return httpx.Response(200, json={"payload": {"sessionId": "S-1"}})
+        return httpx.Response(status, json={"issue": [{"severity": "fatal", "diagnostics": "HAPI-0000: internal"}]})
+
+    client = TresClient(FakeTres().account, transport=httpx.MockTransport(internal))
+    with pytest.raises(TresError) as raised:
+        await deliver(db_session, client, tenant_id=tenant.id, environment="test", mode="send",
+                      resource_type="patient", fhir_type="Patient", local_id=LOCAL, resource=patient(), now=T0)
+    assert raised.value.status == status and not is_outage(raised.value)
+    (row,) = (await db_session.execute(
+        select(TresDelivery).execution_options(populate_existing=True))).scalars()
+    assert (row.status, row.attempts, row.last_error, row.next_attempt_at) == (
+        "failed", 1, "HAPI-0000: internal", T0 + RETRY_AFTER)
     await client.aclose()

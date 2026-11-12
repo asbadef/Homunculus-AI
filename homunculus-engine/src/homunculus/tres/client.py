@@ -22,9 +22,10 @@ file and the server disagree, the server is right and this file changes.
   token. Nothing in it is about one resource, so the ledger counts it against none and the round
   ends (review #1: a password changed at the ministry must not make every due stay `stuck`).
 * HTTP 429 (D21) is never retried here: the `TresError` carries `retry_after` and the round ends.
-* `is_outage` tells the platform's (or the line's) failures — a session refused, a 429, a 5xx, no
-  answer — from a refusal of ONE resource (any other status), which is the only kind the ledger
-  counts towards `stuck` (open item O13, closed «no»).
+* `is_outage` tells the platform's (or the line's) failures — a session refused, no answer, a
+  3xx, 408, 429, 502, 503, 504 — from a failure about ONE resource (every other status, 500 and
+  501 included), which is the only kind the ledger counts towards `stuck` (open item O13, closed
+  «no»; review I2).
 
 As `api/infinity_waves.py`'s hub client: `trust_env=False` (no proxy from the environment), no
 redirects, https only, an explicit timeout, one keep-alive client built on first use. httpx's
@@ -93,12 +94,23 @@ class TresSearchUnclear(TresError):
     reason and never a value."""
 
 
+#: The statuses that say the platform (or a gateway, or the line) is not answering now — whatever
+#: was sent: too many requests, a timeout, a bad or absent upstream. A 3xx is one too: nothing is
+#: followed here (no redirects), so the request never reached a FHIR endpoint.
+OUTAGE_STATUSES = frozenset({408, 429, 502, 503, 504})
+
+
 def is_outage(exc: TresError) -> bool:
-    """Is this failure the platform's or the line's, not one resource's? A session refused, a 429,
-    any 5xx, or no answer at all. Everything else (a 4xx about the body, a 2xx `$validate` that
-    holds an error) is a refusal of the resource that was sent."""
-    return (isinstance(exc, TresSessionError) or exc.status is None or exc.status == 429
-            or exc.status >= 500)
+    """Is this failure the platform's or the line's, not one resource's? (The owner's
+    classification, review I2.) A session refused, no answer at all (`status` None), a 3xx, 408,
+    429, 502, 503 or 504. EVERY OTHER STATUS is about the resource sent and is counted against its
+    row — 500, 501 and any other 5xx among them: a server that answers 500 to one input every time
+    would otherwise hold that row forever and end every round before the stays behind it. So are a
+    4xx (400, 403, 404, 409, 422), a `$validate` that holds an error and a search that cannot prove
+    an absence (`TresSearchUnclear`)."""
+    if isinstance(exc, TresSessionError) or exc.status is None:
+        return True
+    return exc.status in OUTAGE_STATUSES or 300 <= exc.status < 400
 
 
 def local_id_of(resource: dict) -> str | None:

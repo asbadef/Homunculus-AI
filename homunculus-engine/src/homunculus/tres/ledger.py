@@ -12,15 +12,17 @@ committed, so that one key has one writer at a time (`_row`):
   id went stale, and falls back to the search (§4.2).
 * mode `send`, no platform id — find by the local id, then PUT, or POST with the local id as the
   placeholder `id` (D4). Another sender never collides: the local ids carry `hmn-` (D5).
-* a refusal OF THIS RESOURCE (a 4xx other than 401 and 429, or a `$validate` that holds an error)
-  — the row reads `failed`, the attempt is counted, the platform's words are kept (encrypted: they
-  may echo a value), and the same payload is not tried again for 30 minutes; the fifth failure in
-  a row makes it `stuck`, which only `force` (the nightly retry, «Yeniden dene») or a changed
-  payload tries again (D21).
-* an OUTAGE (`client.is_outage`: no session, a 429, a 5xx, no answer at all) is the platform's
-  state, not this resource's (review #1; open item O13, closed «no»): it is RE-RAISED, so the
-  caller ends or counts its round, and the row is left as it was — its status, its attempts, its
-  wait, its last words. A row made by this call stays `pending`.
+* a failure OF THIS RESOURCE (every status that is not an outage: a 4xx such as 400, 403, 404,
+  409 or 422, a 500, a 501 or another 5xx, a `$validate` that holds an error, a search that cannot
+  prove an absence) — the row reads `failed`, the attempt is counted, the platform's words are
+  kept (encrypted: they may echo a value), and the same payload is not tried again for 30 minutes;
+  the fifth failure in a row makes it `stuck`, which only `force` (the nightly retry, «Yeniden
+  dene») or a changed payload tries again (D21). A 5xx among them is also RAISED AGAIN after it is
+  recorded, so that the round counts it towards its five in a row (review I2).
+* an OUTAGE (`client.is_outage`: no session, no answer at all, a 3xx, 408, 429, 502, 503, 504) is
+  the platform's state, not this resource's (review #1, I2; open item O13, closed «no»): it is
+  RE-RAISED, so the caller ends or counts its round, and the row is left as it was — its status,
+  its attempts, its wait, its last words. A row made by this call stays `pending`.
 
 `record_skip` writes why a resource was not built (`fin_missing`, `unit_unmapped`… — a catalogue
 code, never text).
@@ -128,7 +130,7 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
     """One resource to the platform, its outcome on its ledger row (the module's docstring).
     `resource_type` is the ledger's key (`vital`, `lab`, `patient`…); `fhir_type` the platform's
     (`Observation`, `Patient`…). Returns the row; raises the `TresError` of an outage again
-    (`client.is_outage`), the row left as it was.
+    (`client.is_outage`), the row left as it was; raises a counted 5xx again after recording it.
 
     The row is locked from `_row` to the commit, and the transaction SPANS THE HTTP CALLS — on
     purpose: the lock is what keeps a second deliverer of the same key from asking the platform
@@ -164,6 +166,10 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
         row.last_error = clip_error(exc.message)
         row.next_attempt_at = now + RETRY_AFTER
         await db.commit()
+        if exc.status is not None and exc.status >= 500:
+            # Counted against the row, AND raised again: the round counts a server error towards
+            # its five in a row (worker.py), and the package stops here.
+            raise
         return row
     row.status = "validated" if mode == "validate" else "sent"
     row.operation, row.remote_id, row.payload_digest = operation, remote_id, digest

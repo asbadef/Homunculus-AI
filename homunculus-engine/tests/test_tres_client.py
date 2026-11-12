@@ -416,11 +416,18 @@ async def test_a_failure_with_no_answer_is_an_error_named_by_its_class_never_by_
 
 
 @pytest.mark.parametrize("error, outage", [
-    (TresError(None, "ConnectError"), True), (TresError(429, "Too many"), True),
-    (TresError(500, "x"), True), (TresError(503, "x"), True), (TresSessionError(401, "x"), True),
-    (TresSessionError(200, "x"), True),
-    (TresError(400, "x"), False), (TresError(404, "x"), False), (TresError(409, "x"), False),
-    (TresError(422, "x"), False), (TresError(200, "Patient.name: minimum required = 1"), False),
+    # the platform's state or the line's: the row is left as it was
+    (TresError(None, "ConnectError"), True), (TresError(None, "TimeoutError"), True),
+    (TresError(429, "Too many"), True), (TresError(408, "x"), True), (TresError(301, "x"), True),
+    (TresError(302, "x"), True), (TresError(307, "x"), True), (TresError(502, "x"), True),
+    (TresError(503, "x"), True), (TresError(504, "x"), True), (TresSessionError(401, "x"), True),
+    (TresSessionError(500, "x"), True), (TresSessionError(200, "x"), True),
+    # about the resource sent — a 5xx the platform answers for this input among them (review I2)
+    (TresError(500, "x"), False), (TresError(501, "x"), False), (TresError(505, "x"), False),
+    (TresError(400, "x"), False), (TresError(403, "x"), False), (TresError(404, "x"), False),
+    (TresError(409, "x"), False), (TresError(422, "x"), False),
+    (TresError(200, "Patient.name: minimum required = 1"), False),
+    (TresSearchUnclear(200, "the search answer has a next page"), False),
 ])
 def test_an_outage_is_the_platforms_or_the_lines_and_a_refusal_is_one_resources(error, outage):
     assert is_outage(error) is outage

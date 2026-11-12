@@ -14,9 +14,13 @@ whole, one after the other, each on its own client:
   THROTTLED_S);
 * a session refused (`TresSessionError`: a wrong password, a blocked provider) ends the tenant's
   round at once — every next package would ask the same token route the same question;
-* MAX_CONSECUTIVE packages failing in a row (a 5xx, a dead line, a package's own exception) end
-  the tenant's round too — the platform, or the line to it, is not well, and the next round will
-  find out. None of these is counted against a ledger row (ledger.py: an outage);
+* MAX_CONSECUTIVE packages failing in a row end the tenant's round too — the platform, or the
+  line to it, is not well, and the next round will find out. What counts towards the five: an
+  outage (no answer, a 3xx, 408, 502, 503, 504 — never counted against a row), a 5xx about one
+  resource (500, 501… — counted against its row AS WELL: so during a platform-wide 500 a round
+  burns at most five rows by one attempt, and those then wait 30 minutes), and a package's own
+  exception. A refusal about one resource (a 4xx) is a package that ran: it ends the streak
+  (review I2);
 * THE TENANT'S SWITCHES HOLD DURING ITS ROUND (review #5): its settings row is read again before
   every package — switched off, or its mode or environment changed, and its round ends; its types
   as they are now go to the `Sender`, which skips (`type_off`) any resource of a type switched off.
@@ -98,8 +102,8 @@ class Sender:
 
 
 #: One stay's resources, taken to the platform in order through the `Sender` it is handed. It lets
-#: a `TresError` the ledger raised again (an outage: no session, a 429, a 5xx, a dead line) pass:
-#: the round reads it.
+#: a `TresError` the ledger raised again (an outage, or a 5xx counted against its row) pass: the
+#: round reads it.
 Package = Callable[[Sender], Awaitable[None]]
 #: The packages a tenant has to send this round, by its settings (F1: the stays that are due).
 PackageSource = Callable[[AsyncSession, TresSettings], AsyncIterator[Package]]

@@ -12,6 +12,7 @@ lock, the loop and the lifespan need no database; the rounds run on Postgres aga
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -153,7 +154,7 @@ async def feed(db_session):
     await db_session.commit()
     maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
 
-    async def round_(source, transport=None):
+    async def round_(source, transport=None, now=T0):
         sleeps, clients = [], []
 
         async def sleep(seconds: float) -> None:
@@ -163,7 +164,7 @@ async def feed(db_session):
             clients.append(TresClient(account, transport=transport or fake.transport))
             return clients[-1]
 
-        report = await run_round(maker, egress=True, source=source, now=T0, client_factory=factory, sleep=sleep)
+        report = await run_round(maker, egress=True, source=source, now=now, client_factory=factory, sleep=sleep)
         return report, sleeps, clients
 
     return fake, tenants, round_
@@ -282,7 +283,9 @@ async def test_a_wrong_password_asks_one_token_ends_the_round_and_touches_no_row
 
 
 @requires_db
-async def test_a_platform_answering_503_ends_the_round_after_five_and_touches_no_row(feed, db_session):
+@pytest.mark.parametrize("status", [503, 502, 504, 408, 302])
+async def test_a_platform_answering_an_outage_ends_the_round_after_five_and_touches_no_row(feed, db_session,
+                                                                                          status):
     fake, tenants, round_ = feed
     local_ids = [f"hmn-p-{n:04d}" for n in range(12)]
     await _failed_before(db_session, tenants["acik"].id, local_ids)
@@ -291,7 +294,7 @@ async def test_a_platform_answering_503_ends_the_round_after_five_and_touches_no
     def down(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/auth/token":
             return fake.transport.handler(request)                  # the session still opens
-        return httpx.Response(503, text="Service Unavailable")
+        return httpx.Response(status, text="Service Unavailable")
 
     report, _, _ = await round_(source_of(*[sends(local_id) for local_id in local_ids]),
                                 transport=httpx.MockTransport(down))
@@ -463,3 +466,44 @@ async def test_one_tenants_failure_never_ends_the_round_for_the_others(feed, db_
     assert [(r.tenant_id, r.status) for r in rows] == [(other_id, "sent")]
     assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
     assert all(c._client is None for c in clients)
+
+
+# ---------------------------------------------------------------- a 5xx about one resource (review I2)
+@requires_db
+async def test_five_resources_the_platform_always_answers_500_no_longer_hold_up_the_stays_behind_them(
+        feed, db_session):
+    """probe_poison: five resources first that the platform answers 500 to every time, seven healthy
+    ones behind them. Each 500 is counted against its row AND towards the round's five in a row: the
+    first round ends after the five; their rows then wait 30 minutes, so the next round sends the
+    seven; the five reach `stuck` at their fifth attempt, two hours after the first."""
+    fake, tenants, round_ = feed
+    poison = {f"hmn-p-{n:04d}" for n in range(5)}
+    order = [f"hmn-p-{n:04d}" for n in range(12)]
+
+    def platform(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/fhir/Patient":
+            local_id = json.loads(request.content)["extension"][0]["valueString"]
+            if local_id in poison:
+                return httpx.Response(500, json={"issue": [{"severity": "fatal", "diagnostics": "HAPI-0000"}]})
+        return fake.transport.handler(request)
+
+    async def rows():
+        db_session.expire_all()
+        return {r.local_id: (r.status, r.attempts) for r in (await db_session.execute(select(TresDelivery))).scalars()}
+
+    source = source_of(*[sends(local_id) for local_id in order])
+    report, _, _ = await round_(source, transport=httpx.MockTransport(platform), now=T0)
+    assert (report.packages, report.failed) == (0, MAX_CONSECUTIVE)          # the round's five
+    assert await rows() == {local_id: ("failed", 1) for local_id in sorted(poison)}
+    report, _, _ = await round_(source, transport=httpx.MockTransport(platform), now=T0 + timedelta(minutes=5))
+    assert (report.packages, report.failed) == (12, 0)                        # the five wait; the seven go
+    assert len(fake.stored("Patient")) == 7
+    for attempt in range(2, 6):                                                # every 30 minutes
+        report, _, _ = await round_(source, transport=httpx.MockTransport(platform),
+                                    now=T0 + (attempt - 1) * timedelta(minutes=30))
+        assert report.failed == MAX_CONSECUTIVE
+        state = await rows()
+        assert {state[local_id] for local_id in poison} == {("stuck" if attempt == 5 else "failed", attempt)}
+    assert {state[local_id] for local_id in set(order) - poison} == {("sent", 0)}
+    report, _, _ = await round_(source, transport=httpx.MockTransport(platform), now=T0 + timedelta(hours=3))
+    assert (report.packages, report.failed) == (12, 0)                        # stuck: left alone
