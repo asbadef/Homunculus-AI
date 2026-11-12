@@ -1163,6 +1163,17 @@ describe("AdmitTab · the protocol (G2-B1d)", () => {
     expect(toasts().queryByText(`${BED1} · qəbul edildi, protokol nömrəsi 202600000001`)).toBeNull();
   });
 
+  // Re-read R-7: the label is the open admission's; a TRANSFERRED row has none to print (its protocol
+  // moved, O8), and the stay out of her units answers 403 — no «Etiketi çap et» for that answer.
+  it("offers no label for an answer still TRANSFERRED (R-7)", async () => {
+    const { api } = await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(transferredHere()) });
+    fillRequired();
+    await press();
+    expect(screen.getByText("202600000001")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Etiketi çap et" })).toBeNull();
+    expect(api.admissionLabel).not.toHaveBeenCalled();
+  });
+
   it("keeps B1a's box for an answer without a protocol: the H-number, no label", async () => {
     await mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => a.admit.mockResolvedValue(admitted()) });
     fillRequired();

@@ -483,7 +483,10 @@ export function AdmitTab() {
       }
       const answer = await store.track(() => store.api.admit(body));
       if (!draft.live) return;
-      admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null, admissionId: answer.id ?? null,
+      // `admissionId` is what the label prints from (re-read R-7): a TRANSFERRED answer has none to
+      // print — its protocol moved with the stay (O8), which lies outside her units (R-1).
+      admitted({ number: boardKeyOf(answer), protocolNo: answer.protocol_no ?? null,
+        admissionId: answer.state === "TRANSFERRED" ? null : answer.id ?? null,
         bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
