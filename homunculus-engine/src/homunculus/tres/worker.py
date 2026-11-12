@@ -17,6 +17,9 @@ whole, one after the other, each on its own client:
 * A REFUSED LOGIN PARKS THE TENANT (`TresLoginRefused`: the token route answered a 4xx other than
   408 and 429): `session_refused_at` is set, and every round passes the tenant over (`parked`)
   until a save that changes something, or a successful connection test, clears it (router.py).
+  It is set only while the settings are the ones the round began on (`park`, plan F1, N15): a
+  login that left with the old password and came back refused after the administrator saved the
+  new one parks nothing — the save has already answered it.
   Without it a wrong password costs a failed login every five minutes — 288 a day, and the
   ministry may lock the account (review I3). A token route that is down parks nothing;
 * MAX_CONSECUTIVE packages failing in a row end the tenant's round too — the platform, or the
@@ -36,7 +39,8 @@ opened, no client is built, no connection is made, whatever a tenant's row says.
 started by the app's lifespan only when the lock is open, and a bad round never ends it; nor does
 one tenant's failure end the round for the tenants after it. The app's
 client factory is `egress.open_client` (the lock and the allowed hosts bound in): a tenant whose
-address the install does not allow is passed over, counted in `refused`.
+address the install does not allow is passed over, counted in `refused` — and so is a tenant whose
+account would reach the LIVE platform, closed in this version (`egress.live_closed`, plan F1).
 
 Log lines carry tenant ids, counts, statuses, exception classes and, for an unexpected exception,
 WHERE it was raised — its last five frames as `file:line:function` (review M9) — never a message
@@ -60,8 +64,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from homunculus.tres.client import TresAccount, TresClient, TresError, TresLoginRefused, TresSessionError
-from homunculus.tres.egress import TresEgressRefused
-from homunculus.tres.ledger import deliver, record_skip
+from homunculus.tres.egress import TresEgressRefused, live_closed
+from homunculus.tres.ledger import deliver, forget_skip, held, record_skip
 from homunculus.tres.models import TresDelivery, TresSettings, account_of
 
 log = logging.getLogger(__name__)
@@ -87,13 +91,19 @@ class Sender:
     #5): `send` of a type the tenant has switched off asks the platform nothing and records a skip
     with the reason TYPE_OFF — whatever the package builder forgot — unless the platform already
     holds that resource: its row (`remote_id`, `sent`) is left as it is (review M7). The round
-    refreshes `enabled_types` before each package (`_work`)."""
+    refreshes `enabled_types` before each package (`_work`).
+
+    `lock_timeout_ms` (plan F1, N12): set for a person's request («Şimdi gönder», «Yeniden dene»),
+    so that a row a round holds is waited for that long at most (`ledger.LedgerBusy`). `held`
+    reads the platform's id a reference needs; `forget_skip` removes a placeholder's skip."""
 
     def __init__(self, db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
-                 environment: str, mode: str, now: datetime, enabled_types: Iterable[str]) -> None:
+                 environment: str, mode: str, now: datetime, enabled_types: Iterable[str],
+                 lock_timeout_ms: int | None = None) -> None:
         self._db, self._client = db, client
         self.tenant_id, self.environment, self.mode, self.now = tenant_id, environment, mode, now
         self.enabled_types = frozenset(enabled_types)
+        self.lock_timeout_ms = lock_timeout_ms
 
     async def send(self, *, resource_type: str, fhir_type: str, local_id: str, resource: dict,
                    admission_id: uuid.UUID | None = None, force: bool = False) -> TresDelivery:
@@ -101,17 +111,27 @@ class Sender:
             # Recorded only where the platform holds nothing: a sent row keeps its id and status.
             return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                      resource_type=resource_type, local_id=local_id, reason=TYPE_OFF,
-                                     admission_id=admission_id, keep_held=True)
+                                     admission_id=admission_id, keep_held=True,
+                                     lock_timeout_ms=self.lock_timeout_ms)
         return await deliver(self._db, self._client, tenant_id=self.tenant_id,
                              environment=self.environment, mode=self.mode,
                              resource_type=resource_type, fhir_type=fhir_type, local_id=local_id,
-                             resource=resource, admission_id=admission_id, now=self.now, force=force)
+                             resource=resource, admission_id=admission_id, now=self.now, force=force,
+                             lock_timeout_ms=self.lock_timeout_ms)
 
     async def skip(self, *, resource_type: str, local_id: str, reason: str,
                    admission_id: uuid.UUID | None = None) -> TresDelivery:
         return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                  resource_type=resource_type, local_id=local_id, reason=reason,
-                                 admission_id=admission_id)
+                                 admission_id=admission_id, lock_timeout_ms=self.lock_timeout_ms)
+
+    async def held(self, *, resource_type: str, local_id: str) -> str | None:
+        return await held(self._db, tenant_id=self.tenant_id, environment=self.environment,
+                          resource_type=resource_type, local_id=local_id)
+
+    async def forget_skip(self, *, resource_type: str, local_id: str) -> None:
+        await forget_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
+                          resource_type=resource_type, local_id=local_id)
 
 
 #: One stay's resources, taken to the platform in order through the `Sender` it is handed. It lets
@@ -181,15 +201,25 @@ async def _still_on(db: AsyncSession, sender: Sender, version: datetime | None) 
     return True
 
 
-async def _park(db: AsyncSession, sender: Sender, status: int | None = None) -> None:
+async def park(db: AsyncSession, *, tenant_id: uuid.UUID, now: datetime, status: int | None,
+               version: datetime | None) -> bool:
     """The platform refused this tenant's login: `session_refused_at` is set (by a statement of
-    its own, so `updated_at` — the administrator's — is not touched) and committed. One log line:
-    the tenant and the status, never the platform's words (they may echo the account)."""
-    await db.execute(update(TresSettings).where(TresSettings.tenant_id == sender.tenant_id)
-                     .values(session_refused_at=sender.now))
+    its own, so `updated_at` — the administrator's — is not touched) and committed — ONLY while
+    the settings are still the ones the caller began on (`updated_at` = `version`; plan F1, N15).
+    A login that left with the old password and came back refused after a save parks nothing: the
+    save has answered it, and the next round tries the new account. True when it parked. One log
+    line: the tenant and the status, never the platform's words (they may echo the account)."""
+    stale = [TresSettings.updated_at == version] if version is not None else []
+    parked = (await db.execute(update(TresSettings).where(TresSettings.tenant_id == tenant_id, *stale)
+                               .values(session_refused_at=now))).rowcount > 0
     await db.commit()
-    log.warning("TRƏS: the platform refused tenant %s's login (HTTP %s); it is parked until its "
-                "settings are saved or a connection test succeeds", sender.tenant_id, status)
+    if parked:
+        log.warning("TRƏS: the platform refused tenant %s's login (HTTP %s); it is parked until its "
+                    "settings are saved or a connection test succeeds", tenant_id, status)
+    else:
+        log.warning("TRƏS: the platform refused tenant %s's login (HTTP %s) with settings saved since; "
+                    "not parked", tenant_id, status)
+    return parked
 
 
 @contextlib.asynccontextmanager
@@ -232,7 +262,8 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
                                 sender.tenant_id, report.retry_after)
                     return
                 if isinstance(exc, TresLoginRefused):
-                    await _park(db, sender, exc.status)
+                    await park(db, tenant_id=sender.tenant_id, now=sender.now, status=exc.status,
+                               version=version)
                     return
                 if isinstance(exc, TresSessionError):
                     log.warning("TRƏS: %s (HTTP %s) for tenant %s; its round ends",
@@ -281,6 +312,10 @@ async def run_round(session_factory: Callable[[], AsyncSession], *, egress: bool
                 continue
             if account is None:
                 report.incomplete += 1
+                continue
+            if live_closed(environment, account.base_url):
+                log.warning("TRƏS: tenant %s passed over (tres_live_closed)", tenant_id)
+                report.refused += 1
                 continue
             try:
                 client = client_factory(account)

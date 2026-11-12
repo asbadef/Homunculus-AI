@@ -645,3 +645,75 @@ async def test_the_source_is_closed_as_soon_as_a_tenants_round_ends_early(feed, 
                              sleep=quiet)
     assert report.retry_after == THROTTLED_S
     assert events == ["source closed", "client closed"]
+
+
+# ---------------------------------------------------------------- plan F1: the live platform, a stale refusal
+@requires_db
+@pytest.mark.parametrize("environment, base_url", [("live", "https://tres.test"),
+                                                   ("test", "https://ehr.e-health.gov.az")],
+                         ids=["the-live-environment", "the-live-host-under-test"])
+async def test_a_tenant_whose_account_reaches_the_live_platform_is_passed_over(feed, db_session, caplog,
+                                                                             environment, base_url):
+    """O5, O11: no package to the live platform in this version, whatever the install allows."""
+    fake, tenants, round_ = feed
+    settings = await db_session.get(TresSettings, tenants["acik"].id)
+    settings.environment = environment
+    for name, value in (("base_url", base_url), ("username", fake.account.username),
+                        ("password", fake.account.password), ("provider_id", fake.account.provider_id)):
+        setattr(settings, f"{environment}_{name}", value)
+    await db_session.commit()
+    with caplog.at_level("WARNING"):
+        report, _, clients = await round_(source_of(sends("hmn-p-0001")))
+    assert (report.tenants, report.refused, report.packages) == (0, 1, 0)
+    assert clients == [] and fake.requests == []
+    assert "tres_live_closed" in caplog.text
+
+
+@requires_db
+async def test_a_login_refused_after_the_settings_were_saved_parks_nothing(feed, db_session):
+    """N15: the round began on the old password; the administrator saved the new one; the old
+    login's refusal comes back. The save has answered it: the tenant is not parked."""
+    from homunculus.tres.client import TresLoginRefused
+    fake, tenants, round_ = feed
+    tenant_id = tenants["acik"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def refused_after_a_save(sender) -> None:
+        await _change_settings(maker, tenant_id, test_password="yeni-parola")
+        raise TresLoginRefused(401, "Invalid credentials")
+
+    report, _, _ = await round_(source_of(refused_after_a_save))
+    assert report.failed == 1
+    assert (await _parking(db_session, tenant_id))[0] is None
+    report, _, _ = await round_(source_of(sends("hmn-p-0001")))          # the next round is not passed over
+    assert (report.tenants, report.parked) == (1, 0)
+
+
+@requires_db
+async def test_the_sender_holds_a_hand_to_its_lock_timeout_and_reads_and_forgets(feed, db_session):
+    """N12: the Sender carries a person's lock timeout to every ledger call; `held` and
+    `forget_skip` reach the ledger for the package (tres/package.py)."""
+    from homunculus.tres.ledger import LedgerBusy, _row
+    from homunculus.tres.worker import Sender
+    fake, tenants, _ = feed
+    tenant_id = tenants["acik"].id
+    maker = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    client = TresClient(fake.account, transport=fake.transport)
+    async with maker() as round_db, maker() as hand_db:
+        hand = Sender(hand_db, client, tenant_id=tenant_id, environment="test", mode="send", now=T0,
+                      enabled_types=["patient"], lock_timeout_ms=200)
+        await _row(round_db, tenant_id=tenant_id, environment="test", resource_type="patient",
+                   local_id="hmn-p-0001", admission_id=None)
+        with pytest.raises(LedgerBusy):
+            await hand.send(resource_type="patient", fhir_type="Patient", local_id="hmn-p-0001",
+                            resource=patient("hmn-p-0001"))
+        with pytest.raises(LedgerBusy):
+            await hand.skip(resource_type="patient", local_id="hmn-p-0001", reason="fin_missing")
+        await round_db.commit()
+        row = await hand.send(resource_type="patient", fhir_type="Patient", local_id="hmn-p-0001",
+                              resource=patient("hmn-p-0001"))
+        assert await hand.held(resource_type="patient", local_id="hmn-p-0001") == row.remote_id == "7001"
+        await hand.skip(resource_type="patient", local_id="hmn-p-s-1.", reason="fin_missing")
+        await hand.forget_skip(resource_type="patient", local_id="hmn-p-s-1.")
+        assert await hand.held(resource_type="patient", local_id="hmn-p-s-1.") is None
+    await client.aclose()

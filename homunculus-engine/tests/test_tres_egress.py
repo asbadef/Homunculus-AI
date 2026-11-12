@@ -11,8 +11,9 @@ import pytest
 
 from homunculus.api.app import create_app
 from homunculus.tres.client import TresAccount, TresClient
+from homunculus.tres import egress
 from homunculus.tres.egress import (
-    DEFAULT_HOSTS, TresEgressRefused, address_allowed, allowed_hosts, egress_on, open_client,
+    DEFAULT_HOSTS, LIVE_HOSTS, TresEgressRefused, address_allowed, allowed_hosts, egress_on, live_closed, open_client,
 )
 
 
@@ -105,3 +106,29 @@ def test_an_address_is_judged_by_its_wire_form_and_never_raises():
     not allowed — unless the install named exactly that host."""
     assert address_allowed("https://xn--a.gov.az", frozenset({"tres.test"})) is False
     assert address_allowed("https://XN--A.gov.az/fhir", frozenset({"xn--a.gov.az"})) is True
+
+
+# ---------------------------------------------------------------- the live platform (plan F1: O5, O11)
+def test_the_live_platform_is_closed_in_this_version():
+    """Opening it is a code change with the owner's word (O5, O11): this line changes with it."""
+    assert egress.LIVE_OPEN is False
+    assert LIVE_HOSTS == {"ehr.e-health.gov.az"} and LIVE_HOSTS < DEFAULT_HOSTS
+
+
+@pytest.mark.parametrize("environment, base_url, closed", [
+    ("live", "https://ehr.e-health.gov.az", True),
+    ("live", "https://ehr-sandbox.e-health.gov.az", True),          # the live environment, wherever it points
+    ("live", None, True),
+    ("test", "https://ehr.e-health.gov.az", True),                  # the live host, under the test account
+    ("test", "https://EHR.e-health.gov.az/fhir-base", True),
+    ("test", "https://ehr-sandbox.e-health.gov.az", False),
+    ("test", "https://tres.test", False),
+    ("test", None, False), ("test", "not a url", False),
+])
+def test_a_package_to_the_live_platform_is_held_back(environment, base_url, closed):
+    assert live_closed(environment, base_url) is closed
+
+
+def test_with_live_open_nothing_is_held_back(monkeypatch):
+    monkeypatch.setattr(egress, "LIVE_OPEN", True)
+    assert not live_closed("live", "https://ehr.e-health.gov.az")
