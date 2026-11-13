@@ -517,7 +517,8 @@ phase (2026-11-13). Where a line above and a line here disagree, this section is
   cannot be emptied here (`71956f5e`).
 - **The words**: `failed` is «Başarısız» (az «Uğursuz»), a skipped row az «Göndərilmədi»; every state, status, reason,
   type and environment the screens say has words in all four languages, held by a test (`6b5a8152`, `5e0d3b5f`).
-- **D27 — the build**: the shared i18n chunk (`Toast-*.js`) is 527.77 kB (504.06 kB at F0), over Vite's 500 kB note;
+- **D27 — the build**: the shared i18n chunk (`Toast-*.js`) is 528.34 kB after amendment 28 (527.77 kB at F1b's head,
+  504.06 kB at F0), over Vite's 500 kB note;
   not split here — main split the catalogue (§14.4).
 
 ### 14.3 Open items
