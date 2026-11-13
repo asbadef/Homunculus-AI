@@ -55,6 +55,16 @@ function Provenance({ patient }) {
   );
 }
 
+/** Age and sex as the HIS sent them; a part the HIS did not send is left out, never guessed. */
+function AgeSex({ patient }) {
+  const { t } = useI18n();
+  const parts = [
+    Number.isInteger(patient?.age) ? t("beds.ageYears", { age: patient.age }) : null,
+    patient?.sex === "female" || patient?.sex === "male" ? t(`kabul.sex.${patient.sex}`) : null,
+  ].filter(Boolean);
+  return parts.length ? <span className="mt-0.5 block text-12.5 text-mute">{parts.join(" · ")}</span> : null;
+}
+
 /** The channels this bed HAS values for. A card with none says so once, instead of a row of
  *  dashes that repeats the same absence five times. */
 function Vitals({ patient }) {
@@ -64,13 +74,14 @@ function Vitals({ patient }) {
     return <p className="m-0 mt-2 text-12.5 text-mute">{t("beds.noVitals")}</p>;
   }
   return (
-    <dl className="m-0 mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+    <dl className="m-0 mt-3 flex flex-wrap gap-x-4 gap-y-2">
       {shown.map((v) => (
-        <div key={v.at} className="min-w-[62px]">
-          <dt className={`text-10 font-bold uppercase leading-[normal] tracking-[.06em] ${v.color}`}>{t(v.labelKey)}</dt>
-          <dd className="m-0 font-data text-14.5 font-bold text-ink">
+        <div key={v.at} className="min-w-[44px]">
+          <dt className={`text-10 font-bold uppercase leading-[normal] tracking-[.04em] ${v.color}`}>{t(v.labelKey)}</dt>
+          {/* The prototype's .vrow: the number large, the unit small beside it. */}
+          <dd className="m-0 font-data text-20 font-bold leading-tight text-ink">
             {v.value}
-            <small className="ml-0.5 font-text text-10.5 font-semibold text-mute">{t(v.unitKey)}</small>
+            <small className="ml-0.5 font-text text-10 font-semibold text-mute">{t(v.unitKey)}</small>
           </dd>
         </div>
       ))}
@@ -138,10 +149,14 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
       >
         <div className="flex items-start gap-2.5">
           <div className="min-w-0 flex-1">
-            <b className="block font-data text-15 font-bold text-ink">{bed}</b>
-            <span className={`block truncate font-display text-14.5 font-bold ${patient?.display_name ? "text-ink" : "italic text-mute"}`}>
-              {nameOf(patient, t)}
-            </span>
+            {/* The prototype's head line: the bed code in the brand colour, then the name. */}
+            <p className="m-0 flex min-w-0 items-baseline gap-2">
+              <b className="shrink-0 font-data text-15 font-bold text-pri">{bed}</b>
+              <span className={`truncate font-display text-15 font-bold ${patient?.display_name ? "text-ink" : "italic text-mute"}`}>
+                {nameOf(patient, t)}
+              </span>
+            </p>
+            <AgeSex patient={patient} />
             {draft ? <Tag tone="warn" icon="edit" className="mt-1">{t("kabul.badgeDraft")}</Tag> : null}
           </div>
           <RiskPill risk={patient?.risk} measured={measured} />
