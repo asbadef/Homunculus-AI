@@ -153,6 +153,20 @@ async def test_a_time_two_hours_back_is_the_rows_and_the_answers_and_the_audit_r
     assert datetime.fromisoformat(card["identity"]["updated_at"]) >= before     # the card's stamp: the save
 
 
+async def test_a_time_sent_with_an_offset_is_written_to_the_audit_row_in_utc(ward, db_session):
+    """Plan departure E-1: a form may send `+04:00` (Baku); the audit row spells the row's own instant in
+    UTC — one spelling, whatever offset came in."""
+    w, client, app = ward
+    began = _ago(hours=2)
+    baku = began.astimezone(timezone(timedelta(hours=4)))
+    assert baku.isoformat().endswith("+04:00")
+    admission = await _admitted(w, client, at=baku)
+    assert await _row_time(db_session, admission["id"]) == began
+    (audit,) = _admit_rows(app)
+    assert audit.payload["admission_datetime"] == began.isoformat()
+    assert audit.payload["admission_datetime"].endswith("+00:00")
+
+
 # ---------------------------------------------------------------- six hours (D2)
 async def test_six_hours_less_a_minute_is_taken_and_a_minute_more_is_refused_spending_nothing(ward, db_session):
     w, client, _ = ward
@@ -184,10 +198,14 @@ async def test_a_reserved_bed_is_bound_by_the_reservations_start(ward, db_sessio
                           headers=w.auth["charge"])
     assert r.status_code == 200, r.text
     reserved = await _state_time(db_session, w.beds["3"].id)
-    for at, expected in ((reserved - timedelta(minutes=1), 409), (reserved, 201)):
-        body = {**form(w, "3", note={"admission_datetime": at.isoformat()}), "confirm_reserved": True}
-        r = await client.post("/admissions", json=body, headers=w.auth["charge"])
-        assert r.status_code == expected, r.text
+
+    def body(at: datetime) -> dict:
+        return {**form(w, "3", note={"admission_datetime": at.isoformat()}), "confirm_reserved": True}
+
+    r = await client.post("/admissions", json=body(reserved - timedelta(minutes=1)), headers=w.auth["charge"])
+    assert _refusal(r) == (409, "admitted_before_bed_free"), r.text
+    r = await client.post("/admissions", json=body(reserved), headers=w.auth["charge"])
+    assert r.status_code == 201, r.text
     assert r.json()["state"] == "DRAFT"
 
 
