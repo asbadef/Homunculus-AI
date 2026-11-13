@@ -303,6 +303,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     let patientNumber;
     let occupied;
     let apiEnvironment;
+    let apiRetryAfter;
     try {
       const body = await res.json();
       if (Array.isArray(body?.detail)) {
@@ -331,6 +332,12 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
         if (body.detail.code === "tres_host_not_allowed" && ["test", "live"].includes(body.detail.environment)) {
           apiEnvironment = body.detail.environment;
         }
+        // TRƏS-01 (review, 2026-11-13): a throttled hand carries the PLATFORM's own wait, in seconds, in its body — and
+        // in `Retry-After`, where `retryAfterSeconds` caps it at 15 minutes (a cap for a button held shut, not for the
+        // words «wait N s»). Kept for that code only: a finite number above zero, rounded up to whole seconds.
+        if (body.detail.code === "tres_throttled" && Number.isFinite(body.detail.retry_after) && body.detail.retry_after > 0) {
+          apiRetryAfter = Math.ceil(body.detail.retry_after);
+        }
         if (body.detail.code === "bed_occupied" && Array.isArray(body.detail.occupied)) {
           occupied = body.detail.occupied.filter((o) => typeof o?.bed_id === "string")
             .map((o) => (typeof o.patient_id === "string" ? { bed_id: o.bed_id, patient_id: o.patient_id } : { bed_id: o.bed_id }));
@@ -347,6 +354,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     if (patientNumber !== undefined) err.patientNumber = patientNumber;
     if (occupied !== undefined) err.occupied = occupied;
     if (apiEnvironment !== undefined) err.apiEnvironment = apiEnvironment;
+    if (apiRetryAfter !== undefined) err.apiRetryAfter = apiRetryAfter;
     if (fieldErrors) err.fieldErrors = fieldErrors;
     // A 429 says how long to wait (nginx's sign-in limit sends Retry-After: 60): whole seconds,
     // kept so a screen can hold its button that long instead of letting it be pressed again.
@@ -413,7 +421,7 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     return a !== null && a === subOf(stored);
   }
 
-  async function authedOnce(doFetch, path, { method = "GET", body, credential = false, read } = {}) {
+  async function authedOnce(doFetch, path, { method = "GET", body, credential = false, read, cache } = {}) {
     const gen = generation;
     // The answer's body — and, for a call that needs more of the response than its body (a header),
     // whatever its own `read(body, res)` makes of the two.
@@ -426,6 +434,8 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       sentAccess = accessToken();
       const headers = { Authorization: `Bearer ${sentAccess}` };
       const init = { method, headers };
+      // `fetch`'s own cache mode, for an answer the browser must not keep (the TRƏS preview: patient data).
+      if (cache) init.cache = cache;
       if (body !== undefined) {
         headers["Content-Type"] = "application/json";
         init.body = JSON.stringify(body);
@@ -1053,7 +1063,10 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     tresStay(key) { return authed(`/admin/tres/admissions?${new URLSearchParams({ key })}`); },
     /** {admission_id, board_key, environment, items: [{resource_type, local_id, held, reason, resource, status,
      *  last_error}]} — the bodies: PHI, and the read is audited (tres.preview). */
-    tresPreview(admissionId) { return authed(`/admin/tres/admissions/${seg(admissionId)}/preview`); },
+    tresPreview(admissionId) {
+      // PHI: `cache: "no-store"` — the browser's HTTP cache keeps no copy of the stay's resources (review, 2026-11-13).
+      return authed(`/admin/tres/admissions/${seg(admissionId)}/preview`, { cache: "no-store" });
+    },
     /** «Şimdi gönder»: {admission_id, rows: [{resource_type, local_id, status, reason}], counts}. 409 `tres_busy`… */
     sendTresStay(admissionId) { return authed(`/admin/tres/admissions/${seg(admissionId)}/send`, { method: "POST" }); },
     /** «Yeniden dene»: as sendTresStay, the row's stay forced. */

@@ -2019,4 +2019,36 @@ describe("TRƏS-01 F1 calls", () => {
     expect(JSON.parse(fetchMock.mock.calls[9][1].body)).toEqual({ family_name: "Sentetikov", given_name: "Elçin" });
     for (const [, init] of fetchMock.mock.calls) expect(init.headers.Authorization).toBe("Bearer acc-1");
   });
+
+  // The preview holds the stay's resources (PHI): the browser must not keep it in its HTTP cache (review, 2026-11-13).
+  it("reads the preview with `cache: no-store`, and no other read asks for it", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const stay = "66666666-6666-4666-8666-666666666601";
+    await api.tresPreview(stay);
+    await api.tresDeliveries();
+    await api.tresStay("202600000101");
+    expect(fetchMock.mock.calls[0][1].cache).toBe("no-store");
+    expect(fetchMock.mock.calls[1][1].cache).toBeUndefined();
+    expect(fetchMock.mock.calls[2][1].cache).toBeUndefined();
+  });
+
+  it("keeps the platform's own wait from a throttled hand's body (seconds, rounded up, never capped at 15 minutes)", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const refuse = (detail, headers) => createBackendApi({ baseUrl: "", fetchImpl: vi.fn().mockResolvedValue(
+      { ...jsonResponse({ detail }, { ok: false, status: 429 }), headers }) })
+      .sendTresStay("66666666-6666-4666-8666-666666666601").catch((e) => e);
+    const long = await refuse({ code: "tres_throttled", message: "Wait.", retry_after: 1800 }, new Headers({ "Retry-After": "1800" }));
+    expect(long).toMatchObject({ status: 429, apiCode: "tres_throttled", apiRetryAfter: 1800, retryAfter: 900 });
+    expect((await refuse({ code: "tres_throttled", message: "Wait.", retry_after: 12.4 })).apiRetryAfter).toBe(13);
+    // no wait said, or one that is no usable number: none kept
+    for (const retry_after of [undefined, null, 0, -3, "45", true, Number.NaN]) {
+      expect((await refuse({ code: "tres_throttled", message: "Wait.", retry_after })).apiRetryAfter, String(retry_after)).toBeUndefined();
+    }
+    // only a throttled hand's body carries it
+    expect((await refuse({ code: "tres_busy", message: "x", retry_after: 30 })).apiRetryAfter).toBeUndefined();
+  });
 });
