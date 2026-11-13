@@ -30,6 +30,14 @@ const click = async (el) => {
   await settle();
 };
 const shown = (text) => toasts().getAllByText(text).filter((el) => el.closest("[data-toast]"));
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((ok) => { resolve = ok; });
+  return { promise, resolve };
+};
+const SECOND_DOCTOR = "88888888-8888-4888-8888-888888888803";
+const TWO_DOCTORS = [...DOCTORS, { user_id: SECOND_DOCTOR, full_name: "Sentetik Üçüncü", fin_set: false, family_name: "Üçünçüyev",
+  given_name: "Rəşad", updated_at: null }];
 
 describe("TresDepartments", () => {
   it("lists every unit, closed ones said so, and saves the whole map trimmed", async () => {
@@ -74,6 +82,58 @@ describe("TresDepartments", () => {
     expect(screen.getByLabelText("Şöbə kodu · Neonatal").value).toBe("");
     expect(screen.getByLabelText("Şöbənin adı · Neonatal").value).toBe("");
   });
+
+  it("says when the read failed and reads again on «Yenidən cəhd et» — no table on nothing it read", async () => {
+    const { api } = await mounted(<TresDepartments />, (a) => {
+      a.tresDepartments.mockRejectedValueOnce(refusal(503, "down")).mockResolvedValue(UNITS);
+    });
+    expect(screen.getByText(/^Şöbə uyğunlaşdırması oxunmadı: /).closest("[role='alert']")).not.toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Uyğunlaşdırmanı yadda saxla" })).toBeNull();
+    await click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
+    expect(api.tresDepartments).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Şöbə kodu · Reanimasiya").value).toBe("RE-01");
+    expect(screen.queryByText(/^Şöbə uyğunlaşdırması oxunmadı: /)).toBeNull();
+  });
+
+  it("says when the hospital has no unit, and offers no save", async () => {
+    await mounted(<TresDepartments />, (a) => a.tresDepartments.mockResolvedValue([]));
+    expect(screen.getByText("Bu xəstəxanada bölmə yoxdur.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Uyğunlaşdırmanı yadda saxla" })).toBeNull();
+  });
+
+  it("ties a held half row's inputs to the sentence that says what is wrong", async () => {
+    await mounted(<TresDepartments />, (a) => a.tresDepartments.mockResolvedValue(UNITS));
+    fireEvent.change(screen.getByLabelText("Şöbə kodu · Neonatal"), { target: { value: "NEO-01" } });
+    expect(screen.getByLabelText("Şöbə kodu · Neonatal")).not.toHaveAttribute("aria-invalid");   // not before it was tried
+    await click(screen.getByRole("button", { name: "Uyğunlaşdırmanı yadda saxla" }));
+    const said = "Kod və ad birlikdə yazılır və ya birlikdə boş saxlanılır.";
+    for (const label of ["Şöbə kodu · Neonatal", "Şöbənin adı · Neonatal"]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByLabelText(label)).toHaveAccessibleDescription(said);
+    }
+    for (const label of ["Şöbə kodu · Reanimasiya", "Şöbənin adı · Reanimasiya"]) {       // a whole row is not named in it
+      expect(screen.getByLabelText(label)).not.toHaveAttribute("aria-invalid");
+      expect(screen.getByLabelText(label)).not.toHaveAccessibleDescription(said);
+    }
+  });
+
+  it("shows the save busy and ignores a second press while the map is on its way", async () => {
+    const pending = deferred();
+    const { api } = await mounted(<TresDepartments />, (a) => {
+      a.tresDepartments.mockResolvedValue(UNITS);
+      a.saveTresDepartments.mockImplementation(() => pending.promise);
+    });
+    const save = screen.getByRole("button", { name: "Uyğunlaşdırmanı yadda saxla" });
+    await click(save);
+    expect(save).toHaveAttribute("aria-busy", "true");
+    await click(save);
+    expect(api.saveTresDepartments).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(UNITS); });
+    await settle();
+    expect(save).not.toHaveAttribute("aria-busy", "true");
+  });
 });
 
 describe("TresPractitioners", () => {
@@ -85,11 +145,13 @@ describe("TresPractitioners", () => {
     const fin = screen.getByLabelText("FİN · Sentetik Hekim");
     expect(fin.value).toBe("");
     expect(fin.placeholder).toBe("qeyd olunub");
+    expect(fin).toHaveAttribute("spellcheck", "false");                          // an identity number is no word to correct
+    expect(fin).toHaveAttribute("autocomplete", "off");
     fireEvent.change(screen.getByLabelText("Ad · Sentetik Hekim"), { target: { value: "Elçin Rəşad" } });
     await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
     expect(api.saveTresPractitioner).toHaveBeenLastCalledWith(DOCTOR, { family_name: "Sentetikov", given_name: "Elçin Rəşad" });
     expect(shown("Sentetik Hekim: şəxsiyyət məlumatları yadda saxlanıldı.")).toHaveLength(1);
-    await click(screen.getByRole("checkbox", { name: "Qeyd olunmuş FİN-i sil" }));
+    await click(screen.getByRole("checkbox", { name: "Qeyd olunmuş FİN-i sil · Sentetik Hekim" }));
     await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
     expect(api.saveTresPractitioner).toHaveBeenLastCalledWith(DOCTOR, { family_name: "Sentetikov", given_name: "Elçin", fin: "" });
   });
@@ -127,11 +189,17 @@ describe("TresPractitioners", () => {
     const fin = screen.getByLabelText("FİN · Sentetik Yeni");
     expect(fin.value).toBe("");
     expect(fin.placeholder).toBe("");                                           // nothing stored: no «qeyd olunub»
-    expect(screen.queryByRole("checkbox", { name: "Qeyd olunmuş FİN-i sil" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /^Qeyd olunmuş FİN-i sil/ })).toBeNull();
     expect(screen.getByLabelText("Soyad · Sentetik Yeni").value).toBe("");
     await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Yeni" }));
     expect(api.saveTresPractitioner).not.toHaveBeenCalled();
     expect(screen.getByText(/soyad və ad tələb olunur/)).toBeInTheDocument();
+    // the sentence is tied to the inputs it is about: the two names are empty, the (unset) FİN is not wrong
+    for (const label of ["Soyad · Sentetik Yeni", "Ad · Sentetik Yeni"]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByLabelText(label)).toHaveAccessibleDescription(/soyad və ad tələb olunur/);
+    }
+    expect(screen.getByLabelText("FİN · Sentetik Yeni")).not.toHaveAttribute("aria-invalid");
     fireEvent.change(screen.getByLabelText("Soyad · Sentetik Yeni"), { target: { value: "Sentetikov" } });
     fireEvent.change(screen.getByLabelText("Ad · Sentetik Yeni"), { target: { value: "Leyla" } });
     fireEvent.change(screen.getByLabelText("FİN · Sentetik Yeni"), { target: { value: "AB12C3D" } });
@@ -139,5 +207,73 @@ describe("TresPractitioners", () => {
     expect(api.saveTresPractitioner).toHaveBeenCalledWith(NEW_DOCTOR,
       { family_name: "Sentetikov", given_name: "Leyla", fin: "AB12C3D" });
     expect(screen.getByLabelText("FİN · Sentetik Yeni").value).toBe("");           // the saved FİN is never read back
+  });
+
+  it("ties a malformed FİN to the sentence, and no name — which are whole — to it", async () => {
+    await mounted(<TresPractitioners />, (a) => a.tresPractitioners.mockResolvedValue(DOCTORS));
+    fireEvent.change(screen.getByLabelText("FİN · Sentetik Hekim"), { target: { value: "ZZ99" } });
+    await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
+    expect(screen.getByLabelText("FİN · Sentetik Hekim")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("FİN · Sentetik Hekim")).toHaveAccessibleDescription(/^FİN 7 latın böyük hərfi/);
+    expect(screen.getByLabelText("Soyad · Sentetik Hekim")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("Ad · Sentetik Hekim")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("names the actions column, which has no visible heading", async () => {
+    await mounted(<TresPractitioners />, (a) => a.tresPractitioners.mockResolvedValue(DOCTORS));
+    const header = screen.getByRole("columnheader", { name: "Əməliyyat" });
+    expect(header).toBeInTheDocument();
+    expect(header.textContent).toBe("Əməliyyat");
+    expect(header.querySelector(".sr-only")).not.toBeNull();                        // said to a screen reader, not drawn
+  });
+
+  it("says when the read failed and reads again on «Yenidən cəhd et»", async () => {
+    const { api } = await mounted(<TresPractitioners />, (a) => {
+      a.tresPractitioners.mockRejectedValueOnce(refusal(503, "down")).mockResolvedValue(DOCTORS);
+    });
+    expect(screen.getByText(/^Həkimlərin şəxsiyyət məlumatları oxunmadı: /).closest("[role='alert']")).not.toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    await click(screen.getByRole("button", { name: "Yenidən cəhd et" }));
+    expect(api.tresPractitioners).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Ad · Sentetik Hekim").value).toBe("Elçin");
+    expect(screen.queryByText(/oxunmadı: /)).toBeNull();
+  });
+
+  it("says the server's refusals of an identity as words, by their codes, and keeps what was typed", async () => {
+    const { api } = await mounted(<TresPractitioners />, (a) => {
+      a.tresPractitioners.mockResolvedValue(DOCTORS);
+      a.saveTresPractitioner
+        .mockRejectedValueOnce(refusal(422, "A FİN is seven Latin capital letters or digits.", { apiCode: "tres_fin_format" }))
+        .mockRejectedValueOnce(refusal(404, "This hospital has no active member with that id.", { apiCode: "tres_user_unknown" }));
+    });
+    fireEvent.change(screen.getByLabelText("FİN · Sentetik Hekim"), { target: { value: "AB12C3D" } });   // well-formed here; the server refuses
+    await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
+    expect(shown("Sentetik Hekim: FİN yeddi latın böyük hərfi və ya rəqəmdən ibarətdir.")).toHaveLength(1);
+    await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
+    expect(shown("Sentetik Hekim: Bu identifikatorla xəstəxananın aktiv üzvü yoxdur.")).toHaveLength(1);
+    expect(api.saveTresPractitioner).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toMatch(/Latin capital letters|no active member/);
+    expect(screen.getByLabelText("FİN · Sentetik Hekim").value).toBe("AB12C3D");
+  });
+
+  it("gives each row's save its own busy mark, and holds the other rows' off while one saves", async () => {
+    const pending = deferred();
+    const { api } = await mounted(<TresPractitioners />, (a) => {
+      a.tresPractitioners.mockResolvedValue(TWO_DOCTORS);
+      a.saveTresPractitioner.mockImplementation(() => pending.promise);
+    });
+    const first = screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" });
+    const second = screen.getByRole("button", { name: "Yadda saxla · Sentetik Üçüncü" });
+    await click(first);
+    expect(first).toHaveAttribute("aria-busy", "true");
+    expect(second).toBeDisabled();                                                  // visibly off, not silently ignored
+    expect(second).not.toHaveAttribute("aria-busy", "true");
+    await click(second);
+    await click(first);                                                             // nor does a second press on the busy one
+    expect(api.saveTresPractitioner).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(DOCTORS[0]); });
+    await settle();
+    expect(first).not.toHaveAttribute("aria-busy", "true");
+    expect(second).toBeEnabled();
   });
 });
