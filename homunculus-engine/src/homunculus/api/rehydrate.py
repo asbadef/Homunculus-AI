@@ -38,12 +38,20 @@ from homunculus.api.alert_lifecycle import (
     DISCHARGED, acknowledge_latched, live_keys, retire_state, sync_alerts,
 )
 from homunculus.api.audit import AuditRecord
-from homunculus.api.clinical import RETRACT, profile_from_payload
+from homunculus.api.clinical import BEDSIDE_SKEW, RETRACT, profile_from_payload
 from homunculus.api.identity import bounded_role
 from homunculus.api.readings import SOURCE_MAX   # G3-05: the column's width, which a device key is cut to
 from homunculus.api.snooze import clean_reason, minutes_ok, worse   # G2-B5b
 from homunculus.canonical import Observation, SignalCode
 from homunculus.pipeline import Engine
+
+#: G3-06 (D6): no instant the replay hands the engine is later than the restart's clock plus this — the bedside
+#: door's own clock skew (api/clinical.py BEDSIDE_SKEW, 2 min). The doors never ask past the wall clock (G2-A2,
+#: X10), but a row written while the server's clock ran ahead carries a write time past the restart, and a row
+#: whose write time cannot be read falls back to its measurement's (`_written_at`). The engine judges every rule
+#: at a floor that never goes back (pipeline.py `_judged_at`): unclamped, either would put that patient's floor
+#: in the future, and every later reading would be judged there for good.
+REPLAY_SKEW = BEDSIDE_SKEW
 
 
 def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *,
@@ -59,6 +67,7 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
     # G2-B5b: `now` is the restart's clock — a snooze row written later than it is passed over, and what is left
     # running is judged against it at the end.
     now = now if now is not None else datetime.now(timezone.utc)
+    ceiling = now + REPLAY_SKEW          # G3-06 (D6): no instant handed to the engine is later than this
     for rec in records:
         if rec.event_type in ("ingest", "chart") and _withdrawn(rec, skip, skip_device):
             continue
@@ -68,7 +77,7 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
             # septic-shock and antibiotic-clock alerts down with it, silently, on a patient the
             # ward believes is being watched for exactly those.
             written = _written_at(rec)
-            if _replay_ingest(engine, rec, written):
+            if _replay_ingest(engine, rec, written, ceiling):
                 # G2-A1 (D7): through the hook, as the door ran it. What it clears was audited
                 # live (`alert_cleared`) and is not written again.
                 sync_alerts(engine, store, rec.patient_id, written)
@@ -104,24 +113,30 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
     store.expire_snoozes(now)
 
 
-def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime) -> bool:
+def _replay_ingest(engine: Engine, rec: AuditRecord, written: datetime, ceiling: datetime) -> bool:
     """Replay one observation; False when its signal is unknown or its value unreadable (`observation_of`) and
     it was skipped.
 
-    Judged where the door judged it (G2-A2, X10b): at the reading's own stamp, never past the wall
+    Asked for where the door asked (G2-A2, X10b): at the reading's own stamp, never past the wall
     clock (X10), with the row's write time standing for that wall clock, to within the request.
     Judged at a stamp in the future, as the replay did, every other input was aged to it — a NEWS2
-    the ward saw firing came back held, and the antibiotic anchor moved to the future stamp.
+    the ward saw firing came back held, and the antibiotic anchor moved to the future stamp. The
+    engine judges at that instant's floor and anchors a recognition the reading completes at the
+    instant itself (G3-06, D1, D2), as it did live.
 
     A LINKED reading (G3-05; its `ingest` row names the `reading` it was linked from) was judged where the link
     ran, at the wall clock: back-dated up to 24 h, judged at its measurement it would have replaced an overdue
     antibiotic alert with a due one. It is replayed at the row's write time, so a restart agrees with the live
-    board."""
+    board — and a recognition it completed is anchored at its measurement, min(its stamp, the write time), as
+    the link anchored it (G3-06, D4).
+
+    Neither instant is later than `ceiling`, the restart's clock plus REPLAY_SKEW (G3-06, D6)."""
     obs = observation_of(rec)
     if obs is None:
         return False  # unknown signal slug — skip rather than fail the whole replay
+    requested = min(obs.timestamp, written, ceiling)
     linked = rec.event_type == "ingest" and "reading" in rec.payload
-    engine.ingest(obs, now=written if linked else min(obs.timestamp, written))
+    engine.ingest(obs, now=min(written, ceiling) if linked else requested, anchor_at=requested)
     return True
 
 
@@ -349,14 +364,17 @@ def _withdrawn(rec: AuditRecord, skip: frozenset[int], skip_device: frozenset[tu
 
 
 def rebuild_patient(engine: Engine, patient_id: str, records: Iterable[AuditRecord], *,
-                    skip: frozenset[int], skip_device: frozenset[tuple] = frozenset()) -> None:
+                    skip: frozenset[int], skip_device: frozenset[tuple] = frozenset(),
+                    now: datetime | None = None) -> None:
     """One patient's engine state from the trail, without the rows in `skip` and the device readings in
     `skip_device` (G3-01, D10, X4; G3-05, D13: a device reading can be withdrawn too, and every `ingest` row of
     it): first everything the engine holds for the patient is dropped (`Engine.forget`), then that patient's
     `ingest`, `chart` and `profile` rows are replayed in id order with the restart's own helpers — each reading
     judged where the door judged it. Engine only: no store and no lifecycle hook; the caller runs the hook once,
     at its own instant. Rows of another patient or kind are passed over, so the caller may hand it a wider
-    read."""
+    read. `now` is the caller's clock (default: the clock): no instant handed to the engine is later than it
+    plus REPLAY_SKEW (G3-06, D6)."""
+    ceiling = (now if now is not None else datetime.now(timezone.utc)) + REPLAY_SKEW
     engine.forget(patient_id)
     for rec in records:
         if rec.patient_id != patient_id or rec.event_type not in REBUILD_EVENTS:
@@ -364,4 +382,4 @@ def rebuild_patient(engine: Engine, patient_id: str, records: Iterable[AuditReco
         if rec.event_type == "profile":
             _replay_profile(engine, rec)
         elif not _withdrawn(rec, skip, skip_device):
-            _replay_ingest(engine, rec, _written_at(rec))
+            _replay_ingest(engine, rec, _written_at(rec), ceiling)
