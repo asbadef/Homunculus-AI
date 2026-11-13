@@ -258,7 +258,7 @@ describe("Decision 18 (spec D15, §5 A3, A4)", () => {
     expect(tile("İzo 1").querySelector("[data-words]").textContent).toBe("son cavabda · izolyasiyalı xəstə");
     // Review M5: the board's facts on a tile are the last answer's too.
     expect(tile("İzo 10").querySelector("[data-words]").textContent).toBe("son cavabda · strukturda boş · paneldə xəstə var");
-    expect(tile("İzo 3").querySelector("[data-words]").textContent).toBe("— siyahı aktual deyil");
+    expect(tile("İzo 3").querySelector("[data-words]").textContent).toBe("doludur — siyahı aktual deyil");  // the tree's word stays
     expect(cell(SUSPECTED, "S-103", "sepsis").textContent).toBe("son cavabda: Septik şok meyarları ödənilib");
     expect(cell(SUSPECTED, "S-102", "sepsis").textContent).toBe("— siyahı aktual deyil");
     expect(cell(SUSPECTED, "S-103", "antibiotic").textContent).toMatch(/^Son cavabda müddət keçmişdi · bitmə /);

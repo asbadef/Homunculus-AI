@@ -237,7 +237,9 @@ describe("Decision 18 for the tiles (§5 A4 c)", () => {
   it("says a conflict is the last answer's, and no «hasta bu listede yok», from an answer that is not fresh", () => {
     expect(tileWords(tiles.conflict, false))
       .toEqual({ key: "enfeksiyon.beds.tile.conflict", stateKey: "kabul.state.AVAILABLE", lastAnswer: true });
-    expect(tileWords(tiles.occupant_unseen, false)).toEqual({ dash: true, why: "enfeksiyon.notFresh" });
+    // «dolu» is the tree's own word, and the tree is fresh: only the reason, the list's, turns into «liste güncel değil».
+    expect(tileWords(tiles.occupant_unseen, false))
+      .toEqual({ key: "enfeksiyon.beds.tile.occupant_unseen", why: "enfeksiyon.notFresh" });
   });
 });
 
