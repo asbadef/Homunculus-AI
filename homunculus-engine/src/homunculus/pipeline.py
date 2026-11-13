@@ -111,6 +111,16 @@ class Engine:
         state.ingest(obs)
         return self._evaluate(obs.patient_id, state, now, now if anchor_at is None else anchor_at)
 
+    def rejudge(self, patient_id: str, now: datetime) -> list[Alert]:
+        """Evaluate `patient_id` again as its state stands — no reading added — at max(now, its
+        floor), and answer the alerts (G3-06, D3). «Hatalı giriş» calls it right after `adopt`, so
+        the alerts are judged at the withdrawal's instant, not at the last remaining reading's; the
+        replay calls it at each `chart_retract` row. A patient the engine holds no reading for
+        answers [] and is not created."""
+        if patient_id not in self._repo.patient_ids():
+            return []
+        return self._evaluate(patient_id, self._repo.get_or_create(patient_id), now, now)
+
     def _evaluate(self, patient_id: str, state: PatientState, requested: datetime,
                   anchor_at: datetime) -> list[Alert]:
         """One evaluation of `patient_id` as its state stands. Every rule judges at `at`, the

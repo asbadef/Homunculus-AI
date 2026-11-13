@@ -322,3 +322,47 @@ class TestTheRestoreRule:
         _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 80)
         assert eng.recognized_at(PID) == _at(0)
         assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 20 min"
+
+
+class TestRejudge:
+    """D3: `Engine.rejudge(patient_id, now)` runs the evaluation on the state as it stands — no reading added — at
+    max(now, the floor), and answers its alerts. A withdrawal calls it; so does the replay at a `chart_retract`
+    row."""
+
+    def test_it_answers_the_evaluation_and_moves_the_floor(self):
+        eng = Engine()
+        _sepsis(eng, 0)
+        assert _summary(eng, "antibiotic_due") == "Antibiotic window: 60 min remaining"
+        alerts = eng.rejudge(PID, _at(75))
+        assert {a.kind for a in alerts} == _kinds(eng) == {"sepsis", "antibiotic_overdue"}
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 15 min", "the hour ran out by +75"
+        assert eng._judged_at[PID] == _at(75)
+
+    def test_it_adds_no_reading(self):
+        eng = Engine()
+        _sepsis(eng, 0)
+        before = {code: eng.state(PID).history(code) for code in SignalCode}
+        eng.rejudge(PID, _at(75))
+        assert {code: eng.state(PID).history(code) for code in SignalCode} == before
+
+    def test_it_never_goes_back(self):
+        eng = Engine()
+        _sepsis(eng, 0)
+        _door(eng, SignalCode.HEART_RATE, 80, 120)
+        eng.rejudge(PID, _at(-240))
+        assert eng._judged_at[PID] == _at(120)
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 60 min"
+
+    def test_an_unknown_patient_answers_nothing_and_is_not_created(self):
+        eng = Engine()
+        _door(eng, SignalCode.HEART_RATE, 80, 0)
+        assert eng.rejudge("bed-9", _at(10)) == []
+        assert "bed-9" not in eng.patient_ids() and "bed-9" not in eng._judged_at
+
+    def test_a_patient_with_a_profile_and_no_reading_is_not_created(self):
+        # After a restart the replay may set a profile before any reading (Engine.adopt's docstring).
+        from homunculus.state.profile import PatientProfile
+        eng = Engine()
+        eng.set_profile(PatientProfile(patient_id="bed-6"))
+        assert eng.rejudge("bed-6", _at(10)) == []
+        assert "bed-6" not in eng.patient_ids() and "bed-6" not in eng._judged_at
