@@ -36,17 +36,18 @@ ANCHOR_RESTORE_S = 900
 HOLD_MAX_S = 8 * 3600
 
 
-def _suspicion_start(state: PatientState) -> datetime | None:
+def _suspicion_began(state: PatientState) -> datetime | None:
     """When the current suspicion of infection began (G3-06, D2, owner: «Şüpheden önceye gitmesin»):
     the stamp of the FIRST `suspected_infection` mark charted present since the last one charted
     absent — a repeated present mark never moves it. None when the latest mark is absent or there is
-    none. The marks are in stamp order, as `PatientState` keeps them."""
-    start = None
+    none, which never happens at a recognition (`_evaluate`). The marks are in stamp order, as
+    `PatientState` keeps them."""
+    began = None
     for mark in reversed(state.history(SignalCode.SUSPECTED_INFECTION)):
         if mark.value < 1.0:
             break
-        start = mark.timestamp
-    return start
+        began = mark.timestamp
+    return began
 
 
 def _level(alert: Alert) -> tuple[Severity, Urgency]:
@@ -175,10 +176,12 @@ class Engine:
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
             if patient_id not in self._recognized_at:
-                # A recognition kind fires only with infection charted present (septic_shock.evaluate):
-                # the current suspicion makes it possible — the hour never starts before it began.
-                suspected_at = _suspicion_start(state) or anchor_at
-                self._recognized_at[patient_id] = self._new_anchor(patient_id, anchor_at, at, suspected_at)
+                # A recognition kind fires only with the latest infection mark charted present
+                # (septic_shock.evaluate returns before either kind otherwise), and that mark is the
+                # first `_suspicion_began` reads: it is never None here. The current suspicion makes
+                # the recognition possible — the hour never starts before it began.
+                self._recognized_at[patient_id] = self._new_anchor(patient_id, anchor_at, at,
+                                                                   _suspicion_began(state))
         elif infection is None or infection.value < 1.0:
             dropped = self._recognized_at.pop(patient_id, None)
             if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
