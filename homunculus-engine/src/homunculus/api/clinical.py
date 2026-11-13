@@ -103,7 +103,8 @@ CHARTABLE: dict[SignalCode, str] = {
     # G4-05 «Enfeksiyon kontrol» (spec D3, D7): the patient's isolation precautions — four flags, 1 or 0 (`_BOOLEAN`),
     # charted from the patient screen's «İzolasyon» box. Not withdrawable (they stay out of RETRACTABLE_CODES, and so
     # out of the measurement record): a flag is corrected by a new entry, as the suspected-infection mark is (X22). No
-    # rule reads them, and no device sends them (`/ingest` refuses them, spec §5 M8).
+    # rule reads them, and no device sends them (`/ingest` refuses them, spec §5 M8; this door refuses them from the
+    # device token, `ISOLATION_FROM_DEVICE`).
     SignalCode.ISOLATION_CONTACT: "bool",
     SignalCode.ISOLATION_DROPLET: "bool",
     SignalCode.ISOLATION_AIRBORNE: "bool",
@@ -218,6 +219,11 @@ RETRACT_DISCHARGED = "taburcu edilmiş bir hastada değer geri alınamaz"
 #: dashboard follow — contact, droplet, airborne, protective. A flag's name on the card is its slug after `isolation_`.
 ISOLATION_CODES: tuple[SignalCode, ...] = (SignalCode.ISOLATION_CONTACT, SignalCode.ISOLATION_DROPLET,
                                            SignalCode.ISOLATION_AIRBORNE, SignalCode.ISOLATION_PROTECTIVE)
+#: G4-05 (spec §5 M8's intent, closed at the chart door too — the coordinator's decision of 2026-11-13): a monitor or
+#: the HIS cannot decide isolation, so `build_entries` refuses a flag from the bridge's device token, as `/ingest`
+#: refuses it from a device. One sentence for both doors: api/app.py's `/ingest` carries it as an inline literal, which
+#: the dashboard's apiErrors.test.js reads and holds mapped; test_isolation_chart.py holds the two equal.
+ISOLATION_FROM_DEVICE = "izolasyon bir klinisyen kaydıdır; cihazdan alınmaz"
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,
@@ -292,12 +298,16 @@ def _value(code: SignalCode, raw) -> float:
 
 def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
                   recorded_at: datetime | None = None,
-                  now: datetime | None = None) -> list[ChartedEntry]:
+                  now: datetime | None = None,
+                  from_device: bool = False) -> list[ChartedEntry]:
     """Turn a charting request into observations, or raise with a reason.
 
     All-or-nothing: one bad entry rejects the whole request rather than charting some of it.
     A half-applied chart is worse than a refused one, because nobody can tell afterwards which
     half landed.
+
+    `from_device` (G4-05): the caller is the bridge's device token, not a person. A request that charts one of the
+    four isolation flags is then refused whole (`ISOLATION_FROM_DEVICE`) — every other code is charted as before.
     """
     # G3-01 review: one instant per request — an untouched time is stamped at the same `now` the bedside
     # time bound is judged at, not at a second reading of the clock a few microseconds later.
@@ -332,6 +342,8 @@ def build_entries(patient_id: str, entries: list[dict], *, charted_by: str,
             ),
             charted_by=charted_by,
         ))
+    if from_device and any(item.observation.code in ISOLATION_CODES for item in built):
+        raise ClinicalEntryError(ISOLATION_FROM_DEVICE)
     _check_bedside(built, recorded_at, now)
     return built
 

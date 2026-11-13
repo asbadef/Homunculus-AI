@@ -1268,9 +1268,11 @@ def create_app(
         # built, because the bedside set's time bound is judged at it (G3-01, D7); the loop below runs at it.
         now = datetime.now(timezone.utc)
         try:
+            # G4-05: the device token charts no isolation flag (ISOLATION_FROM_DEVICE) — refused here, before the
+            # discharged-number drop below writes a row.
             charted = build_entries(patient_id, body.get("entries") or [],
                                     charted_by=_charted_by(caller),
-                                    recorded_at=recorded_at, now=now)
+                                    recorded_at=recorded_at, now=now, from_device=caller.is_device)
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -1333,7 +1335,7 @@ def create_app(
         try:
             charted = build_entries(patient_id, body.get("entries") or [],
                                     charted_by=_charted_by(caller),
-                                    recorded_at=recorded_at, now=now)
+                                    recorded_at=recorded_at, now=now, from_device=caller.is_device)
         except ClinicalEntryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
         if is_tombstone(identities.get(hospital, patient_id)):

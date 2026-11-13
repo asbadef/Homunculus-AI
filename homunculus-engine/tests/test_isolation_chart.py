@@ -166,3 +166,70 @@ class TestTheDeviceDoor:
     def test_another_reading_still_passes(self, world):
         client, _, _ = world
         assert client.post("/ingest", json=obs("heart_rate", 88, patient="S-101"), headers=DEVICE).status_code == 200
+
+
+class TestTheChartDoorWithADeviceToken:
+    """G4-05 (spec §5 M8's intent, closed at the chart door too by the coordinator's decision of 2026-11-13): the
+    bridge's device token passes `clinical.chart` as every board route's guard lets it, so without this it could
+    still chart a flag through POST /clinical. A monitor or the HIS cannot decide isolation at either door: the same
+    400 and the same sentence, nothing written. Every other code the token charts today stays accepted."""
+
+    def test_build_entries_refuses_a_flag_from_a_device_with_ingests_sentence(self):
+        from homunculus.api import clinical
+        assert clinical.ISOLATION_FROM_DEVICE == REFUSED          # the two doors say one sentence
+        for slug in SLUGS:
+            with pytest.raises(ClinicalEntryError, match=f"^{REFUSED}$"):
+                build_entries("S-101", [{"code": slug, "value": 1}], charted_by="tenant-token", from_device=True)
+        (entry,) = build_entries("S-101", [{"code": "isolation_contact", "value": 1}], charted_by="hem.ayse",
+                                 from_device=False)
+        assert entry.observation.value == 1.0
+
+    @pytest.mark.parametrize("slug", SLUGS)
+    def test_a_device_chart_of_a_flag_is_a_400_that_writes_nothing(self, world, slug):
+        client, audit, readings = world
+        for value in (1, 0):
+            r = client.post("/clinical/S-101", json={"entries": [{"code": slug, "value": value}]}, headers=DEVICE)
+            assert (r.status_code, r.json()["detail"]) == (400, REFUSED)
+        assert audit.records(tenant="h1", limit=100) == []                       # no `chart` row
+        assert client.get("/patients", headers=DEVICE).json()["patients"] == []   # the engine never saw it
+        assert _filed(readings) == []
+
+    def test_a_flag_beside_another_code_takes_the_whole_request_down(self, world):
+        """All-or-nothing, as the door is: the temperature beside the flag is not charted either."""
+        client, audit, _ = world
+        r = client.post("/clinical/S-101", headers=DEVICE, json={"entries": [
+            {"code": "temperature", "value": 37.2}, {"code": "isolation_airborne", "value": 1}]})
+        assert (r.status_code, r.json()["detail"]) == (400, REFUSED)
+        assert audit.records(tenant="h1", limit=100) == []
+        assert client.get("/patients", headers=DEVICE).json()["patients"] == []
+
+    def test_a_device_cannot_move_a_flag_a_nurse_charted_through_the_chart_door(self, world):
+        client, audit, _ = world
+        assert _chart(client, [{"code": "isolation_contact", "value": 1}]).status_code == 200    # the clinician: 200
+        before = client.get("/patients", headers=DEVICE).json()["patients"]
+        trail = len(audit.records(tenant="h1", limit=100))
+        r = client.post("/clinical/S-101", json={"entries": [{"code": "isolation_contact", "value": 0}]},
+                        headers=DEVICE)
+        assert (r.status_code, r.json()["detail"]) == (400, REFUSED)
+        assert client.get("/patients", headers=DEVICE).json()["patients"] == before
+        assert len(audit.records(tenant="h1", limit=100)) == trail
+
+    def test_the_preview_says_what_the_door_would(self, world):
+        """POST /clinical/{id}/preview parses as the door does — the same refusals (its docstring) — so it refuses
+        a device's flag too; a clinician's preview of a flag is answered."""
+        client, audit, _ = world
+        body = {"entries": [{"code": "isolation_droplet", "value": 1}]}
+        r = client.post("/clinical/S-101/preview", json=body, headers=DEVICE)
+        assert (r.status_code, r.json()["detail"]) == (400, REFUSED)
+        assert client.post("/clinical/S-101/preview", json=body, headers=NURSE).status_code == 200
+        assert audit.records(tenant="h1", limit=100) == []
+
+    def test_every_other_code_from_the_device_token_is_charted_as_today(self, world):
+        client, audit, _ = world
+        r = client.post("/clinical/S-101", headers=DEVICE, json={"entries": [
+            {"code": "suspected_infection", "value": 1}, {"code": "temperature", "value": 37.2}]})
+        assert r.status_code == 200, r.text
+        assert r.json()["charted"] == 2
+        rows = [rec for rec in audit.records(tenant="h1", limit=100) if rec.event_type == "chart"]
+        assert [(rec.subject, rec.payload["charted_by"]) for rec in rows] == [
+            ("suspected_infection", "tenant-token"), ("temperature", "tenant-token")]
