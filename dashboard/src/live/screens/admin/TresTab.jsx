@@ -27,13 +27,9 @@ import { readErrorText } from "../../apiErrors.js";
 import { dayStamp } from "../../i18n/dates.js";
 import { Alert, Box, Button, Field, Input, Note, Select, useToast } from "../../ui/index.js";
 import { refusedFor } from "./refusal.js";
+import { TYPES } from "./tresWords.js";
 
-/** The eight record types, in the package's order (the engine's `tres/models.py` RESOURCE_TYPES), with their labels. */
-export const TYPES = Object.freeze([
-  ["patient", "tres.type.patient"], ["practitioner", "tres.type.practitioner"], ["encounter", "tres.type.encounter"],
-  ["condition", "tres.type.condition"], ["procedure", "tres.type.procedure"], ["vital", "tres.type.vital"],
-  ["lab", "tres.type.lab"], ["composition", "tres.type.composition"],
-]);
+export { TYPES };
 export const MODES = Object.freeze([["off", "tres.modeOff"], ["validate", "tres.modeValidate"], ["send", "tres.modeSend"]]);
 /** [environment, its name in the select, its account's heading]. */
 export const ENVIRONMENTS = Object.freeze([

@@ -66,6 +66,9 @@ const NEUTRAL = new Set([
   "devir.sum.spo2", //             SpO₂
   "devir.fromTo", //               "{from} → {to}" — no word in it
 
+  // TRƏS-01 F1 (tres) · neutral — the national identity number's own name, written FİN in every language
+  "tres.practitioners.fin",
+
 ]);
 // Azerbaijani and Turkish share many words, so an AZ text may equal its TR source — but that is
 // also exactly what a forgotten translation looks like (the Turkish copied across). Each identity
@@ -225,6 +228,13 @@ const AZ_SAME_AS_TR = new Set([
   // G3-04 (eczane) · az = tr
   "eczane.col.creatinine", //  Kreatinin — the same word in Azerbaijani (as patient.creatinine's first word)
   "eczane.fluid.balance", //   "{value} mL" — a number and the unit symbol (as sivi.ml)
+
+  // TRƏS-01 F1 (tres) · az = tr — the planner's reading, awaiting the native one (plan F1, N10)
+  "tres.practitioners.fin", //    FİN — the identity number's own name (NEUTRAL above)
+  "tres.practitioners.family", // Soyad — the same word in Azerbaijani (surname)
+  "tres.practitioners.given", //  Ad — the same word in Azerbaijani (given name)
+  "tres.deliveries.found", //     "Yatış {key} · {when}" — «yatış» is the word the tab uses in both languages
+  "tres.status.deleted", //      Silindi — the same verb, the same past tense, in Azerbaijani
 
 ]);
 
