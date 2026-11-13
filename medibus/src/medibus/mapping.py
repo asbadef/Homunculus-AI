@@ -44,7 +44,7 @@ def _table(raw: dict, name: str) -> dict[str, Entry]:
         except (KeyError, ValueError, TypeError):
             raise ValueError(
                 f"{name}/{code}: unknown signal {spec.get('signal')!r} — must be one of "
-                f"{[s.value for s in SignalCode]}") from None
+                f"{[s.value for s in SignalCode if s not in ISOLATION_CODES]}") from None
         if signal in ISOLATION_CODES:
             # G4-05 (spec §5 A7): isolation is a clinician's record; no device mapping may carry it.
             raise ValueError(f"{name}/{code}: {signal.value!r} is an isolation flag — a clinician's record, "

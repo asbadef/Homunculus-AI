@@ -58,6 +58,14 @@ def test_mapping_rejects_an_isolation_flag_in_every_table(table):
             SiteMapping.from_dict({table: {"EB": {"signal": slug}}})
 
 
+def test_the_unknown_signal_message_offers_no_isolation_flag():
+    """G4-05 (review): the allowed signals the message lists are the ones a mapping may name — not the four isolation
+    flags, which the next check refuses."""
+    with pytest.raises(ValueError) as caught:
+        SiteMapping.from_dict({"codepage1": {"EB": {"signal": "no_such_signal"}}})
+    assert "'spo2'" in str(caught.value) and "isolation_" not in str(caught.value)
+
+
 def test_mapping_codes_are_normalised_to_uppercase():
     mapping = SiteMapping.from_dict({"codepage1": {"eb": {"signal": "spo2", "unit": "%"}}})
     assert "EB" in mapping.codepage1
