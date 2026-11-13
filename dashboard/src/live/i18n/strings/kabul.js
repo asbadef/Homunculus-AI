@@ -157,6 +157,10 @@ export default {
     closed: "Kapalı", added: "eklendi", renamed: "adı değişti", closedDone: "kapatıldı", reopened: "yeniden açıldı",
     roomNumber: "Oda no", roomNumberIs: "Oda no: {number}", newRoomNumber: "{unit} içinde yeni odanın numarası (zorunlu değil)",
     isolation: "İzolasyon odası", newRoomIsolation: "{unit} içinde yeni oda izolasyon odasıdır",
+    // G4-05 (spec §5 O1): an existing room marked or unmarked. The two done texts follow the subject on the toast
+    // («{oda} · {birim} · …», admin.doneFor), as `renamed` and `closedDone` do.
+    isolationMark: "İzolasyon odası yap", isolationUnmark: "İzolasyon işaretini kaldır",
+    isolationOn: "izolasyon odası olarak işaretlendi", isolationOff: "artık izolasyon odası değil",
     roomNameLabel: "Oda adı", roomNumberLabel: "Oda numarası (isteğe bağlı, örn. 05)",
     roomHint: "Yatak, oda eklendikten sonra odanın altında «Yatak ekle» ile eklenir.",
     err: {
@@ -350,6 +354,8 @@ export default {
     closed: "Bağlıdır", added: "əlavə edildi", renamed: "adı dəyişdi", closedDone: "bağlandı", reopened: "yenidən açıldı",
     roomNumber: "Otaq nömrəsi", roomNumberIs: "Otaq nömrəsi: {number}", newRoomNumber: "{unit} daxilində yeni otağın nömrəsi (məcburi deyil)",
     isolation: "İzolyasiya otağı", newRoomIsolation: "{unit} daxilində yeni otaq izolyasiya otağıdır",
+    isolationMark: "İzolyasiya otağı et", isolationUnmark: "İzolyasiya işarəsini götür",
+    isolationOn: "izolyasiya otağı kimi işarələndi", isolationOff: "artıq izolyasiya otağı deyil",
     roomNameLabel: "Otaq adı", roomNumberLabel: "Otaq nömrəsi (məcburi deyil, məs. 05)",
     roomHint: "Çarpayılar otaq əlavə edildikdən sonra, otağın altında «Çarpayı əlavə et» ilə əlavə olunur.",
     err: {
@@ -538,6 +544,8 @@ export default {
     closed: "Закрыто", added: "добавлено", renamed: "переименовано", closedDone: "закрыто", reopened: "открыто снова",
     roomNumber: "Номер палаты", roomNumberIs: "Номер палаты: {number}", newRoomNumber: "Номер новой палаты в «{unit}» (необязательно)",
     isolation: "Изолятор", newRoomIsolation: "Новая палата в «{unit}» — изолятор",
+    isolationMark: "Сделать изолятором", isolationUnmark: "Снять отметку изолятора",
+    isolationOn: "отмечена как изолятор", isolationOff: "больше не изолятор",
     roomNameLabel: "Название палаты", roomNumberLabel: "Номер палаты (необязательно, напр. 05)",
     roomHint: "Койки добавляются в палату после её создания — кнопкой «Добавить койку».",
     err: {
@@ -725,6 +733,8 @@ export default {
     closed: "Closed", added: "added", renamed: "renamed", closedDone: "closed", reopened: "reopened",
     roomNumber: "Room number", roomNumberIs: "Room number: {number}", newRoomNumber: "Number of the new room in {unit} (optional)",
     isolation: "Isolation room", newRoomIsolation: "The new room in {unit} is an isolation room",
+    isolationMark: "Make an isolation room", isolationUnmark: "Remove the isolation mark",
+    isolationOn: "marked as an isolation room", isolationOff: "no longer an isolation room",
     roomNameLabel: "Room name", roomNumberLabel: "Room number (optional, e.g. 05)",
     roomHint: "Beds are added under the room once it exists, with «Add bed».",
     err: {

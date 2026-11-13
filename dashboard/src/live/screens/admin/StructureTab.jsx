@@ -160,7 +160,7 @@ function RoomAdd({ unit, busy, held, savingId, onAdd }) {
 
 /** A unit, a room or a bed: its name and what is known of it (`tags`), closed or not, and its
  *  actions, each named after `subject`. A rename hands the focus back to its own button. */
-function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename, onToggle, children }) {
+function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename, onToggle, action = null, children }) {
   const { t } = useI18n();
   const [renaming, setRenaming] = useState(false);
   const toggleRef = useRef(null);
@@ -181,6 +181,7 @@ function Node({ kind, item, name, subject, tags, maxLength, busy, held, onRename
           <Button ref={toggleRef} size="sm" variant="ghost" icon="edit" aria-expanded={renaming ? "true" : "false"}
             aria-controls={renaming ? editorId : undefined}
             aria-label={`${t("kabul.rename")}: ${subject}`} onClick={() => setRenaming((on) => !on)}>{t("kabul.rename")}</Button>
+          {action}
           <Button size="sm" busy={busy} aria-label={`${t(toggleKey)}: ${subject}`}
             aria-disabled={held ? "true" : undefined} aria-describedby={held}
             onClick={held ? () => {} : onToggle}>{t(toggleKey)}</Button>
@@ -309,6 +310,20 @@ export function StructureTab() {
                             </>
                           )}
                           busy={isBusy(room.id)} held={holdFor(room.id)}
+                          // G4-05 (spec §5 O1): mark or unmark the room as an isolation room — the tab's own write,
+                          // notice and reload; a busy key of its own, so only this button turns busy and the room's
+                          // other writes are held while it is out.
+                          action={(
+                            <Button size="sm" variant="ghost" busy={isBusy(`${room.id}~iso`)}
+                              aria-label={`${t(room.is_isolation ? "kabul.isolationUnmark" : "kabul.isolationMark")}: ${roomName}`}
+                              aria-disabled={holdFor(`${room.id}~iso`) ? "true" : undefined}
+                              aria-describedby={holdFor(`${room.id}~iso`)}
+                              onClick={holdFor(`${room.id}~iso`) ? () => {} : () => write(`${room.id}~iso`, roomName,
+                                () => api.patchRoom(room.id, { is_isolation: !room.is_isolation }),
+                                room.is_isolation ? "kabul.isolationOff" : "kabul.isolationOn")}>
+                              {t(room.is_isolation ? "kabul.isolationUnmark" : "kabul.isolationMark")}
+                            </Button>
+                          )}
                           onRename={(name) => write(room.id, roomName, () => api.patchRoom(room.id, { name }), "kabul.renamed")}
                           onToggle={() => toggle(room, api.patchRoom, roomName)}>
                           <Line label={t("kabul.newBed", { room: roomName })} placeholder={t(PLACEHOLDER.bed)} subject={roomName}

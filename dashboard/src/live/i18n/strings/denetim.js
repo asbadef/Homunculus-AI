@@ -62,6 +62,7 @@ export default {
       // monitor table in Monitör–yatak eşleme's (esleme.js), «Görevlerim» in its own (gorevler.js)
       structureCreate: "Yapı: eklendi", structureRename: "Yapı: adı değişti",
       structureClose: "Yapı: kapatıldı", structureReopen: "Yapı: yeniden açıldı",
+      structureIsolation: "Yapı: izolasyon odası değişti",                                          // G4-05 (spec §5 O1)
       labelPrint: "Etiket yazdırıldı", dischargeBoardRetry: "Kart panodan yeniden kaldırılmaya çalışıldı",
       deviceRelabel: "Monitör eşlemesi yatağın yeni adını aldı", deviceImport: "Monitör–yatak eşlemesi içe aktarıldı",
       taskCreated: "Görev eklendi", taskClaimed: "Görev üstlenildi", taskDone: "Görev tamamlandı",
@@ -140,6 +141,7 @@ export default {
       handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
       structureCreate: "Struktur: əlavə edildi", structureRename: "Struktur: adı dəyişdi",
       structureClose: "Struktur: bağlandı", structureReopen: "Struktur: yenidən açıldı",
+      structureIsolation: "Struktur: izolyasiya otağı dəyişdi",
       labelPrint: "Etiket çap edildi", dischargeBoardRetry: "Kartın paneldən yenidən götürülməsinə cəhd edildi",
       deviceRelabel: "Monitorun uyğunlaşdırması çarpayının yeni adını aldı", deviceImport: "Monitor–çarpayı uyğunlaşdırması idxal edildi",
       taskCreated: "Tapşırıq əlavə edildi", taskClaimed: "Tapşırıq öhdəyə götürüldü", taskDone: "Tapşırıq tamamlandı",
@@ -218,6 +220,7 @@ export default {
       handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
       structureCreate: "Структура: добавлено", structureRename: "Структура: переименовано",
       structureClose: "Структура: закрыто", structureReopen: "Структура: открыто снова",
+      structureIsolation: "Структура: изолятор изменён",
       labelPrint: "Этикетка напечатана", dischargeBoardRetry: "Повторная попытка снять карточку с панели",
       deviceRelabel: "Привязка монитора получила новое название койки", deviceImport: "Привязка мониторов к койкам импортирована",
       taskCreated: "Задача добавлена", taskClaimed: "Задача взята", taskDone: "Задача выполнена",
@@ -296,6 +299,7 @@ export default {
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
       structureCreate: "Structure: added", structureRename: "Structure: renamed",
       structureClose: "Structure: closed", structureReopen: "Structure: reopened",
+      structureIsolation: "Structure: isolation room changed",
       labelPrint: "Label printed", dischargeBoardRetry: "Card removal from the board retried",
       deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",
       taskCreated: "Task added", taskClaimed: "Task claimed", taskDone: "Task finished",

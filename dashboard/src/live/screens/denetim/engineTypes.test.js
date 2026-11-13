@@ -236,7 +236,7 @@ const loopOver = (builder, prefix) => ({ rel, fn, name }) => {
 /** A variable the reader cannot follow on its own, named by module, FUNCTION and name — a new function is unread
  *  until it is named here — with how its types are read from the source (never a list typed by hand). */
 const VARIABLES = {
-  // A PATCH writes one row per change `_changes()` builds: a rename, and a close or a reopen.
+  // A PATCH writes one row per change `_changes()` builds: a rename, a close or a reopen, and (G4-05) a room's isolation mark.
   "tenant/router.py:patch_unit:event_type": loopOver("_changes", "structure."),
   "tenant/router.py:patch_room:event_type": loopOver("_changes", "structure."),
   "tenant/router.py:patch_bed:event_type": loopOver("_changes", "structure."),
@@ -351,6 +351,7 @@ describe("the reader of the engine's audit writes", () => {
       "admission.admit", "protocol.settings", "bed.release",        // trail.record(request, hospital, "<type>", …)
       "structure.create",                                           // tenant/router.py _audit
       "structure.rename", "structure.reopen", "structure.close",    // a PATCH's loop over _changes()
+      "structure.isolation",                                        // … its room's isolation mark (G4-05, spec §5 O1)
       "bed.reserve", "bed.return_to_service",                       // tenant/router.py _state_written
       "task_created", "task_settings_changed", "vital_skipped",     // api/tasks.py _event: literals and a constant
       "chart_retract", "reading_dropped_discharged",                // an imported constant

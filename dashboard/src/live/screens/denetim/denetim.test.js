@@ -173,8 +173,9 @@ describe("the reason (D4)", () => {
 
 describe("the labelled types (§4)", () => {
   it("names the engine's codes and leaves every other code to show as itself", () => {
-    expect(EVENT_TYPES).toHaveLength(61);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + G2-B1b's move and its board retry; + G4-04's shift.assign; + G3-05's three
-    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(61);
+    expect(EVENT_TYPES).toHaveLength(62);   // … + G2-B5b's alert_snooze + G2-B1c's three care-team events; + the follow-up's 14 (D3, engineTypes.test.js); + G2-B1b's move and its board retry; + G4-04's shift.assign; + G3-05's three; + G4-05's structure.isolation
+    expect(new Set(EVENT_TYPES.map((e) => e.code)).size).toBe(62);
+    expect(typeKey("structure.isolation")).toBe("denetim.type.structureIsolation");               // G4-05 (spec §5 O1)
     expect(typeKey("admission.transfer")).toBe("denetim.type.transfer");                           // G2-B1b (spec §5.6, X14)
     expect(typeKey("admission.transfer_board_retry")).toBe("denetim.type.transferBoardRetry");     // named too, as the discharge's retry is (engineTypes.test.js, D3)
     expect(typeKey("shift.assign")).toBe("denetim.type.shiftAssign");                 // G4-04 (spec D4): «Nöbet ataması»

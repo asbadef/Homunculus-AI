@@ -94,6 +94,8 @@ export const EVENT_TYPES = Object.freeze([
   // one this list does not name). Yapı's four (tenant/router.py), in the Yapı tab's own words:
   ["structure.create", "structureCreate"], ["structure.rename", "structureRename"],
   ["structure.close", "structureClose"], ["structure.reopen", "structureReopen"],
+  // G4-05 (spec §5 O1): an existing room marked or unmarked as an isolation room — Yapı's fifth.
+  ["structure.isolation", "structureIsolation"],
   // the admission's label and its board retry (admission/router.py, tenant/router.py):
   ["admission.label_print", "labelPrint"], ["admission.discharge_board_retry", "dischargeBoardRetry"],
   // the monitor–bed table: a bed's new label followed, and its one-time seed from the approved file (devicebeds/seed.py):

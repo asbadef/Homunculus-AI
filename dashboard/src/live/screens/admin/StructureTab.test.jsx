@@ -112,7 +112,8 @@ describe("StructureTab", () => {
     expect(within(line("Neonatal")).getByText("Yenidoğulmuşlar reanimasiyası")).toBeTruthy();
     expect(within(line("Otaq 2")).getByText("Otaq nömrəsi: 12")).toBeTruthy();
     expect(within(line("Otaq 2")).getByText("İzolyasiya otağı")).toBeTruthy();
-    expect(within(line("Otaq 1")).queryByText(/Otaq nömrəsi|İzolyasiya/)).toBeNull();
+    // G4-05 (spec §5 O1): the line's own «İzolyasiya otağı et» button is no tag — only the tag's whole text is asked.
+    expect(within(line("Otaq 1")).queryByText(/^Otaq nömrəsi|^İzolyasiya otağı$/)).toBeNull();
   });
 
   it("adds a site, a unit of the chosen type, a room with its number and isolation, and a bed under their parents", async () => {
@@ -236,6 +237,34 @@ describe("StructureTab", () => {
     expect(toasts().getAllByText("1 · Otaq 1 · Reanimasiya · adı dəyişdi").length).toBeGreaterThan(0);
     expect(screen.queryByRole("textbox", { name: "1 · Otaq 1 · Reanimasiya üçün yeni ad" })).toBeNull();
     expect(document.activeElement).toBe(toggle);
+  });
+
+  // G4-05 (spec §5 O1): an existing room marked or unmarked as an isolation room, from its own line, on the toast in the
+  // tab's own words — the subject first, then what happened.
+  it("marks a room as an isolation room and unmarks one, each named after the room", async () => {
+    const tree = structure();
+    tree.sites[0].units[0].rooms[1].is_isolation = true;                 // Otaq 2 isolates already
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN, setup: (a) => a.structure.mockResolvedValue(tree) });
+    await press("İzolyasiya otağı et: Otaq 1 · Reanimasiya");
+    expect(api.patchRoom).toHaveBeenCalledWith(ROOM1, { is_isolation: true });
+    expect(toasts().getAllByText("Otaq 1 · Reanimasiya · izolyasiya otağı kimi işarələndi").length).toBeGreaterThan(0);
+    await press("İzolyasiya işarəsini götür: Otaq 2 · Reanimasiya");
+    expect(api.patchRoom).toHaveBeenCalledWith(ROOM2, { is_isolation: false });
+    expect(toasts().getAllByText("Otaq 2 · Reanimasiya · artıq izolyasiya otağı deyil").length).toBeGreaterThan(0);
+  });
+
+  it("holds the room's other writes while its isolation mark is out, and says why", async () => {
+    let land;
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN,
+      setup: (a) => a.patchRoom.mockReturnValue(new Promise((resolve) => { land = resolve; })) });
+    await press("İzolyasiya otağı et: Otaq 1 · Reanimasiya");
+    expect(button("İzolyasiya otağı et: Otaq 1 · Reanimasiya").getAttribute("aria-busy")).toBe("true");
+    const close = button("Bağla: Otaq 1 · Reanimasiya");
+    expect(close.getAttribute("aria-disabled")).toBe("true");
+    expect(describedBy(close).textContent).toBe("Otaq 1 · Reanimasiya · yadda saxlanılır…");
+    await act(async () => { land({}); });
+    await settle();
+    expect(api.patchRoom).toHaveBeenCalledTimes(1);
   });
 
   it("renames a room under its unit's name", async () => {
