@@ -24,6 +24,16 @@ F1a's ground rules hold here word for word (worktree, never `git stash`, explici
 - **No raw key on screen:** a status or a reason the panel does not know is shown as the engine's code, never as a translation key (`tresWords.js`); `rawKeys.test.jsx` sweeps the tab with every status and reason stubbed (Task 19).
 - **Migration numbering, the merge:** unchanged from F1a (the controller renumbers 0020 at merge — 0023 by today's queue; a test of «the head» checks ancestry, never a string).
 
+## Changes from F1a's review rounds (amendments 23–26)
+
+F1b's tasks below were written before F1a's review rounds; F1a's header gives each change and its reason. What F1b's tasks must account for (their code blocks are not rewritten here — the task that meets one of these adds it):
+- **Two more skip reasons.** `discharge_missing` (amendment 23 (10): a finished stay with no discharge time; its Encounter is skipped) and `patient_unheld` (amendment 26 (2): in `send`, a stay whose package stopped at its Patient has its Encounter row skipped with it). Task 16 adds both to `tresWords.js` `REASONS` (`tres.reason.dischargeMissing`, `tres.reason.patientUnheld`) with their words in the four languages; Task 19's raw-key sweep lists both among the reasons it stubs.
+- **Three more refusal codes**, whose words F1a already carries (`apiErrors.js` `TRES_CODE_KEYS`, `strings/tres.js` `err`): `tres_throttled` (429 to «Şimdi gönder» / «Yeniden dene»; the detail carries `retry_after`, in seconds, when the platform said one — the panel may say how long to wait), `tres_other_environment` (409: «Yeniden dene» of a row of the environment not selected — the review called it `tres_environment`, which was already the settings form's 422), `tres_send_from` (422: the cut-off before 2020-01-01 or more than 366 days after the save).
+- **`send_from` carries microseconds** (the first save in `send` sets it to that very moment). The settings form sends `send_from` ONLY when the user changed it — never round-tripped through a minute-precision input, which would move the cut-off by the seconds it drops on every save.
+- **The preview judges as a send** (amendment 26 (4), M5): an item may carry `yielded: true` — a Patient the person's newer stay holds on the platform, shown as that stay's (`held` true, no `resource`); the dialog says so rather than showing an empty body. A type switched off shows `reason: "type_off"` and no body. Each item's `status` and `last_error` are its own row's, found by its key. The preview route's answer (the Architecture line above) gains `yielded` on each item.
+- **«Şimdi gönder» on a parked tenant** answers 409 `tres_login_refused` at once, without asking the platform (amendment 26 (4), M2): the panel's parked notice at its top stands for it.
+- **The vital signs' local ids** are `hmn-v-{root admission id}-{key}-{first|last}.`, keyed by the signal's stable `id_key` (amendments 23–25) — already in §14.1 below.
+
 ---
 
 ### Task 14: Baseline — F1a's head, the dashboard's numbers
