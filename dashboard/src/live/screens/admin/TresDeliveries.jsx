@@ -22,7 +22,8 @@
 // body (`err.apiRetryAfter`, not capped), else the header's (`err.retryAfter`, capped at 15 minutes).
 //
 // A HAND'S RESULT IS TOLD BY ITS ROWS' STATUSES, never as «sent» (review, 2026-11-13: one failed row and one skipped row
-// toasted «Gönderildi: 2»): «İşləndi: Göndərildi 3 · Uğursuz 1». A failed row makes it a warning. A hand that got no
+// toasted «Gönderildi: 2»): «İşləndi: Göndərildi 3 · Uğursuz 1». It is a confirmation only when every row is sent or
+// validated; a row failed, stuck, skipped or pending makes it a warning (final review, 2026-11-13). A hand that got no
 // answer (a timeout, a dropped line, a 5xx) may have landed, and one whose login the platform refused parked the feed: the
 // list is read again after both.
 //
@@ -51,6 +52,9 @@ export const RETRYABLE = Object.freeze(["failed", "stuck"]);
 /** A found stay in this state is not offered «Şimdi gönder»: an unsigned draft is no stay to report, and the engine
  *  refuses it by hand (`tres_stay_draft`, final review 2026-11-13). Its preview stays: it sends and writes nothing. */
 const DRAFT = "DRAFT";
+/** The statuses a hand's toast confirms: on the platform, or checked by it. Any other row — refused, stuck, not sent,
+ *  waiting — makes the toast a warning (final review, 2026-11-13). */
+const DONE = Object.freeze(["sent", "validated"]);
 
 /** A time as the reader's clock; a row with none reads as a dash. */
 const stamp = (iso) => {
@@ -188,7 +192,7 @@ export function TresDeliveries({ refresh = 0 }) {
     try {
       const got = await store.track(call);
       const rows = Array.isArray(got?.rows) ? got.rows : [];
-      toast(t(headline, { counts: countsText(t, rows) }), rows.some((r) => r?.status === "failed") ? "warn" : "ok");
+      toast(t(headline, { counts: countsText(t, rows) }), rows.every((r) => DONE.includes(r?.status)) ? "ok" : "warn");
       await read();
     } catch (err) {
       toast(handRefusal(t, subject, err), "error");

@@ -266,8 +266,27 @@ describe("TresDeliveries — the hand", () => {
 
   it("tells a validate-mode result as «Yoxlanıldı», not as sent", async () => {
     await sendAnswering(hand(handRow("validated"), handRow("validated", "encounter"), handRow("skipped", "vital")));
-    expect(shown("İşləndi: Yoxlanıldı 2 · Göndərilmədi 1")).toHaveLength(1);
+    const said = shown("İşləndi: Yoxlanıldı 2 · Göndərilmədi 1");
+    expect(said).toHaveLength(1);
+    expect(toneOf(said[0])).toBe("warn");                                       // a skipped row: not a confirmation
     expect(document.body.textContent).not.toMatch(/Göndərildi \d/);
+  });
+
+  // Final review (2026-11-13): the tone tells the truth — a confirmation only when every row the hand touched is on the
+  // platform (`sent`) or was checked by it (`validated`); any other row — refused, stuck, not sent, waiting — warns.
+  it.each([["failed", "Uğursuz"], ["stuck", "İlişib qaldı"], ["skipped", "Göndərilmədi"], ["pending", "Gözləyir"]])(
+    "warns when a row is %s", async (status, word) => {
+      await sendAnswering(hand(handRow("sent"), handRow(status, "encounter")));
+      const said = shown(`İşləndi: ${word === "Gözləyir" ? "Gözləyir 1 · Göndərildi 1" : `Göndərildi 1 · ${word} 1`}`);
+      expect(said).toHaveLength(1);
+      expect(toneOf(said[0])).toBe("warn");
+    });
+
+  it("confirms when every row is sent or validated", async () => {
+    await sendAnswering(hand(handRow("sent"), handRow("validated", "encounter")));
+    const said = shown("İşləndi: Göndərildi 1 · Yoxlanıldı 1");
+    expect(said).toHaveLength(1);
+    expect(toneOf(said[0])).toBe("ok");
   });
 
   it("says «qeyd yoxdur» when the hand touched no row", async () => {
