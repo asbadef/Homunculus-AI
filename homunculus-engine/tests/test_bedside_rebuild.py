@@ -67,12 +67,15 @@ def _door(engine, store, log, pid, code, value, at):
 
 def _withdraw_live(engine, store, log, pid, row, at):
     """A «hatalı giriş» in the order X4 fixes: the patient rebuilt into a scratch engine without every
-    withdrawn row, the `chart_retract` row, the scratch patient adopted, then the lifecycle hook once."""
+    withdrawn row, the `chart_retract` row, the scratch patient adopted and re-judged (G3-06, D3) — at the
+    row's own write time, as the restart re-judges it: the audit stamps rows with the real clock, while these
+    helpers simulate the wall clock with `at` — then the lifecycle hook once."""
     skip = retracted_entries(log.records(tenant=H, limit=1000)) | {row.id}
     scratch = Engine()
     rebuild_patient(scratch, pid, log.records(tenant=H, patient_id=pid, limit=1000), skip=frozenset(skip))
-    _withdrawn(log, pid, row)
+    withdrawal = _withdrawn(log, pid, row)
     engine.adopt(scratch, pid)
+    engine.rejudge(pid, datetime.fromisoformat(withdrawal.ts))
     sync_alerts(engine, store, pid, at)
 
 
@@ -213,12 +216,14 @@ class TestRehydrateSkips:
         # A wrong lactate 1.5 (for 4.5) ends an unacknowledged septic shock, which latches. Withdrawn, the
         # shock fires again and the latch goes. The restart skips the row, and with it the row's hook: the
         # shock is firing and nothing is latched, as live. Replayed with the row, the latch would return.
+        # G3-06 (D3): the withdrawal is re-judged at its row's write time — now — so the shock is charted at T0,
+        # half an hour back, where its bolus is inside the 3 h fluid window then; at EARLY it would be outside.
         engine, store, log = Engine(), AckStore(), InMemoryAuditLog()
         for code, value in _SHOCK:
-            _door(engine, store, log, "bed-3", code, value, EARLY)
-        wrong = _door(engine, store, log, "bed-3", "lactate", 1.5, EARLY + timedelta(minutes=1))
+            _door(engine, store, log, "bed-3", code, value, T0)
+        wrong = _door(engine, store, log, "bed-3", "lactate", 1.5, T0 + timedelta(minutes=1))
         assert _keys(store.resolved, "bed-3") == ["septic_shock"]
-        _withdraw_live(engine, store, log, "bed-3", wrong, EARLY + timedelta(minutes=2))
+        _withdraw_live(engine, store, log, "bed-3", wrong, T0 + timedelta(minutes=2))
         _, restarted = _restart(log)
         assert "septic_shock" in _keys(restarted.firing, "bed-3")
         assert _keys(restarted.resolved, "bed-3") == _keys(store.resolved, "bed-3") == []
@@ -297,7 +302,10 @@ class TestRestartEqualsTheLiveRebuild:
     def test_the_next_real_reading_after_the_restart_starts_its_own_clock(self):
         _, log = self._wrong_map_withdrawn()
         engine, store = _restart(log)
-        later = EARLY + timedelta(hours=3)
+        # G3-06 (D3): the restart re-judged the patient at the withdrawal row's write time — the real clock, not
+        # the helpers' EARLY — and the engine never judges before it again. The next real reading is measured
+        # after it, so its hour runs from its own time and is not already over.
+        later = datetime.now(timezone.utc)
         _door(engine, store, log, "bed-3", "map", 60, later)
         assert {k: store.first_seen[("bed-3", k)] for k in ("sepsis", "antibiotic_due")} == {
             "sepsis": later, "antibiotic_due": later}

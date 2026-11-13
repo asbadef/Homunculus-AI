@@ -577,7 +577,8 @@ def test_a_back_dated_reading_cannot_undo_the_hold_or_raise_news2_on_a_stale_val
     # X9e. The doors judge a reading at its own time, never past the wall clock (X10). Stamped 25
     # minutes in the past, a reading was judged at that past instant, where the later readings are
     # fresh and the pressure, stale at the wall clock, was not yet: NEWS2 jumped to 7, immediate.
-    # NEWS2 is judged no earlier than this patient's last NEWS2 judgement.
+    # NEWS2 is judged no earlier than this patient's last judgement — since G3-06 (D1) every rule
+    # is, not NEWS2 alone (tests/test_engine_floor.py).
     eng = Engine()
     for o in [_obs(SignalCode.SBP, 88), _obs(SignalCode.RESP_RATE, 22),
               _obs(SignalCode.HEART_RATE, 105)]:                               # 3 + 2 + 1 = 6

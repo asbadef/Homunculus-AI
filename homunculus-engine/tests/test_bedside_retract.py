@@ -117,7 +117,7 @@ def _internals(c, pid="bed-3"):
     held = e._held_news2_alert.get(pid)
     return {"readings": readings, "recognized_at": e._recognized_at.get(pid), "dropped": e._dropped_anchor.get(pid),
             "alerts": sorted((k, a.severity, a.urgency, a.summary) for k, a in e._alerts.get(pid, {}).items()),
-            "held": held and held.summary, "judged": e._news2_judged_at.get(pid), "profile": e._profiles.get(pid)}
+            "held": held and held.summary, "judged": e._judged_at.get(pid), "profile": e._profiles.get(pid)}
 
 
 def _view(card):
@@ -146,6 +146,10 @@ def _equal_to_never_charted(script, withdraw, never):
     with _app() as fresh:
         for entries, minutes in never:
             _chart(fresh, entries, at(minutes))
+        # G3-06 (D3): the live withdrawal re-judged the patient at its own instant. The fresh engine is re-judged at
+        # that instant too, so `got == want` still says «the state as if never charted, the alerts as of the
+        # withdrawal».
+        _engine(fresh).rejudge("bed-3", got[0]["judged"])
         want = (_internals(fresh), _view(_card(fresh)))
     return before, got, want
 

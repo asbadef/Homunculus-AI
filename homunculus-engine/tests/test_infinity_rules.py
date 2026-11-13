@@ -1092,3 +1092,50 @@ def test_at_the_read_cap_an_opening_cleared_before_the_newest_clears_still_reads
     lane, real, _ = _lane(audit=audit)
     lane.install("h1", real, now=DT0)
     assert set(lane.linked["h1"]) == {"bed-d"}                # bed-c's clearing is read too
+
+
+def _sepsis_then(engine, minutes):
+    """Suspected infection, platelets 80 and creatinine 3.5 at DT0 — sepsis, the antibiotic hour from DT0 — then a
+    pulse `minutes` later, as a door hands them on (requested at their stamps)."""
+    for code, value in [(SignalCode.PLATELETS, 80), (SignalCode.CREATININE, 3.5), (SignalCode.SUSPECTED_INFECTION, 1.0)]:
+        engine.ingest(Observation("bed-1", code, value, "u", DT0, "bridge"), now=DT0)
+    later = DT0 + timedelta(minutes=minutes)
+    engine.ingest(Observation("bed-1", SignalCode.HEART_RATE, 80, "bpm", later, "bridge"), now=later)
+
+
+def test_a_shadow_copy_keeps_an_overdue_on_a_mirrored_reading_stamped_four_hours_back():
+    """G3-06 (D1, D5): the shadow engine starts as the real engine's copy, the floor with it, so a reading stamped
+    four hours back is judged at the patient's last instant in the shadow too — never «remaining» again."""
+    lane, real, _ = _lane()
+    _sepsis_then(real, 120)
+    lane.install("h1", real, now=DT0 + timedelta(minutes=120))
+    late = Observation("bed-1", SignalCode.SPO2, 97, "%", DT0 - timedelta(minutes=240), "bridge")
+    real.ingest(late, now=late.timestamp)                     # the door first, then the mirror (D1)
+    lane.mirror_observation("h1", late, now=DT0 + timedelta(minutes=125), real=real)
+    shadow = lane.engines["h1"]
+    kinds = {a.kind for a in shadow.active_alerts("bed-1")}
+    assert "antibiotic_overdue" in kinds and "antibiotic_due" not in kinds
+    assert shadow._judged_at["bed-1"] == real._judged_at["bed-1"] == DT0 + timedelta(minutes=120)
+
+
+def test_the_mirror_judges_a_linked_reading_at_the_link_and_anchors_it_at_its_measurement():
+    """G3-06 (D5; G3-05 §11.5 (c)): `mirror_observation` hands the shadow engine the real engine's two instants.
+    Infection charted seven hours back; a set measured six hours back — MAP 60 and platelets 120 — linked now.
+    The shadow engine judges it at the link and anchors the sepsis it completes at the measurement, as the real
+    engine does: overdue at once in both, never «60 min remaining» in either."""
+    lane, real, _ = _lane()
+    lane.install("h1", real, now=DT0)
+    infection = Observation("bed-1", SignalCode.SUSPECTED_INFECTION, 1.0, "", DT0 - timedelta(hours=7), "clinician")
+    real.ingest(infection, now=infection.timestamp)
+    lane.mirror_observation("h1", infection, now=DT0, real=real)
+    stamp = DT0 - timedelta(hours=6)
+    for code, value in [(SignalCode.MAP, 60), (SignalCode.PLATELETS, 120)]:
+        linked = Observation("bed-1", code, value, "u", stamp, "POC-7")
+        real.ingest(linked, now=DT0, anchor_at=stamp)                    # as `_apply_reading` does for a link
+        lane.mirror_observation("h1", linked, now=DT0, real=real, judge_at=DT0)
+    shadow = lane.engines["h1"]
+    assert shadow.recognized_at("bed-1") == real.recognized_at("bed-1") == stamp
+    assert shadow._judged_at["bed-1"] == real._judged_at["bed-1"] == DT0
+    for engine in (shadow, real):
+        kinds = {a.kind for a in engine.active_alerts("bed-1")}
+        assert "antibiotic_overdue" in kinds and "antibiotic_due" not in kinds

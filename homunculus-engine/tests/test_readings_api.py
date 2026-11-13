@@ -645,8 +645,9 @@ class TestLinking:
     def test_a_back_dated_link_is_judged_now_and_leaves_an_overdue_antibiotic_overdue(self, acknowledged):
         """B6 review: every link is back-dated (up to 24 h). Judged at its measurement, a linked SpO2 from six hours
         ago would have replaced the `antibiotic_overdue` with an `antibiotic_due` (the hour running again — false
-        reassurance) and, acknowledged, ended its episode. A link is judged at the wall clock; the value keeps its
-        own time. A restart agrees: the replay judges a linked `ingest` row where the link did."""
+        reassurance) and, acknowledged, ended its episode. A link is judged at the wall clock and anchored at its
+        measurement (G3-06, D4: here the anchor was set by `_overdue`'s charted MAP, not by the link); the value
+        keeps its own time. A restart agrees: the replay judges a linked `ingest` row where the link did."""
         audit, store, identities = InMemoryAuditLog(), _Flaky(admitted={("h1", KEY): ADMISSION}), _identities()
         first, _, _ = _app(audit=audit, store=store, identities=identities)
         with TestClient(first) as client:
@@ -691,13 +692,29 @@ class TestLinking:
 
     def test_the_door_still_judges_a_back_dated_reading_at_its_own_time(self, world):
         """B6 review: only the link changed. The same set the test above links and finds stale is, sent to `/ingest`
-        by the device, judged at the time it was measured, as ever."""
+        by the device, judged at the time it was measured, as ever. G3-06 (D1, D2): its premise is a patient the
+        engine has not judged yet — the first evaluation has no floor; the test below is the judged patient."""
         client, _, _ = world
         old = _ago(hours=6)
         for code, value in IMMEDIATE:
             r = client.post("/ingest", json=obs(code, value, KEY, old), headers=DEVICE)
             assert r.status_code == 200 and "alerts" in r.json(), r.text
         assert [a["kind"] for a in r.json()["alerts"]] == ["news2"]
+
+    def test_the_door_judges_a_back_dated_set_at_the_floor_of_a_patient_it_has_judged(self, world):
+        """G3-06 (D1): the same six-hour-old set at the door, for a patient the engine judged a minute ago, is judged
+        at that patient's last instant — stale for NEWS2's freshness, as the link finds it. Its values keep their own
+        time."""
+        client, _, _ = world
+        r = client.post("/ingest", json=obs("heart_rate", 80, KEY, _ago(minutes=1)), headers=DEVICE)
+        assert r.status_code == 200 and r.json()["alerts"] == [], r.text
+        old = _ago(hours=6)
+        for code, value in IMMEDIATE:
+            r = client.post("/ingest", json=obs(code, value, KEY, old), headers=DEVICE)
+            assert r.status_code == 200 and r.json()["alerts"] == [], r.text
+        assert _firing(_card(client)) == []
+        state = client.app.state.board_link._engine("h1").state(KEY)
+        assert state.latest(SignalCode.RESP_RATE).timestamp == old
 
     def test_a_re_sent_linked_reading_is_a_duplicate(self, world):
         client, _, audit = world

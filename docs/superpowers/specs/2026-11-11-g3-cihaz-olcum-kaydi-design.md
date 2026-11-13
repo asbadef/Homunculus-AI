@@ -412,10 +412,13 @@ are cut to 64 and 16 characters at the door.
   time, is judged at its own measurement time (the door's `min(stamp, wall clock)`, G2-A2 X10; the bedside door's
   back-dating, G3-01 D7), so it can replace an active or acknowledged overdue with a «due» — the false reassurance the
   D12 amendment removed for links only. The fix touches G2-A2 X10 and G3-01 D7: the owner's decision.
+  **Closed by G3-06** (`docs/superpowers/specs/2026-11-12-g3-saat-geri-gitmez-design.md`, D1): every rule judges
+  at the patient's floor; X10 and D7 stand as they were.
 - **(b) A continuous feed and the vital task.** «Any NEWS2 input counts» (D15): when a MEDIBUS ventilator feed goes live
   into the real engine, that patient's vital task never comes due. To be decided before such a feed is switched on.
 - **(c) The shadow lane** (`mirror_observation`) still judges a linked reading at its measurement time, inside its own
-  engine. Non-clinical; left as it is.
+  engine. Non-clinical; left as it is. **Closed by G3-06** (D5): the mirror is handed the real engine's two
+  instants (`judge_at`), and the shadow engine's copy carries the floor.
 - **(d) Pre-move readings.** Readings of a transferred patient from before the move, filed by `reconcile` or the
   backfill (not by the door), carry `admission_id` NULL; the record box still shows them (it reads by card key).
 - **(e) az/ru/en strings** await a native reader (O4).
