@@ -29,7 +29,9 @@ export default {
     stale: "Enfeksiyon listesi güncel değil · son yanıt {time}",
     staleAsOf: "son yanıt {time} itibarıyla",
     notFresh: "liste güncel değil",
-    unit: { label: "Birim", all: "Tüm birimler", gone: "Seçili birim artık kapsamınızda değil.", none: "birimi belli değil" },
+    // `gone` only when the answer's scope is known to leave the unit out; `dropped` when it left the list otherwise.
+    unit: { label: "Birim", all: "Tüm birimler", gone: "Seçili birim artık kapsamınızda değil.",
+      dropped: "Seçili birim artık listede yok.", none: "birimi belli değil" },
     count: {
       isolated: "izolasyonda kayıtlı hasta",
       isolationUnrecorded: "{n} hastada izolasyon kaydı yok",
@@ -87,7 +89,8 @@ export default {
     stale: "İnfeksiya siyahısı aktual deyil · son cavab {time}",
     staleAsOf: "son cavab {time} vəziyyətinə görə",
     notFresh: "siyahı aktual deyil",
-    unit: { label: "Şöbə", all: "Bütün şöbələr", gone: "Seçilmiş şöbə artıq əhatənizdə deyil.", none: "şöbəsi bəlli deyil" },
+    unit: { label: "Şöbə", all: "Bütün şöbələr", gone: "Seçilmiş şöbə artıq əhatənizdə deyil.",
+      dropped: "Seçilmiş şöbə artıq siyahıda yoxdur.", none: "şöbəsi bəlli deyil" },
     count: {
       isolated: "izolyasiyada qeydə alınmış xəstə",
       isolationUnrecorded: "{n} xəstədə izolyasiya qeydi yoxdur",
@@ -145,7 +148,8 @@ export default {
     stale: "Список инфекционного контроля не актуален · последний ответ {time}",
     staleAsOf: "по последнему ответу на {time}",
     notFresh: "список не актуален",
-    unit: { label: "Отделение", all: "Все отделения", gone: "Выбранное отделение больше не в вашей области.", none: "отделение неизвестно" },
+    unit: { label: "Отделение", all: "Все отделения", gone: "Выбранное отделение больше не в вашей области.",
+      dropped: "Выбранного отделения больше нет в списке.", none: "отделение неизвестно" },
     count: {
       isolated: "пациентов с записью об изоляции",
       isolationUnrecorded: "нет записи об изоляции: {n}",
@@ -203,7 +207,8 @@ export default {
     stale: "The infection-control list is not current · last answer {time}",
     staleAsOf: "as of the last answer at {time}",
     notFresh: "the list is not current",
-    unit: { label: "Unit", all: "All units", gone: "The unit you chose is no longer in your scope.", none: "no unit known" },
+    unit: { label: "Unit", all: "All units", gone: "The unit you chose is no longer in your scope.",
+      dropped: "The unit you chose is no longer on the list.", none: "no unit known" },
     count: {
       isolated: "patients with isolation recorded",
       isolationUnrecorded: "no isolation record: {n}",

@@ -360,14 +360,17 @@ export function EnfeksiyonScreen() {
   }, [source.ok, current, offered, data, tree.index]);
   const names = useUnitNames(choiceIds);
   const [picked, setPicked] = useState(ALL);
-  const [gone, setGone] = useState(false);
+  // The fallback's note, by its key. «artık kapsamınızda değil» only when the answer's scope is known to leave the unit
+  // out; a unit that left the list otherwise — closed, say, while the grant still names it — or whose scope cannot be
+  // read says only that it is no longer listed (the re-review: no claim about the scope that is not known).
+  const [gone, setGone] = useState(null);
   const listed = picked === ALL || choiceIds.some((id) => normId(id) === picked);
   useEffect(() => {
     if (!listed && data) {
+      setGone(unitInScope(data, picked, tree.index) === false ? "enfeksiyon.unit.gone" : "enfeksiyon.unit.dropped");
       setPicked(ALL);
-      setGone(true);
     }
-  }, [listed, data]);
+  }, [listed, data, picked, tree.index]);
   const selected = listed ? picked : ALL;
 
   const selection = selectionOf(data, selected);
@@ -390,7 +393,7 @@ export function EnfeksiyonScreen() {
           {data && fresh ? <p data-as-of className="m-0 mt-0.5 text-12 text-mute">{t("enfeksiyon.asOf", { time: answered })}</p> : null}
         </div>
         <Field label={t("enfeksiyon.unit.label")} layout="col" className="min-w-[200px] max-w-[320px]">
-          <Select value={selected} onChange={(event) => { setPicked(event.target.value); setGone(false); }}>
+          <Select value={selected} onChange={(event) => { setPicked(event.target.value); setGone(null); }}>
             <option value={ALL}>{t("enfeksiyon.unit.all")}</option>
             {names.sorted.map((id) => <option key={normId(id)} value={normId(id)}>{names.nameOf(id)}</option>)}
           </Select>
@@ -398,7 +401,7 @@ export function EnfeksiyonScreen() {
         <Button size="sm" icon="clock" onClick={() => { refresh(); }}>{t("enfeksiyon.refresh")}</Button>
       </div>
       {/* An info Alert, not a Note: the fallback happens without the reader's doing, so it is said (review M4). */}
-      {gone ? <Alert tone="info" icon="alert">{t("enfeksiyon.unit.gone")}</Alert> : null}
+      {gone ? <Alert key={gone} tone="info" icon="alert">{t(gone)}</Alert> : null}
       {!data && !error ? <Note tone="info" icon="clock">{t("enfeksiyon.loading")}</Note> : null}
       {!data && error ? <Alert tone="crit"><p className="m-0">{t("enfeksiyon.readFailed", { reason })}</p></Alert> : null}
       {data && !fresh ? (

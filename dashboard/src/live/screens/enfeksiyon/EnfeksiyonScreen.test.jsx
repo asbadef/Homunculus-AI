@@ -57,6 +57,7 @@ const alertBox = () => document.querySelector('[role="alert"][data-tone="crit"]'
 /** The unit fallback's note (review M4): an info Alert — its box is shown and hidden from the reader, and the same text
  *  is said by a polite live region a moment later. */
 const GONE = "Seçilmiş şöbə artıq əhatənizdə deyil.";
+const DROPPED = "Seçilmiş şöbə artıq siyahıda yoxdur.";
 const shownNote = () => document.querySelector('[aria-hidden="true"][data-tone="info"]')?.textContent ?? null;
 const spoken = () => [...document.querySelectorAll('[role="status"]')].map((node) => node.textContent);
 /** A read after every patient of the ward has left it. */
@@ -172,16 +173,19 @@ describe("the unit filter (spec D13 item 1, §5 S1)", () => {
     expect(tiles()).toHaveLength(10);
   });
 
-  it("falls back to «Bütün şöbələr» when a new read no longer lists the chosen unit, and says so", async () => {
+  // The re-review: the unit left the list (the tree no longer holds it), but the grant still names it — so the note says
+  // it is no longer listed, never that it left the reader's scope.
+  it("falls back to «Bütün şöbələr» when a new read no longer lists the chosen unit, and says so without a scope claim", async () => {
     const { api } = await open();
     await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: REA } }); await settle(); });
     api.structure.mockResolvedValue({ tenant_id: null, sites: [] });
-    api.infection.mockResolvedValue(EMPTIED);
+    api.infection.mockResolvedValue(EMPTIED);                             // SCOPE.unit_ids still holds Reanimasiya
     await pass(30_000);
     expect(screen.getByLabelText("Şöbə").value).toBe("*");
-    expect(shownNote()).toBe(GONE);
+    expect(shownNote()).toBe(DROPPED);
     await pass(200);
-    expect(spoken()).toContain(GONE);                                     // said, not only shown (review M4)
+    expect(spoken()).toContain(DROPPED);                                  // said, not only shown (review M4)
+    expect(document.body.textContent).not.toContain(GONE);
   });
 
   // Review M4: «artıq əhatənizdə deyil» is said only when it is known — the tree counts, or the answer's scope leaves the

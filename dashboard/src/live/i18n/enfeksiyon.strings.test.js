@@ -26,6 +26,8 @@ describe("the infection-control page's words (enfeksiyon)", () => {
       .toBe("Kapsamınızda şüpheli enfeksiyon işaretli ya da sepsis alarmı olan hasta yok.");
     expect(tr["enfeksiyon.beds.none"]).toBe("Kapsamınızda izolasyon odası tanımlı değil.");
     expect(tr["enfeksiyon.unit.gone"]).toBe("Seçili birim artık kapsamınızda değil.");
+    // Re-review: a unit that leaves the list while the scope still grants it (closed, say) is no claim about the scope.
+    expect(tr["enfeksiyon.unit.dropped"]).toBe("Seçili birim artık listede yok.");
     expect(tr["enfeksiyon.isolated.note"]).toBe("İzolasyon, bir klinisyenin hasta ekranından bu sisteme kaydettiği önlem "
       + "türleridir; sistem izolasyon önermez, türünü seçmez. “İzolasyon kaydı yok”, kayıt yapılmadığını söyler; hastanın "
       + "izolasyonda olmadığı anlamına gelmez.");
