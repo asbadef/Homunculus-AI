@@ -1,12 +1,13 @@
 // src/live/shell/Prefs.jsx — the language menu and the theme switch: on the top bar and on the
 // sign-in screen (the prototype's .lsel and its sun/moon button).
 //
-// Languages are named by their code and in their own language — no flags: a flag names a country,
-// not a language, and the wards speak more than one language of each.
+// Languages are named by their code and in their own language; the prototype's flag sits beside
+// the code as decoration (owner, 2026-11-13) — the code and the native name stay the label.
 import React from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useTheme } from "../theme/ThemeProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";
+import { Flag } from "../ui/Flag.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
 import { MenuButton, TOOL_BUTTON } from "./Menu.jsx";
 
@@ -23,13 +24,19 @@ export function LanguageMenu() {
       buttonClassName={LANG_BUTTON}
       button={(
         <>
+          <Flag code={lang} className="h-[15px] w-[22px]" />
           <span className="font-data">{lang.toUpperCase()}</span>
           <Icon name="chevD" size={14} className="text-mute" />
         </>
       )}
       items={langs.map((l) => ({
         key: l.code,
-        label: <span lang={l.code}>{l.native} <span className="font-data text-11 text-mute">{l.code.toUpperCase()}</span></span>,
+        label: (
+          <span lang={l.code} className="inline-flex items-center gap-2.5">
+            <Flag code={l.code} />
+            <span>{l.native} <span className="font-data text-11 text-mute">{l.code.toUpperCase()}</span></span>
+          </span>
+        ),
         checked: l.code === lang,
         onSelect: () => setLang(l.code),
       }))}

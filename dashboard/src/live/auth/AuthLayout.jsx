@@ -10,8 +10,20 @@
 import React, { useEffect, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";
+import { FOCUS_RING } from "../ui/focus.js";
 import { LanguageMenu, ThemeToggle } from "../shell/Prefs.jsx";
 import logoUrl from "../assets/homunculus-logo.png";
+import { openLegal } from "./legalPages.js";
+
+// The prototype's social icons (sosyal.js): no accounts yet, so every one is faded and inert.
+const SOCIAL = [
+  ["WhatsApp", '<path d="M20 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20l1.2-4.2A8.5 8.5 0 1 1 20 11.5Z"/><path d="M9 8.5c.3 2.6 2.4 4.9 5 5.5l1.2-1.2 1.8.8-.4 1.6c-3.8.2-7.8-3.6-7.6-7.6l1.6-.4.8 1.8Z"/>'],
+  ["Instagram", '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>'],
+  ["YouTube", '<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="m10 9 5 3-5 3Z"/>'],
+  ["LinkedIn", '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 10v7M8 7v.01M12 17v-4a2 2 0 0 1 4 0v4M12 10v7"/>'],
+  ["X", '<path d="M4 4l16 16M20 4 4 20"/>'],
+  ["Web", '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'],
+];
 
 const CSS = `
 .hom-auth{--hx:#e8eef7}
@@ -173,15 +185,18 @@ function Brand({ className = "" }) {
 
 /** `step`: {current, total} for the "Step 2/3" line, or nothing. */
 export function AuthLayout({ step, children }) {
-  const { t } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const rot = useTicker(3200, ROT.length);
   const footLinks = [
-    ["footPrivacy", "/gizlilik"],
-    ["footTerms", "/kosullar"],
-    ["footKvkk", "/aydinlatma"],
-    ["footCookies", "/cerezler"],
-    ["footContact", "/iletisim"],
+    ["footPrivacy", "privacy"],
+    ["footTerms", "terms"],
+    ["footKvkk", "notice"],
+    ["footCookies", "cookies"],
+    ["footContact", "support"],
   ];
+  const showLegal = (key) => {
+    openLegal(key, { lang, hospital: t("auth.brandSub"), setLang }).catch(() => {});
+  };
   return (
     <div className="hom-auth grid min-h-full bg-app font-text text-14.5 text-ink min-[861px]:h-screen min-[861px]:grid-cols-[1.1fr_1fr]">
       <style>{CSS}</style>
@@ -222,11 +237,23 @@ export function AuthLayout({ step, children }) {
           ) : null}
           {children}
           <div className="mt-[22px] flex flex-wrap justify-center gap-x-2 gap-y-1.5 border-t border-line pt-4 text-12 text-mute">
-            {footLinks.map(([key, href], i) => (
+            {footLinks.map(([key, page], i) => (
               <React.Fragment key={key}>
                 {i > 0 && <span aria-hidden="true" className="text-line2">·</span>}
-                <a href={href} className="text-mute no-underline hover:text-ink">{t(`auth.${key}`)}</a>
+                <button type="button" onClick={() => showLegal(page)} className={`rounded text-mute hover:text-ink ${FOCUS_RING}`}>
+                  {t(`auth.${key}`)}
+                </button>
               </React.Fragment>
+            ))}
+          </div>
+          <div aria-hidden="true" className="mt-3.5 flex justify-center gap-2">
+            {SOCIAL.map(([name, d]) => (
+              <span
+                key={name}
+                title={name}
+                className="grid h-9 w-9 place-items-center rounded-full border border-line text-mute opacity-40"
+                dangerouslySetInnerHTML={{ __html: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>` }}
+              />
             ))}
           </div>
         </main>
