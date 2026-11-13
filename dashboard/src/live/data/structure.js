@@ -16,8 +16,9 @@ export const isUuid = (text) => UUID.test(String(text ?? "").trim());
 
 /** Every unit, room and bed of an answer, flat, each with its parents' names:
  *  { units: Map(id -> {id, name, unitType, isActive, siteName}),
- *    rooms: Map(id -> {id, name, unitId, isActive}),
- *    beds:  Map(id -> {id, label, state, isActive, roomId, roomName, unitId, unitName, open}) }.
+ *    rooms: Map(id -> {id, name, unitId, isActive, isIsolation}),
+ *    beds:  Map(id -> {id, label, state, isActive, roomId, roomName, unitId, unitName, open, isIsolation}) }.
+ *  `isIsolation` (G4-05, spec §5 S1): the room is an isolation room — on the bed, its room's.
  *  `open`: the bed, its room and its unit are all open — only an open, AVAILABLE bed is offered to
  *  an admission. An answer that is not a tree is an empty index. */
 export function indexStructure(structure) {
@@ -30,12 +31,13 @@ export function indexStructure(structure) {
         isActive: unit.is_active !== false, siteName: site.name });
       for (const room of unit.rooms ?? []) {
         rooms.set(normId(room.id), { id: room.id, name: room.name, unitId: unit.id,
-          isActive: room.is_active !== false });
+          isActive: room.is_active !== false, isIsolation: room.is_isolation === true });
         for (const bed of room.beds ?? []) {
           beds.set(normId(bed.id), {
             id: bed.id, label: bed.label, state: bed.state, isActive: bed.is_active !== false,
             roomId: room.id, roomName: room.name, unitId: unit.id, unitName: unit.name,
             open: bed.is_active !== false && room.is_active !== false && unit.is_active !== false,
+            isIsolation: room.is_isolation === true,
           });
         }
       }

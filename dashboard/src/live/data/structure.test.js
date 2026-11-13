@@ -7,7 +7,7 @@ import {
   EMPTY_INDEX, admissible, bedLabel, bedNamer, indexStructure, isUuid, normId, ordinalRegistry, unavailableKey,
   unitNamer,
 } from "./structure.js";
-import { BED, NEO, REA, structure } from "../screens/kabul/kabul.testutil.js";
+import { BED, NEO, REA, ROOM2, structure } from "../screens/kabul/kabul.testutil.js";
 
 const az = createTranslator("az", DICTIONARIES);
 
@@ -42,6 +42,18 @@ describe("the structure's index", () => {
 
   it("is empty for an answer that is not a tree", () => {
     for (const answer of [null, undefined, {}, { sites: "x" }]) expect(indexStructure(answer).beds.size).toBe(0);
+  });
+
+  // G4-05 (spec §5 S1): whether a room isolates, on the room and on each of its beds — «Enfeksiyon kontrol» words its
+  // «Oda» cells from it.
+  it("says whether a room is an isolation room, on the room and on its beds", () => {
+    const tree = structure();
+    tree.sites[0].units[0].rooms[1].is_isolation = true;
+    const isolating = indexStructure(tree);
+    expect(isolating.rooms.get(ROOM2).isIsolation).toBe(true);
+    expect(isolating.beds.get(BED(5)).isIsolation).toBe(true);
+    expect(isolating.beds.get(BED(1)).isIsolation).toBe(false);
+    expect(index.rooms.get(ROOM2).isIsolation).toBe(false);
   });
 });
 
