@@ -5,6 +5,13 @@
 // `field_invalid:<field>`: this copy exists so that "Kabul et" can stay held, and the side panel
 // can NAME each missing field, before anything is sent. It holds presence and format only — no
 // clinical bound: a weight the engine will not chart is the server's refusal, said on the toast.
+//
+// G3-07 «Kabul zamanı» (spec D1, §5): when the stay began. Untouched, nothing is sent and the server
+// stamps the save, as before; touched, the chosen minute goes out as ISO UTC — the same string on
+// every send of the form (`admittedAtOf`), so a resend is the same form to the server (A-19). The
+// bounds mirror the server's (admission/form.py BACKDATE_MAX, router.py's bed bound), the browser the
+// stricter one; the person's last discharge is the server's alone to know.
+import { fromLocalInput } from "./DischargeDialog.jsx";
 
 // Every choice with the key of its words, written out: a key assembled at run time is one no
 // check can see (strings.test.js, rawKeys.test.jsx).
@@ -46,7 +53,46 @@ export function emptyForm() {
     allergy: "", noAllergy: false, comorbidities: [], comorbiditiesText: "", his: "",
     relativeName: "", relativeRelation: "", relativePhone: "", companion: "",
     consent: "", sms: false, bedId: null, unitId: null, bedLabel: null,
+    // G3-07: «Kabul zamanı» as typed (a datetime-local text), and whether the nurse touched it.
+    admittedAt: "", admittedAtTouched: false,
+    // G3-07 (review M-2): the time the server refused — `{value, bedId, name, dob, code, reason: {key, vars}}`,
+    // `value` the text sent (null when untouched), the rest what the server judged it against — said under
+    // the field while the form still holds them (AdmitTab `refusalStands`). Never sent.
+    admittedAtRefused: null,
   };
+}
+
+/** G3-07 (spec D2): how far back «Kabul zamanı» reaches — the server's `BACKDATE_MAX` (6 h). */
+export const BACKDATE_MS = 6 * 60 * 60 * 1000;
+/** A minute of skew between this browser's clock and the server's: not «ahead» on the future side, and
+ *  kept inside the six hours on the past side, so the browser is the stricter one (the bedside form's). */
+export const SKEW_MS = 60_000;
+const MINUTE_MS = 60_000;
+
+/** The first and the last instant «Kabul zamanı» takes at `nowMs` (the server-corrected clock), for a bed
+ *  free since `freeSince` (the structure's `state_since`, the server's string; null when unknown):
+ *  `{ minMs, maxMs }`, each on a whole minute or the edge itself. The six-hour side is a minute inside the
+ *  server's and rounded UP to a whole minute (vitalsFields.oldestInput's rule); the bed side is the start
+ *  of the minute that holds `freeSince` — that minute sends `freeSince` itself (`admittedAtOf`). */
+export function admittedBounds(nowMs, freeSince) {
+  const sixHours = Math.ceil((nowMs - BACKDATE_MS + SKEW_MS) / MINUTE_MS) * MINUTE_MS;
+  const freeMs = Date.parse(freeSince ?? "");
+  const bedMinute = Number.isFinite(freeMs) ? Math.floor(freeMs / MINUTE_MS) * MINUTE_MS : -Infinity;
+  return { minMs: Math.max(sixHours, bedMinute), maxMs: nowMs + SKEW_MS };
+}
+
+/** The string «Kabul zamanı» goes out as, or null: untouched (the server stamps the save), or a text that
+ *  is not a time (`missing` names it). The minute that holds the bed's `freeSince` sends `freeSince` as the
+ *  server wrote it — the minute's start would fall before the microseconds the server keeps
+ *  (DischargeDialog's A-34 I-1 rule). Any other minute goes out as its start, in ISO UTC. The same text and
+ *  the same bed give the same string on every send. */
+export function admittedAtOf(form, freeSince) {
+  if (!form.admittedAtTouched) return null;
+  const ms = fromLocalInput(form.admittedAt);
+  if (!Number.isFinite(ms)) return null;
+  const freeMs = Date.parse(freeSince ?? "");
+  if (Number.isFinite(freeMs) && ms <= freeMs && freeMs < ms + MINUTE_MS) return freeSince;
+  return new Date(ms).toISOString();
 }
 
 const blank = (value) => String(value ?? "").trim() === "";
@@ -99,8 +145,9 @@ export function ageOf(dob, today) {
 }
 
 /** Each field the form still lacks or holds wrong, in the form's order: [{field, key}] — `key` is
- *  the panel's sentence for it. Empty when "Kabul et" may be pressed. */
-export function missing(form, today) {
+ *  the panel's sentence for it. Empty when "Kabul et" may be pressed. `now` (ms, the server-corrected
+ *  clock) and `freeSince` (the chosen bed's `state_since`) bound «Kabul zamanı» (G3-07). */
+export function missing(form, today, { now = Date.now(), freeSince = null } = {}) {
   const out = [];
   const add = (field, key) => out.push({ field, key });
   if (blank(form.name)) add("name", "kabul.miss.name");
@@ -108,6 +155,12 @@ export function missing(form, today) {
   if (blank(form.dob)) add("dob", "kabul.miss.dob");
   else if (!ageOf(form.dob, today)) add("dob", "kabul.miss.dobWrong");     // not a date, future, before 1900
   if (!blank(form.fin) && !FIN.test(form.fin.trim())) add("fin", "kabul.miss.fin");
+  if (form.admittedAtTouched) {
+    // G3-07: touched, it must be a time, at most six hours back, not before the bed was free, not ahead.
+    const ms = fromLocalInput(form.admittedAt);
+    const { minMs, maxMs } = admittedBounds(now, freeSince);
+    if (!Number.isFinite(ms) || ms < minMs || ms > maxMs) add("admittedAt", "kabul.miss.admittedAt");
+  }
   if (!form.type) add("type", "kabul.miss.type");
   if (blank(form.diagnosis)) add("diagnosis", "kabul.miss.diagnosis");
   if (!blank(form.weight) && positive(form.weight) === null) add("weight", "kabul.miss.weight");
@@ -125,8 +178,11 @@ const text = (value) => (blank(value) ? null : String(value).trim());
  *  form's id (admitDraft.js, A-19): the same on every send of one filled form, so the server takes
  *  two sends of it for one admission. None given, none sent. `confirmReserved` (G2-B3a, X2): the
  *  nurse saw the bed is reserved and admits all the same — sent only then, and outside the form's
- *  digest on the server, so the send before her answer and the one after are one form. */
-export function toBody(form, requestId, { confirmReserved = false } = {}) {
+ *  digest on the server, so the send before her answer and the one after are one form. `freeSince`
+ *  (G3-07): the chosen bed's `state_since`, which `admittedAtOf` may send as it is; `note` carries
+ *  `admission_datetime` only when the nurse set «Kabul zamanı». */
+export function toBody(form, requestId, { confirmReserved = false, freeSince = null } = {}) {
+  const admittedAt = admittedAtOf(form, freeSince);
   return {
     ...(typeof requestId === "string" && requestId ? { request_id: requestId } : null),
     patient: {
@@ -139,6 +195,7 @@ export function toBody(form, requestId, { confirmReserved = false } = {}) {
       consent: form.consent, sms_permitted: Boolean(form.sms),
     },
     note: {
+      ...(admittedAt === null ? null : { admission_datetime: admittedAt }),
       admitting_unit_id: form.unitId, bed_id: form.bedId, admission_type: form.type,
       source_of_admission: form.source || null,
       admission_diagnosis_free_text: form.diagnosis.trim(),

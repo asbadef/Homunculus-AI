@@ -55,6 +55,18 @@ describe("the structure's index", () => {
     expect(isolating.beds.get(BED(1)).isIsolation).toBe(false);
     expect(index.rooms.get(ROOM2).isIsolation).toBe(false);
   });
+
+  // G3-07: the admission form bounds «Kabul zamanı» by the bed's free time and sends it back as written.
+  it("keeps each bed's state time as the server wrote it, never parsed and rebuilt", () => {
+    const written = "2026-11-12T07:30:40.123456Z";
+    const tree = structure();
+    tree.sites[0].units[0].rooms[0].beds[0].state_since = written;
+    const beds = indexStructure(tree).beds;
+    expect(beds.get(BED(1)).stateSince).toBe(written);
+    expect(beds.get(BED(5)).stateSince).toBeNull();
+    expect(indexStructure({ sites: [{ units: [{ id: REA, rooms: [{ id: "r", beds: [{ id: BED(9), label: "9" }] }] }] }] })
+      .beds.get(BED(9)).stateSince).toBeNull();                      // an answer without the key
+  });
 });
 
 describe("which bed an admission may take", () => {

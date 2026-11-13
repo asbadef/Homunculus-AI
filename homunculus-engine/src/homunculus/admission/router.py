@@ -70,6 +70,7 @@ from homunculus.admission.schemas import (
     TRANSFER_NOTE_MAX, TransferRequest, TransferResponse,
 )
 from homunculus.admission.errors import (
+    ADMITTED_BEFORE_BED_FREE, ADMITTED_BEFORE_DISCHARGE,
     BED_CLOSED, BED_RESERVED, CARE_TEAM_ATTENDING_REQUIRED, CARE_TEAM_CONFLICT,
     CARE_TEAM_NOT_PHYSICIAN, DUPLICATE_OPEN_ADMISSION, INVALID_TRANSITION, NO_PROTOCOL,
     REQUEST_CONFLICT, Refusal, broken_constraint, field_invalid,
@@ -286,6 +287,21 @@ async def _open_admission_of(db: AsyncSession, tenant_id: uuid.UUID, identity: s
         .limit(1))).first()
 
 
+async def _last_discharge_of(db: AsyncSession, tenant_id: uuid.UUID,
+                             identity: str) -> datetime | None:
+    """G3-07 (spec D4, §3.1 step 9): the newest discharge time of the person `identity` names
+    (`form.identity_digest`) in the tenant — `max(discharge_at)` over her DISCHARGED admissions;
+    None when she has none, or none with a time. A moved stay is discharged on its last row, which
+    carries the source's digest (G2-B1b T6). A row written before 0012 has no digest and is not
+    read. No lock: her previous admission reached DISCHARGED through PENDING_DISCHARGE, whose start
+    wrote `discharge_at` (service.py `initiate_discharge`), and an open one is refused before this
+    (`duplicate_open_admission`)."""
+    return (await db.execute(
+        select(func.max(Admission.discharge_at))
+        .where(Admission.tenant_id == tenant_id, Admission.identity_digest == identity,
+               Admission.state == AdmissionState.DISCHARGED))).scalar_one()
+
+
 def _duplicate(found, reach: Scope) -> Refusal:
     """409 `duplicate_open_admission` (A-37): the person already has an open admission in this
     tenant, and it is discharged before another is opened. Its number goes beside the code only
@@ -483,7 +499,17 @@ async def create_admission(
     admission in the tenant is refused `duplicate_open_admission` (`_duplicate`). The look-up under
     the bed lock gives the friendly answer; two sends for one person to two beds are not ordered
     by one bed lock, and the open-identity index stops the second at its flush — the same refusal,
-    told apart from the request id's constraint by the index's name."""
+    told apart from the request id's constraint by the index's name.
+
+    G3-07 (Kabul zamanı, spec §3.1): the form may say when the stay began (`admission_datetime`);
+    sent nothing, the save is stamped, as before. A time sent is checked where the form is (a zone,
+    not ahead of the clock), then — after the look-up of an earlier send, so a resend is answered
+    whatever the clock and the bed say now — at most six hours back (422, `form.BACKDATE_MAX`), not more
+    than a day before the date of birth (422, by the hospital's own date, with a day's margin:
+    `form.check_admission_not_before_birth`), not before the bed became free (409 `admitted_before_bed_free`: a bed AVAILABLE or RESERVED, its
+    state's own time, read under the bed's lock) and not before this person's last discharge (409
+    `admitted_before_discharge`, `_last_discharge_of`). Each before the protocol is issued. The audit
+    row names the row's time, and says `backdated` when the form sent one."""
     # The admitting unit and the bed belong to the caller's tenant and the attending is a member
     # of it, all checked before the patient row is written.
     await _ensure_unit_and_bed(db, payload.note.admitting_unit_id, payload.note.bed_id,
@@ -495,6 +521,8 @@ async def create_admission(
     now = _now()
     digest = None if payload.request_id is None else _request_digest(payload)
     identity = form.identity_digest(payload.patient.display_name, payload.patient.date_of_birth)
+    # G3-07: the stay's start as the form said it; None when the form sent none (the save is stamped).
+    sent_at = payload.note.admission_datetime
     # The caller as plain values: a rollback below expires every object of this session, the
     # caller's own `User` (loaded by the permission check) included.
     actor, user_id = user.username, user.id
@@ -522,6 +550,15 @@ async def create_admission(
         named = payload.note.attending_physician_id
         if named is not None and not await service.is_physician(db, caller_tenant, named):
             raise field_invalid("attending_physician_id", "The attending must be a physician.")
+        # G3-07 (spec D2, §3.1 step 5): at most six hours back. After the look-up above, as the
+        # attending's check: a resend of a form that was admitted is answered, never refused
+        # because the clock moved on.
+        form.check_admission_time(sent_at, now=now)
+        # Final review (the NICU): not more than a day before the birth — the day of the time sent, read in
+        # the hospital's own zone as the birth date's `today` is (`hospital_today`, A-10); the day's margin
+        # is `form.BIRTH_SLACK`, so a tenant zone left on «UTC» never blocks a newborn.
+        form.check_admission_not_before_birth(
+            None if sent_at is None else hospital_today(zone, sent_at), born=payload.patient.date_of_birth)
         if identity is not None and \
                 (found := await _open_admission_of(db, caller_tenant, identity)) is not None:
             raise _duplicate(found, reach)
@@ -535,6 +572,22 @@ async def create_admission(
             raise Refusal(409, BED_RESERVED, "The bed is reserved: the admission must confirm it.",
                           extra={"bed_id": str(bed.id)})
         was_reserved = bed.state == BedState.RESERVED
+        # G3-07 (spec D3, §3.1 step 8): not before the bed became free — its state's own time,
+        # read under the bed's lock (`_bed_of`), so a release or a reservation of it waits for this
+        # transaction. Only for a bed AVAILABLE or RESERVED (a reserved one has its confirmation by
+        # here); any other is the service's `bed_not_available`, as before. A bed whose state time
+        # is not recorded binds nothing.
+        if sent_at is not None and bed.state in (BedState.AVAILABLE, BedState.RESERVED) \
+                and bed.state_updated_at is not None and sent_at < bed.state_updated_at:
+            raise Refusal(409, ADMITTED_BEFORE_BED_FREE,
+                          "The admission time is before the bed became free.")
+        # G3-07 (spec D4, §3.1 step 9): not before this person's last discharge. After her open
+        # admission's refusal above: this one concerns closed stays only.
+        if sent_at is not None and identity is not None and \
+                (last := await _last_discharge_of(db, caller_tenant, identity)) is not None \
+                and sent_at < last:
+            raise Refusal(409, ADMITTED_BEFORE_DISCHARGE,
+                          "The admission time is before this person's last discharge.")
         # G2-B1d (spec §3, D1, D5): the protocol first, then the H-number — one lock order for
         # every admission. No start number set: `protocol_not_configured`, nothing written.
         protocol_no = await next_protocol_no(db, caller_tenant)
@@ -598,6 +651,11 @@ async def create_admission(
                      payload={"admission_id": str(admission_id), "bed_id": str(card["bed_id"]),
                               "unit_id": str(card["unit_id"]), "actor": actor,
                               "protocol_no": protocol_no, "patient_number": number,
+                              # G3-07 (D6): when the stay began, always — the row's own, in UTC —
+                              # and `backdated` only when the form sent the time.
+                              "admission_datetime":
+                                  written.admission_datetime.astimezone(timezone.utc).isoformat(),
+                              **({"backdated": True} if sent_at is not None else {}),
                               **({"bed_was_reserved": True} if was_reserved else {})})   # X9
         try:
             # Read back, so this answer and a resend's (read from the row) are the same body.

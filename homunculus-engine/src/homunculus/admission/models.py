@@ -341,8 +341,10 @@ class Admission(Base):
     engine_writes: Mapped[dict | None] = mapped_column(JSON_COLUMN, nullable=True)
     # Who the admission is for (amendment A-37, admission/form.py `identity_digest`): the keyed
     # digest of the normalised name and the birth date. One open admission per person and tenant
-    # (`OPEN_IDENTITY_INDEX`). NULL on a row written before 0012 or without the form (the service
-    # alone, a transfer's arrival) — NULLs never collide, and the refusal does not see them.
+    # (`OPEN_IDENTITY_INDEX`). A transfer's arriving row carries its source's (G2-B1b T6: the digest
+    # is not in service.py `_OWN_TO_EACH_ROW`), so a moved stay's last row — the one discharged —
+    # names the person too (G3-07 D4 reads it there). NULL on a row written before 0012 or without
+    # the form (the service alone) — NULLs never collide, and neither refusal sees them.
     identity_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Group 2 · B1d (spec D1, D7, §3): the protocol number Homunculus issued this admission — the
     # board key of a new admission (`admission/boardkey.py`), what the nurse enters or scans on the

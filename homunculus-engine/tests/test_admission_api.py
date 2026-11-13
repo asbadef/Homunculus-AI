@@ -100,7 +100,9 @@ async def test_an_admission_is_written_numbered_and_put_on_the_board(ward, db_se
     assert rows[0].payload == {"admission_id": body["id"], "bed_id": str(bed_id),
                                "unit_id": str(unit_id), "actor": "nurse@kabul.example.com",
                                "protocol_no": body["protocol_no"],
-                               "patient_number": body["patient_number"]}
+                               "patient_number": body["patient_number"],
+                               # G3-07 (D6): the row's time, in UTC; no `backdated` — the form sent none.
+                               "admission_datetime": datetime.fromisoformat(body["admission_datetime"]).isoformat()}
     assert "Sentetik" not in repr([r.payload for r in app.state.audit.records(tenant=SLUG, limit=50)])
 
 

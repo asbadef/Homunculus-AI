@@ -626,8 +626,10 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
     // review) — `transfer_unavailable` (A-37) went with G2-B1b (spec T1).
     // … and the monitor→bed editor's five (G2-ESLEME: monitor_lane_off, device_unknown, bed_occupied,
     // mapping_changed; bed_has_monitor for Yapı); G2-B1d's eight (its own block); G2-B3a's
-    // `bed_reserved` (D5, X1); G2-B1c's three care-team codes (§5.6); G4-04's two (spec §5 A1, A7).
-    expect(CODES).toHaveLength(34);   // G2-B1b: transfer_unavailable went; G4-04: +2
+    // `bed_reserved` (D5, X1); G2-B1c's three care-team codes (§5.6); G4-04's two (spec §5 A1, A7);
+    // G3-07's two (spec §3.2: admitted_before_bed_free, admitted_before_discharge).
+    expect(CODES).toHaveLength(36);   // G2-B1b: transfer_unavailable went; G4-04: +2; G3-07: +2
+    expect(CODES).toEqual(expect.arrayContaining(["admitted_before_bed_free", "admitted_before_discharge"]));
     // admission/form.py's; the routers' own (`label`, `admitting_unit_id`) are read the same way.
     expect(FIELDS).toEqual(expect.arrayContaining(["consent", "allergies_text", "institution", "admission_datetime", "reported_by"]));
     // The two loops of form.py: the names, and the phones.
@@ -676,6 +678,20 @@ describe("a coded refusal (Hasta Kabul) is mapped by its code, never its words",
 
   it("the map holds every code errors.py raises, and nothing else", () => {
     expect([...ADMISSION_CODE_KEYS.keys()].sort()).toEqual([...CODES].sort());
+  });
+
+  // G3-07 (spec §3.2): «Kabul zamanı»'s three refusals each say their own sentence — each tells the nurse
+  // something else to change: too old, before the bed was free, before the person's last discharge.
+  it("the admission time's three refusals say three sentences, in the four languages", () => {
+    for (const lang of LANG_CODES) {
+      const t = createTranslator(lang, DICTIONARIES);
+      const said = ["field_invalid:admission_datetime", "admitted_before_bed_free", "admitted_before_discharge"]
+        .map((code) => apiErrorText(t, coded(code)));
+      expect(new Set(said).size, lang).toBe(3);
+    }
+    const tr = createTranslator("tr", DICTIONARIES);
+    expect(apiErrorText(tr, coded("admitted_before_bed_free"))).toBe("Kabul zamanı, yatağın boşaldığı andan önce olamaz.");
+    expect(apiErrorText(tr, coded("admitted_before_discharge"))).toBe("Kabul zamanı, bu hastanın son taburcusundan önce olamaz.");
   });
 
   // G2-B3b (D3, D4): the handover routes refuse with codes of this map, not with words of their own — a signature

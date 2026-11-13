@@ -32,7 +32,10 @@ export function expectNoUuid(root = document.body) {
   }
 }
 
-const bed = (n, label, state = "AVAILABLE", is_active = true) => ({ id: BED(n), label, state, is_active });
+/** A bed as GET /tenant/structure answers it; `state_since` is when it entered its state (the server's
+ *  string — microseconds and all — or null, as the engine sends for a bed with no recorded time). */
+const bed = (n, label, state = "AVAILABLE", is_active = true, state_since = null) =>
+  ({ id: BED(n), label, state, is_active, state_since });
 
 export function structure() {
   return {

@@ -260,6 +260,11 @@ export const ADMISSION_CODE_KEYS = new Map([
   // G4-04 — İş yükü (spec §5 A1, A7): «Nöbet ataması» says them in its own namespace, and reads again.
   ["shift_changed", "isyuku.err.shiftChanged"],
   ["assignment_conflict", "isyuku.err.conflict"],
+
+  // G3-07 — Kabul zamanı (spec §3.2): the form's time is before the bed became free, or before this
+  // person's last discharge. The Kabul form says them on its toast, after the bed.
+  ["admitted_before_bed_free", "kabul.err.admittedBeforeBedFree"],
+  ["admitted_before_discharge", "kabul.err.admittedBeforeDischarge"],
 ]);
 
 /** G3-02 — Görevlerim (homunculus/api/tasks.py WORDS, spec D11): the queue's refusals by their code

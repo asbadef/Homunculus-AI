@@ -962,9 +962,9 @@ def create_app(
         # memory of «hatalı giriş» (minor 3: a link never puts a withdrawn device value back into the scores).
         stay_start=lambda hospital, record: _stay_start(hospital, record),
         withdrawn=lambda hospital, obs: _withdrawn_again(hospital, obs),
-        # A link is judged NOW (`judge_at=now`, see `_apply_reading`). Not covered: the shadow lane's
-        # `mirror_observation` still judges a linked reading at its measurement time, inside its own engine — the
-        # shadow lane is non-clinical, and that is left as it is (B6 re-review).
+        # A link is judged NOW (`judge_at=now`) and a recognition it completes is anchored at the reading's
+        # measurement (G3-06, D4; see `_apply_reading`). The shadow lane's mirror is handed the same two instants
+        # (D5), so the shadow engine judges and anchors a linked set where the real one does.
         apply=lambda hospital, obs, record, now, reading, actor, on_written: _apply_reading(
             hospital, obs, record, now, reading=reading, judge_at=now,
             linked_by=actor, on_written=on_written),
@@ -1417,12 +1417,20 @@ def create_app(
         to the real engine, the lifecycle hook once at `now`, the shadow lane, the card, the nurse. Shared by a
         withdrawal and by the repair of one whose row committed while its append raised (review of Task 5).
         `copies` (G3-05, D13): how many `ingest` rows the withdrawal took — one reading written twice is removed
-        from the shadow engine twice, a removal dropping one equal reading."""
+        from the shadow engine twice, a removal dropping one equal reading.
+
+        G3-06 (D3): the adopted patient is re-judged at `now` before the hook — its state as if the value had never
+        arrived, its alerts as of the withdrawal, not of the last remaining reading — with no `await` in between.
+        An alert the clock has reached since that reading (an antibiotic hour run out) is one the withdrawal
+        uncovers: stamped and told below."""
         engine.adopt(scratch, patient_id)
+        engine.rejudge(patient_id, now)
         cleared = sync_alerts(engine, store, patient_id, now)
-        # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended stood on a value that was never
-        # real, so its escalation chain is not remembered — a real alert of the kind within `escalate_after` gets
-        # its own clock and its own page to the doctor. A restart forgets every chain anyway (rehydrate).
+        # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended is not remembered as a chain — a
+        # real alert of the kind within `escalate_after` gets its own clock and its own page to the doctor. Most
+        # stood on a value that was never real; since G3-06 (D3) the rejudge can also end one by the clock alone
+        # (an `antibiotic_due` whose hour ran out, now `antibiotic_overdue`; a hold past its bound), and its chain
+        # is not remembered either. A restart forgets every chain anyway (rehydrate).
         for item in cleared:
             store.recent.pop((item.patient_id, item.kind), None)
         _audit_cleared(hospital, cleared, now)
@@ -1467,8 +1475,10 @@ def create_app(
         real engine (`Engine.adopt`). The trail row comes first, then memory, and a read or an append that fails
         changes nothing (X4).
 
-        Then the lifecycle hook runs once, at the request's instant. An alert that no longer fires ends — or,
-        critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers is a new one, so it
+        Then the patient is re-judged at the request's instant (G3-06, D3: the alerts as of the withdrawal, not of
+        the last remaining reading) and the lifecycle hook runs once, at that instant. An alert that no longer
+        fires ends — or, critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers — an
+        antibiotic hour that ran out since the last reading among them — is a new one, so it
         is stamped and, if immediate, told to the nurse (X3). The notifier's dedup tells nothing already told.
         An episode the withdrawal ended leaves no escalation chain. The shadow lane drops the reading, guarded
         (X5), and the card is republished — as never measured when the withdrawn value was the patient's only
@@ -1536,8 +1546,11 @@ def create_app(
         own = device_key_of(target) if target.event_type == "ingest" else None
         already = target.id in withdrawn or (own is not None and own in withdrawn_device)
         skip_device = withdrawn_device if own is None else withdrawn_device | {own}
+        # The request's one instant, read before the rebuild (G3-06, D6): no instant the rebuild hands the scratch
+        # engine is later than it plus the replay's skew, and the rejudge, the hook and the rows below use it.
+        now = datetime.now(timezone.utc)
         scratch = Engine()
-        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id}, skip_device=skip_device)
+        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id}, skip_device=skip_device, now=now)
         observation = observation_of(target)
         # Every row the withdrawal takes (the named one alone, for a hand entry). The shadow engine took one reading
         # per `/ingest` and a removal drops one, so it is removed once per copy; the record's one table row may be
@@ -1545,7 +1558,6 @@ def create_app(
         taken = [target.id] if own is None else [r.id for r in rows if r.event_type == "ingest"
                                                  and device_key_of(r) == own]
         copies = len(taken)
-        now = datetime.now(timezone.utc)
         if already:
             # G3-05 (B7 review): the retry also finishes the record's half — a mark that failed after the row was
             # written left the value unstruck there. Before the repair below, which may raise: the marks never do.
@@ -1833,15 +1845,18 @@ def create_app(
         `vital_readings` row linked — written into the `ingest` payload. `record` is the identity the caller
         already read; `wall_now` the request's one instant. Answers the evaluation's alerts and the `ingest` row.
 
-        WHEN THE RULES JUDGE. `judge_at` None (the door, as ever): at the reading's own time, never past the wall
-        clock. A LINKED reading passes `judge_at=wall_now` (B6 review): it is judged NOW and keeps its own
-        timestamp — stored, audited as `obs_ts`, drawn at its time in the trends. A link is always back-dated
-        (up to 24 h), and the antibiotic clock, the sepsis and shock rules and the alerts' episodes all measure
-        from the evaluation's `now`: judged at the old measurement time, a linked SpO₂ from six hours ago would
-        replace an `antibiotic_overdue` with an `antibiotic_due` («300 min remaining» — false reassurance) and
-        end an acknowledged overdue's episode. Judged now, a stale value simply does not count for NEWS2's
-        freshness, and no clock goes backwards. The replay agrees: an `ingest` row naming a `reading` is
-        replayed at the row's write time (rehydrate `_replay_ingest`).
+        WHEN THE RULES JUDGE. `judge_at` None (the door, as ever): the door asks for the reading's own time, never
+        past the wall clock — one instant, which the engine floors at the patient's last judgement for every rule
+        (G3-06, D1) and at which it anchors a recognition the reading completes (D2). A LINKED reading passes
+        `judge_at=wall_now` (B6 review): it is judged NOW, floored like every judgement, and keeps its own
+        timestamp — stored, audited as `obs_ts`, drawn at its time in the trends. Judged at the old measurement
+        time, a linked SpO₂ from six hours ago would replace an `antibiotic_overdue` with an `antibiotic_due`
+        («300 min remaining» — false reassurance); judged now, a stale value simply does not count for NEWS2's
+        freshness. A recognition a linked reading completes is anchored at its measurement, min(stamp, wall
+        clock) (G3-06, D4, the owner: «Bağlama anında değerlendir, saat ölçümden»): the hour runs from when the
+        criteria were met, so an hour already past reads overdue at once. The replay agrees: an `ingest` row
+        naming a `reading` is judged at the row's write time and anchored at its stamp (rehydrate
+        `_replay_ingest`). The shadow lane's mirror is handed the same two instants (D5).
 
         WHO LINKED IT. `linked_by` — the person — goes into the linked reading's `ingest` payload as `actor`, so
         the chain from the reading to its person stands even when the link's own `reading_assigned` row is lost.
@@ -1858,10 +1873,13 @@ def create_app(
         the patient stamps and tells whatever is still firing."""
         engine = _engine(hospital)
         store = _store(hospital)
-        # The rules judge at the reading's own time but never past the wall clock (G2-A2, X10): judged at a
-        # stamp in the future, every other input would be aged to it. The audit row keeps the stamp; the replay
-        # judges at min(the stamp, the row's write time) (rehydrate, X10b). A linked reading: at `judge_at`.
-        alerts = engine.ingest(obs, now=min(obs.timestamp, wall_now) if judge_at is None else judge_at)
+        # The door asks for the reading's own time but never past the wall clock (G2-A2, X10): judged at a stamp
+        # in the future, every other input would be aged to it. The engine judges at that instant's floor (G3-06,
+        # D1) and anchors a recognition at the instant itself (D2). The audit row keeps the stamp; the replay asks
+        # for min(the stamp, the row's write time) (rehydrate, X10b). A linked reading: judged at `judge_at`,
+        # anchored at the same min(stamp, wall clock) — its measurement (D4).
+        requested = min(obs.timestamp, wall_now)
+        alerts = engine.ingest(obs, now=requested if judge_at is None else judge_at, anchor_at=requested)
         # G2-A1: what stopped firing ends its episode or — a critical nobody acknowledged —
         # latches (api/alert_lifecycle.py). Right after the evaluation and before any audit write:
         # if the audit fails from here on, an unacknowledged critical is still on the board.
@@ -1870,8 +1888,10 @@ def create_app(
         # First-seen uses WALL-CLOCK time (escalation measures real elapsed time, not observation time).
         cleared = sync_alerts(engine, store, obs.patient_id, wall_now)
         # Aşama B (D1): the same observation into the shadow engine, after the real evaluation and
-        # its lifecycle hook — guarded, so nothing the lane does can fail this request.
-        lane.guard("mirror", lambda: lane.mirror_observation(hospital, obs, now=wall_now, real=engine))
+        # its lifecycle hook — guarded, so nothing the lane does can fail this request. A linked reading's
+        # `judge_at` goes with it (G3-06, D5).
+        lane.guard("mirror", lambda: lane.mirror_observation(hospital, obs, now=wall_now, real=engine,
+                                                            judge_at=judge_at))
         payload = {"value": obs.value, "unit": obs.unit,
                    "obs_ts": obs.timestamp.isoformat(), "device": obs.source_device}
         if reading is not None:

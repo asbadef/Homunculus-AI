@@ -36,6 +36,20 @@ ANCHOR_RESTORE_S = 900
 HOLD_MAX_S = 8 * 3600
 
 
+def _suspicion_began(state: PatientState) -> datetime | None:
+    """When the current suspicion of infection began (G3-06, D2, owner: «Şüpheden önceye gitmesin»):
+    the stamp of the FIRST `suspected_infection` mark charted present since the last one charted
+    absent — a repeated present mark never moves it. None when the latest mark is absent or there is
+    none, which never happens at a recognition (`_evaluate`). The marks are in stamp order, as
+    `PatientState` keeps them."""
+    began = None
+    for mark in reversed(state.history(SignalCode.SUSPECTED_INFECTION)):
+        if mark.value < 1.0:
+            break
+        began = mark.timestamp
+    return began
+
+
 def _level(alert: Alert) -> tuple[Severity, Urgency]:
     """How loud an alert is — the order a held NEWS2 may step down in, never up (G2-A2, X9d)."""
     return Severity[alert.severity.upper()], Urgency[alert.urgency.upper()]
@@ -47,18 +61,21 @@ class Engine:
     #: this list would be kept by a discharged patient and lost by a shadow copy, so a test pins
     #: the list against the instance's dicts.
     _PER_PATIENT = ("_recognized_at", "_dropped_anchor", "_alerts", "_held_news2_alert",
-                    "_news2_judged_at", "_profiles")
+                    "_judged_at", "_profiles")
 
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
         self._recognized_at: dict[str, datetime] = {}
-        # X12: an anchor dropped by infection charted absent -> (anchor, when it was dropped).
+        # X12: an anchor dropped by infection charted absent -> (anchor, the floored instant it was
+        # dropped at; G3-06 D2).
         self._dropped_anchor: dict[str, tuple[datetime, datetime]] = {}
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
         # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
         self._held_news2_alert: dict[str, Alert] = {}
-        # G2-A2 X9e: patient -> the latest instant NEWS2 was judged at; it never goes back.
-        self._news2_judged_at: dict[str, datetime] = {}
+        # G3-06 (D1; NEWS2's since G2-A2 X9e): patient -> the latest instant the rules judged the patient
+        # at. No evaluation moves it back (`adopt` replaces it with a rebuilt patient's), and every rule
+        # of an evaluation judges at it (`_evaluate`).
+        self._judged_at: dict[str, datetime] = {}
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
 
@@ -85,28 +102,50 @@ class Engine:
         from homunculus.model.scorer import Scorer
         self._scorer = Scorer(artifact)
 
-    def ingest(self, obs: Observation, now: datetime) -> list[Alert]:
+    def ingest(self, obs: Observation, now: datetime, *, anchor_at: datetime | None = None) -> list[Alert]:
+        """Add one reading and evaluate its patient. `now` is the REQUESTED instant — the doors'
+        min(stamp, wall clock) (G2-A2, X10), the replay's min(stamp, the row's write time) (X10b) —
+        and the rules judge at its floor (`_evaluate`, G3-06 D1). The reading keeps its own stamp.
+        `anchor_at` is the anchor of a recognition this reading completes (D2): None is `now`, the
+        doors' one instant; a linked reading is judged at the link and anchored at its measurement
+        (D4)."""
         state = self._repo.get_or_create(obs.patient_id)
         state.ingest(obs)
+        return self._evaluate(obs.patient_id, state, now, now if anchor_at is None else anchor_at)
 
-        profile = self._profiles.get(obs.patient_id)
+    def rejudge(self, patient_id: str, now: datetime) -> list[Alert]:
+        """Evaluate `patient_id` again as its state stands — no reading added — at max(now, its
+        floor), and answer the alerts (G3-06, D3). «Hatalı giriş» calls it right after `adopt`, so
+        the alerts are judged at the withdrawal's instant, not at the last remaining reading's; the
+        replay calls it at each `chart_retract` row. A patient the engine holds no reading for
+        answers [] and is not created."""
+        if patient_id not in self._repo.patient_ids():
+            return []
+        return self._evaluate(patient_id, self._repo.get_or_create(patient_id), now, now)
+
+    def _evaluate(self, patient_id: str, state: PatientState, requested: datetime,
+                  anchor_at: datetime) -> list[Alert]:
+        """One evaluation of `patient_id` as its state stands. Every rule judges at `at`, the
+        requested instant floored at the patient's last judgement (G3-06, D1; NEWS2's since G2-A2,
+        X9e): a reading stamped in the past is information about the past, not a reason to judge the
+        present as if it were the past. Judged at its stamp, a reading from four hours ago turned an
+        overdue antibiotic into «300 min remaining» and ended the overdue's episode, and a vital stale
+        at the wall clock lifted NEWS2 again or ended a hold. The values keep their own stamps: the
+        state, freshness, trends and the audit's `obs_ts` do not move. The engine reads no clock — `at`
+        is only ever an instant a caller asked for."""
+        at = max(requested, self._judged_at.get(patient_id, requested))
+        self._judged_at[patient_id] = at
+
+        profile = self._profiles.get(patient_id)
         # The profile reaches septic_shock directly, not through patient_relative: a charted
         # baseline SOFA is part of the Sepsis-3 criterion itself, not a downgrade applied after
         # the fact. Getting it there late would mean the alert had already been raised.
-        findings = list(septic_shock.evaluate(state, now, profile))
-        # NEWS2 — the rule, the patient-relative layer and the hold — is judged no earlier than this
-        # patient's last NEWS2 judgement (G2-A2, X9e). The doors judge a reading at its own time,
-        # never past the wall clock (X10); a reading stamped in the past was judged at that past
-        # instant, where every later reading is fresh and a stale one not yet stale, and a vital
-        # stale at the wall clock lifted NEWS2 again — or ended a hold. `now` is unchanged for
-        # everything else: the antibiotic anchor, sepsis and shock, the model.
-        judge_at = max(now, self._news2_judged_at.get(obs.patient_id, now))
-        self._news2_judged_at[obs.patient_id] = judge_at
-        news2_findings = news2.evaluate(state, judge_at)
+        findings = list(septic_shock.evaluate(state, at, profile))
+        news2_findings = news2.evaluate(state, at)
         findings += news2_findings
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation. At the same
         # instant NEWS2 was judged at (G2-A2, D6).
-        findings = patient_relative.apply(findings, state, profile, judge_at)
+        findings = patient_relative.apply(findings, state, profile, at)
 
         # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
@@ -119,31 +158,43 @@ class Engine:
         #    reads the latest MAP, so a single reading at 70 or above (MAP 70 scores 0) stops
         #    `sepsis` for one evaluation, and an anchor dropped then would let an untreated sepsis
         #    never go overdue, or give a treated one a false overdue when it came back.
-        #  - A dropped anchor is remembered with the time of its drop (X12). A recognition within
-        #    ANCHOR_RESTORE_S (15 min) of the drop restores the old anchor: infection charted absent
-        #    and present again is a corrected toggle, the same episode, and an antibiotic charted in
-        #    the gap counts against the restored hour. A later recognition gets its own anchor,
-        #    `now`.
+        #  - A dropped anchor is remembered with the floored instant of its drop (X12; G3-06, D2). A
+        #    recognition within ANCHOR_RESTORE_S (15 min) after the drop, floored instant to floored
+        #    instant, restores the old anchor: infection charted absent and present again is a
+        #    corrected toggle, the same episode, and an antibiotic charted in the gap counts against
+        #    the restored hour. A later recognition gets its own anchor: `anchor_at` — the requested
+        #    instant at the doors, the reading's measurement at the link (D4) — never after `at`,
+        #    and never before the suspicion that makes the recognition possible, the start of the
+        #    current one (the first infection mark charted present since the last absent one; a
+        #    repeated present mark does not move it), nor before the rule-out it follows (D2, owner:
+        #    «Şüpheden önceye gitmesin»; `_new_anchor`). Requested instants can run backwards;
+        #    compared on them, a back-dated recognition "before" the drop restored the anchor
+        #    however long ago the rule-out was.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.
         recognizing = any(f.kind in _RECOGNITION_KINDS for f in findings)
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
-            if obs.patient_id not in self._recognized_at:
-                self._recognized_at[obs.patient_id] = self._new_anchor(obs.patient_id, now)
+            if patient_id not in self._recognized_at:
+                # A recognition kind fires only with the latest infection mark charted present
+                # (septic_shock.evaluate returns before either kind otherwise), and that mark is the
+                # first `_suspicion_began` reads: it is never None here. The current suspicion makes
+                # the recognition possible — the hour never starts before it began.
+                self._recognized_at[patient_id] = self._new_anchor(patient_id, anchor_at, at,
+                                                                   _suspicion_began(state))
         elif infection is None or infection.value < 1.0:
-            dropped = self._recognized_at.pop(obs.patient_id, None)
+            dropped = self._recognized_at.pop(patient_id, None)
             if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
-                self._dropped_anchor[obs.patient_id] = (dropped, now)
+                self._dropped_anchor[patient_id] = (dropped, at)
 
         findings += antibiotic_clock.evaluate(
-            state, self._recognized_at.get(obs.patient_id) if recognizing else None, now
+            state, self._recognized_at.get(patient_id) if recognizing else None, at
         )
 
         # Optional ML seam: an additive early-warning signal that NEVER overrides the rules.
         if self._scorer is not None:
-            risk, top = self._scorer.score(state, now)
+            risk, top = self._scorer.score(state, at)
             if risk >= self._scorer.threshold:
                 drivers = ", ".join(f"{n} {v:g}" for n, v in top) or "rising trend"
                 findings.append(Finding(
@@ -159,11 +210,11 @@ class Engine:
                     citations=[Citation("physionet-cinc-2019", "early-sepsis model, setting-specific")],
                 ))
 
-        alerts = [to_alert(f, obs.patient_id) for f in findings]
+        alerts = [to_alert(f, patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
         # Staleness — a vital past its window, a chart past its shift (X11) — may withhold a new
         # NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
-        held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, judge_at)
+        held = self._held_news2(patient_id, bool(news2_findings), state, profile, at)
         if held is not None:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
@@ -174,7 +225,7 @@ class Engine:
         # past its window (X12). What the API keeps of one (a
         # critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not the
         # engine's.
-        self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
+        self._alerts[patient_id] = {a.kind: a for a in alerts}
         return alerts
 
     def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
@@ -263,13 +314,25 @@ class Engine:
         stale = vitals + [label for labels in charts.values() for label in labels]
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
-    def _new_anchor(self, patient_id: str, now: datetime) -> datetime:
-        """The anchor of a recognition with none running (X12): the anchor dropped at most
-        ANCHOR_RESTORE_S ago, restored, or else `now`. Either way the remembered drop is spent."""
+    def _new_anchor(self, patient_id: str, anchor_at: datetime, at: datetime,
+                    infection_at: datetime) -> datetime:
+        """The anchor of a recognition with none running (X12; G3-06, D2): the anchor dropped at
+        most ANCHOR_RESTORE_S before `at`, restored — a corrected toggle, the old episode's anchor,
+        and the bounds below do not apply — or else a new episode's. `at` is the recognising
+        evaluation's floored instant and the drop is remembered at its own, so the difference is
+        measured in the engine's one-way time. No evaluation moves the floor back; `adopt` can set
+        a lower one (the rebuilt patient's, which the withdrawal's rejudge lifts at once), but
+        `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the
+        difference is never negative — the `0 <=` is a guard. A new episode's anchor is `anchor_at` (the
+        requested instant, or the link's measurement) lifted to the start of the suspicion that
+        makes the recognition possible, `infection_at`, and to the rule-out it follows (the drop's
+        instant, when one is remembered), and held to `at`: it never goes back before either
+        (D2, owner: «Şüpheden önceye gitmesin»). Either way the remembered drop is spent."""
         dropped = self._dropped_anchor.pop(patient_id, None)
-        if dropped is not None and (now - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
+        if dropped is not None and 0 <= (at - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
             return dropped[0]
-        return now
+        bounds = [anchor_at, infection_at] + ([dropped[1]] if dropped is not None else [])
+        return min(max(bounds), at)
 
     def active_alerts(self, patient_id: str) -> list[Alert]:
         return list(self._alerts.get(patient_id, {}).values())
@@ -283,7 +346,7 @@ class Engine:
     def forget(self, patient_id: str) -> None:
         """Drop everything the engine holds for one patient (G2-A11, D9): readings, the alerts
         of the last evaluation, the antibiotic anchor and a dropped anchor's memory, a held NEWS2
-        alert, the NEWS2 judge-at and the charted profile. The API calls it when an admission made
+        alert, the instant the rules last judged it at (G3-06, D1) and the charted profile. The API calls it when an admission made
         here is discharged: the number is retired, and a reading that still arrives for it is
         dropped at the door, so nothing would ever end these alerts otherwise. A profile is the
         admission's — a readmission is a new number and a new profile. Idempotent."""

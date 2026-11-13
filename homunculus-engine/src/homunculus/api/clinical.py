@@ -386,8 +386,10 @@ def chart_observations(engine: Engine, store: AckStore, audit: AuditLog, notifie
     it too; the door keeps parsing, the discharged-number drop, the final dedup prune, the frame
     and the answer.
 
-    `now` is the request's one wall-clock instant: each entry is judged at its charted time but
-    never past it (G2-A2, X10). After every entry: the lifecycle hook (G2-A1, D4, D7 — charting is
+    `now` is the request's one wall-clock instant: each entry asks to be judged at its charted time
+    but never past it (G2-A2, X10). The engine judges at that instant's floor — never before the
+    patient's last judgement — and anchors a recognition the entry completes at the instant itself
+    (G3-06, D1, D2). After every entry: the lifecycle hook (G2-A1, D4, D7 — charting is
     often what ends an alert), the nurse's dedup re-armed (D5: `[norepinephrine 0, dopamine 5]`
     ends an acknowledged shock and starts a new one inside this loop), the `chart` row and the
     `alert_cleared` rows — the hook before any audit write, so an audit that fails leaves an

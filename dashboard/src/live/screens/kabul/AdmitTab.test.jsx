@@ -20,6 +20,7 @@ import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { AdmitTab } from "./AdmitTab.jsx";
 import { admitDraftOf } from "./admitDraft.js";
 import { KabulScreen } from "./KabulScreen.jsx";
+import { localInput } from "./DischargeDialog.jsx";
 import { BED, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, row, settle, structure, toasts } from "./kabul.testutil.js";
 
 /** The side panel: the missing fields, «Qəbul et», and the hold's reason under it — the form's own
@@ -1576,5 +1577,300 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     await sayYes();
     expect(api.admit).toHaveBeenCalledTimes(1);
     expect(api.admit.mock.calls[0][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
+  });
+});
+
+// G3-07 «Kabul zamanı» (spec D1, §5): first in the «Kabul» box; untouched it shows the current minute and sends
+// nothing; touched, the chosen minute — the same string on every send of the form — bounded by six hours, the
+// chosen bed's free time and the clock. Its three refusals are said, the beds read again, the field focused.
+describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
+  // The clock pinned at 14:00:30 local (Date only: the screen's own timers run as ever).
+  const NOW = new Date(2026, 10, 12, 14, 0, 30).getTime();
+  const at = (h, m) => localInput(new Date(2026, 10, 12, h, m).getTime());
+  /** Bed 1 free since 11:30:40.123456 — the server's string, microseconds and all. */
+  const FREE = new Date(2026, 10, 12, 11, 30, 40, 123).toISOString().replace(/Z$/, "456Z");
+  const field = () => screen.getByLabelText(/^Qəbul vaxtı/);
+  const choose = (text) => fireEvent.change(field(), { target: { value: text } });
+  const sentAt = (api, call = 0) => api.admit.mock.calls[call][0].note.admission_datetime;
+  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və gələcəkdə ola bilməz.";
+  /** The page woke (a tablet's screen on again): the clock's own re-read, as VitalsForm.test.jsx's. */
+  const woke = () => act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+  /** Bed 1 free since 11:30:40 (`FREE`), bed 5 since 13:00:10. */
+  const bothFree = () => {
+    const tree = withBed(1, { state_since: FREE });
+    tree.sites[0].units[0].rooms[1].beds[0].state_since = new Date(2026, 10, 12, 13, 0, 10).toISOString();
+    return tree;
+  };
+
+  async function open(setup, ui = <AdmitTab />) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    return mountKabul(ui, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(withBed(1, { state_since: FREE }));
+      setup?.(a);
+    } });
+  }
+  afterEach(() => {
+    vi.useRealTimers();
+    window.location.hash = "";
+    localStorage.clear();
+  });
+
+  it("shows the current minute, bounded by six hours and the clock; a chosen bed moves the bound to its free time and says it", async () => {
+    await open();
+    expect(field().getAttribute("type")).toBe("datetime-local");
+    expect(field().value).toBe(at(14, 0));
+    expect(field().getAttribute("min")).toBe(at(8, 2));                      // a minute inside six hours, rounded up
+    expect(field().getAttribute("max")).toBe(at(14, 1));
+    expect(screen.getByText("Dəyişdirilməsə, qeydin anı yazılır. Ən çox 6 saat geriyə.")).toBeTruthy();
+    fillRequired();                                                           // bed 1
+    expect(field().getAttribute("min")).toBe(at(11, 30));
+    // No suffix to inflect, and true of a reserved bed too: the time is when the bed's state began.
+    expect(screen.getByText(/Çarpayının boşaldığı və ya rezerv edildiyi an: 11:30 — qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    expect(missingNow()).toEqual([]);
+  });
+
+  it("sends no time untouched, and the chosen minute in ISO UTC once touched", async () => {
+    const { api } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    await press();
+    expect("admission_datetime" in api.admit.mock.calls[0][0].note).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
+    fillRequired();
+    choose(at(12, 15));
+    await press();
+    expect(sentAt(api, 1)).toBe(new Date(2026, 10, 12, 12, 15).toISOString());
+  });
+
+  it("sends the bed's free time as the server wrote it for the minute that holds it", async () => {
+    const { api } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(11, 30));
+    await press();
+    expect(sentAt(api)).toBe(FREE);
+  });
+
+  it("resends a send that got no answer under the same id with the same time", async () => {
+    const { api } = await open((a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted()));
+    fillRequired();
+    choose(at(11, 30));
+    await press();                                                           // no answer; bed 1 still free
+    await press();
+    const [first, second] = api.admit.mock.calls.map(([body]) => body);
+    expect(second.request_id).toBe(first.request_id);
+    expect(second.note.admission_datetime).toBe(first.note.admission_datetime);
+    expect(first.note.admission_datetime).toBe(FREE);
+    expect(screen.getByText("H2600042")).toBeTruthy();
+  });
+
+  it("holds «Qəbul et» on a time outside its bounds, names it, and takes the focus there", async () => {
+    const { api } = await open();
+    fillRequired();
+    for (const text of [at(8, 1), at(11, 29), at(14, 2)]) {
+      choose(text);
+      expect(missingNow()).toEqual([TOO_FAR]);
+    }
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+    expect(errorOf(field())).toBe(TOO_FAR);
+  });
+
+  it("keeps the chosen minute in the session's draft, and «Yeni qəbul» clears it", async () => {
+    const { store } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(12, 15));
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: at(12, 15), admittedAtTouched: true });
+    await press();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: "", admittedAtTouched: false });
+    expect(field().value).toBe(at(14, 0));
+  });
+
+  it("is untouched again when left empty — the current minute, nothing named, nothing sent — but not while she types (M-1)", async () => {
+    const { api, store } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(12, 15));
+    fireEvent.blur(field());                                                 // left with a time: hers
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: at(12, 15), admittedAtTouched: true });
+    choose("");                                                              // cleared — or Chrome's half-typed value
+    expect(missingNow()).toEqual([TOO_FAR]);                                 // still being typed: still hers
+    fireEvent.blur(field());
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: "", admittedAtTouched: false });
+    expect(field().value).toBe(at(14, 0));
+    expect(missingNow()).toEqual([]);
+    await press();
+    expect("admission_datetime" in api.admit.mock.calls[0][0].note).toBe(false);
+  });
+
+  it("names a typed time once a bed free since later is chosen, and holds «Qəbul et» (M-3)", async () => {
+    const { api } = await open((a) => a.structure.mockResolvedValue(bothFree()));
+    fillRequired();                                                          // bed 1, free since 11:30
+    choose(at(12, 15));
+    expect(missingNow()).toEqual([]);
+    pickBed5();                                                              // free since 13:00
+    expect(field().value).toBe(at(12, 15));
+    expect(field().getAttribute("min")).toBe(at(13, 0));
+    expect(screen.getByText(/Çarpayının boşaldığı və ya rezerv edildiyi an: 13:00 — qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    expect(missingNow()).toEqual([TOO_FAR]);
+    expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("names a typed time the clock has left behind, and holds «Qəbul et» (M-3)", async () => {
+    const { api } = await open((a) => a.structure.mockResolvedValue(withBed(1, { state_since: null })));
+    fillRequired();                                                          // bed 1, no free time: six hours bind
+    choose(at(8, 3));                                                        // the min is 08:02 at 14:00:30
+    expect(missingNow()).toEqual([]);
+    vi.setSystemTime(NOW + 2 * 60_000);                                      // 14:02:30: the min is 08:04
+    woke();
+    expect(field().getAttribute("min")).toBe(at(8, 4));
+    expect(missingNow()).toEqual([TOO_FAR]);
+    expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("keeps the typed time across a tab change: the tab mounted again shows it, bounded by the bed (M-3)", async () => {
+    await open(undefined, <KabulScreen />);
+    fillRequired();
+    choose(at(12, 15));
+    await openTab("Köçürmə / Evə yazılma");
+    await openTab("Qəbul");
+    expect(field().value).toBe(at(12, 15));
+    expect(field().getAttribute("min")).toBe(at(11, 30));
+    expect(missingNow()).toEqual([]);
+  });
+
+  it.each([
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz)."],
+    ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
+    ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
+  ])("%s: said on the toast after the bed, the beds read again, the field focused — and nothing held", async (code, status, words) => {
+    const { api } = await open((a) => a.admit
+      .mockRejectedValueOnce(refusal(status, "English words a screen must not show", { apiCode: code }))
+      .mockResolvedValueOnce(admitted()));
+    fillRequired();
+    choose(at(12, 0));
+    const reads = api.structure.mock.calls.length;
+    await press();
+    expect(toasts().getAllByText(`${BED1}: ${words}`).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/English words/);
+    expect(api.structure.mock.calls.length).toBeGreaterThan(reads);
+    expect(document.activeElement).toBe(field());
+    expect(admitButton().getAttribute("aria-disabled")).toBeNull();
+    choose(at(12, 30));
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(sentAt(api, 1)).toBe(new Date(2026, 10, 12, 12, 30).toISOString());
+  });
+
+  it.each([
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz)."],
+    ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
+    ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
+  ])("%s: the refused time stays, marked with the server's words, until she changes it (M-2)", async (code, status, words) => {
+    await open((a) => a.admit.mockRejectedValueOnce(refusal(status, "English words", { apiCode: code })));
+    fillRequired();
+    choose(at(12, 0));                                                       // inside every bound the screen knows
+    await press();
+    expect(field().value).toBe(at(12, 0));
+    expect(field().getAttribute("aria-invalid")).toBe("true");
+    expect(errorOf(field())).toBe(words);
+    expect(missingNow()).toEqual([]);                                        // the server's alone: nothing held
+    choose(at(12, 30));
+    expect(field().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("never marks a time she chose while the refused send was out (M-2)", async () => {
+    let answer;
+    await open((a) => a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })));
+    fillRequired();
+    choose(at(12, 0));
+    await act(async () => { fireEvent.click(admitButton()); });             // on its way
+    choose(at(12, 30));
+    await act(async () => { answer(refusal(409, "English words", { apiCode: "admitted_before_discharge" })); });
+    await settle();
+    expect(field().value).toBe(at(12, 30));
+    expect(field().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  // Final review: the server's words are about what it judged — the time AND the bed (its free time) or the
+  // person (her last discharge, her birth date): they stand only while those are still the form's.
+  describe("the server's words stand only while what was refused is still the form's", () => {
+    const BED_WORDS = "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz.";
+    const DISCHARGE_WORDS = "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz.";
+    const INVALID_WORDS = "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz).";
+    const dobField = () => screen.getByLabelText(/^Doğum tarixi/);
+    /** Everything the field is described by — the toast says the words too, and stays. */
+    const fieldWords = () => (field().getAttribute("aria-describedby") ?? "").split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+    const pickBed1 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 1" })).getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" }));
+    /** Bed 1 free since 11:30:40 (`FREE`), bed 5 since 09:00 — earlier, so 12:00 stands on both. */
+    const bed5Earlier = () => {
+      const tree = withBed(1, { state_since: FREE });
+      tree.sites[0].units[0].rooms[1].beds[0].state_since = new Date(2026, 10, 12, 9, 0).toISOString();
+      return tree;
+    };
+    /** The form (bed 1, 12:00) sent once and refused with `code`. */
+    async function refused(code, status) {
+      await open((a) => {
+        a.structure.mockResolvedValue(bed5Earlier());
+        a.admit.mockRejectedValueOnce(refusal(status, "English words", { apiCode: code }));
+      });
+      fillRequired();
+      choose(at(12, 0));
+      await press();
+    }
+
+    it("admitted_before_bed_free is about that bed: another bed clears it, the same bed again brings it back", async () => {
+      await refused("admitted_before_bed_free", 409);
+      expect(field().getAttribute("aria-invalid")).toBe("true");
+      expect(errorOf(field())).toBe(BED_WORDS);
+      pickBed5();                                                            // free since 09:00: 12:00 stands
+      expect(field().value).toBe(at(12, 0));
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(BED_WORDS);
+      expect(missingNow()).toEqual([]);
+      pickBed1();                                                            // the bed the server refused
+      expect(errorOf(field())).toBe(BED_WORDS);
+    });
+
+    it("admitted_before_bed_free is not about the person: a name or a birth date changed leaves it", async () => {
+      await refused("admitted_before_bed_free", 409);
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqa" } });
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(errorOf(field())).toBe(BED_WORDS);
+    });
+
+    it("admitted_before_discharge is about the person: a changed name or birth date clears it, another bed does not", async () => {
+      await refused("admitted_before_discharge", 409);
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);
+      pickBed5();
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // her last discharge is the same on any bed
+      fireEvent.change(nameField(), { target: { value: "  sentetik   HASTA " } });
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // the same name, typed otherwise
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqa" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(DISCHARGE_WORDS);
+      fireEvent.change(nameField(), { target: { value: "Sentetik Hasta" } });
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // and back: the refused person again
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(DISCHARGE_WORDS);
+    });
+
+    it("field_invalid:admission_datetime also depends on the birth date (the engine's guard): a changed one clears it, another bed does not", async () => {
+      await refused("field_invalid:admission_datetime", 422);
+      expect(errorOf(field())).toBe(INVALID_WORDS);
+      pickBed5();
+      expect(errorOf(field())).toBe(INVALID_WORDS);
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(INVALID_WORDS);
+    });
   });
 });
