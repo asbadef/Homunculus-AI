@@ -2942,12 +2942,19 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
   bekleyin.») ve «yok» diyen cümle yazılmaz. İşaretlere dokunduktan sonra başka biri yeni bir kayıt yaptıysa
   kaydetmeden önce kutu bunu söyler: «Yine de kaydet» ya da «Seçimden vazgeç». Yanlış hastaya işaretlenen bir izolasyon
   «izolasyon yok» olarak düzeltilebilir, asla «kayıt yok»a geri dönmez.
-- **İzolasyonu yalnız bir kişi kaydeder:** iki kapı da cihazdan gelen bir izolasyon işaretini reddeder (400 «izolasyon
-  bir klinisyen kaydıdır; cihazdan alınmaz»): cihaz kapısı (`POST /ingest`) dört izolasyon kodunu, kayıt kapısı
-  (`POST /clinical` ve önizlemesi) köprünün cihaz kimliğiyle gönderilen bir izolasyon işaretini. İçinde izolasyon
-  işareti olan isteğin tamamı reddedilir; cihaz kimliğiyle girilen öteki klinik alanlar eskisi gibi kaydedilir.
-  Reddedilen istekten hiçbir şey yazılmaz: ne motora, ne denetim kaydına, ne ölçüm kaydına, ne eşleşmeyen listesine
-  gider. Monitör ya da HBYS izolasyon belirleyemez.
+- **İzolasyonu yalnız bir kişi kaydeder:** cihazdan gelen bir izolasyon işareti hiçbir yere yazılmaz; monitör ya da
+  HBYS izolasyon belirleyemez.
+  - *Cihaz kapısı* (`POST /ingest`) böyle bir işareti uygulamaz ve 200 ile cevaplar (`dropped: isolation`), taburcu
+    edilmiş ya da eşleşmeyen bir numaranın ölçümüne verdiği cevap gibi: ne motora, ne denetim kaydına, ne ölçüm
+    kaydına, ne eşleşmeyen listesine gider. 400 vermez, çünkü köprü ölçümleri sırayla gönderir ve reddedilen bir
+    ölçümde durur: tek bir işaret, arkasında bekleyen bütün hastaların ölçümlerini tutardı. Köprünün sırası böylece
+    hiç takılmaz.
+  - *Köprünün tabloları* bu dört kodu zaten taşımaz: varsayılan tablo onları eşlenmemiş sayar (keşif raporunda
+    görünür), bir hastanenin eşleme dosyası birini içerirse köprü açılmaz ve nedenini söyler (HL7, NCE ve MEDIBUS
+    köprüleri).
+  - *Kayıt kapısı* (`POST /clinical` ve önizlemesi) köprünün cihaz kimliğiyle gönderilen bir izolasyon işaretini 400
+    ile reddeder («izolasyon bir klinisyen kaydıdır; cihazdan alınmaz»). İçinde izolasyon işareti olan isteğin tamamı
+    reddedilir; cihaz kimliğiyle girilen öteki klinik alanlar eskisi gibi kaydedilir.
 - **Yönetim › Yapı'da oda izolasyon işareti:** var olan bir oda artık «İzolasyon odası yap» / «İzolasyon işaretini
   kaldır» ile işaretlenir ya da işareti kaldırılır (`structure.manage`). Her değişiklik denetim kaydına
   `structure.isolation` olarak yazılır («Denetim bütünlüğü»nde «Yapı: izolasyon odası değişti»). Bu dilimden önce
@@ -2956,16 +2963,20 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
 - **Sunucuda:**
   - dört yeni klinik alan: `isolation_contact`, `isolation_droplet`, `isolation_airborne`, `isolation_protective` (0 ya da
     1; saat gönderilirse en çok 24 saat geri, ileri değil); hiçbir kural okumaz; «hatalı giriş» ile geri alınmaz ve ölçüm
-    kaydına yazılmaz; cihazdan gelirse iki kapıda da reddedilir;
+    kaydına yazılmaz; cihazdan gelirse uygulanmaz (`/ingest` 200 ile geçer, kayıt kapısı 400 ile reddeder) ve köprünün
+    tabloları onları taşımaz;
   - pano kartında `isolation` bloğu (dört tür, durum sözcüğü, son kaydın saati; kişi yok);
   - yeni `GET /infection` (`infection.view`): kapsamdaki kartlardan iki liste, yataktaki hastalar ve sayılar; denetim
-    kaydına yazılmaz;
+    kaydına yazılmaz. HBYS'nin taburcu ettiği hasta (kartı panoda 24 saat, yataksız kalır) bu sayfada ne listede ne
+    sayılarda yer alır;
   - göç `0023`: beş grubun `infection.view` satırı; tablo yok. Önceki imaj bu göçle açılmaz: geri dönüşte önce bu
     sürümün imajıyla `alembic downgrade` sunucunun sürümden önceki başına (birleşik bir çıkışta o başa), sonra eski
     imaj.
 - **Kurulum notu:** api ve web birlikte çıkar, `alembic upgrade head` ile (0023 yalnız satır yazar). Web api'den önce
-  çıkmaz: eski api yeni kodları «bilinmeyen klinik alan» diye reddeder ve `/infection`'ı tanımaz. Yetkiler oturum
-  açılışında alınır: dağıtımdan önce açılmış bir oturum sayfayı token yenilenince görür.
+  çıkmaz: eski api yeni kodları «bilinmeyen klinik alan» diye reddeder ve `/infection`'ı tanımaz. Köprü imajı da
+  güncellenir (varsayılan tablosu dört kodu artık taşımaz); eski bir köprü bunları gönderse bile yeni api 200 ile
+  geçer, sıra takılmaz. Yetkiler oturum açılışında alınır: dağıtımdan önce açılmış bir oturum sayfayı token
+  yenilenince görür.
 - **Bu dilimde olmayanlar:** cihaz günleri, cihaz kullanım oranı, enfeksiyon oranları, antibiyotik günü, kültürler ve
   formülleri; izolasyon önerisi, eşik ya da kültür veya tanı ile izolasyon türü arasında bağ; yatak kartlarında, alarm
   satırlarında ya da Doluluk'ta izolasyon etiketi; izolasyon nedeni ya da serbest metin; izolasyon geçmişi ekranı;

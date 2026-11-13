@@ -599,6 +599,31 @@ hipoperfuziya»; ru «Критерии септического шока вып�
 инфузии»; en «Septic shock criteria met», «Sepsis criteria met», «Hypoperfusion before adequate fluid».
 `AZ_SAME_AS_TR` gains none of them (D18's two candidates are gone). Test: `enfeksiyon.strings.test.js` pins the TR.
 
+**A7 (kod incelemesi, 2026-11-13) — the bridge never stalls on a flag; a discharged card leaves the page (M8, D10).**
+From the code review of `f7ed5afb..0f85dcd0` (the spec review's own A7, the `AckStore` replay, fell with S2 — see this
+section's opening; this one is the code review's).
+- `POST /ingest` answers an isolation flag from a device **200** `{"patient_id": …, "dropped": "isolation"}` and writes
+  nothing — no engine entry, no trail row, no readings row, no unmatched row — as it answers a discharged or an
+  unmatched number. M8's 400 is withdrawn for this door: the bridge's uplink is serial and stops its pass on any
+  refused observation (`edge/uplink.py`), so one flag held every reading queued behind it, for every patient (the review
+  proved it). The uplink never blocks (D18). The door logs the code only, never the number or the value.
+- The bridge's tables never carry the four slugs: `gateway/hl7.py`'s default table leaves them out (an OBX naming one is
+  unmapped — dropped and counted, as any code nothing maps), and a site table naming one stops the bridge at startup
+  with the slug and the reason (`scripts/run_bridge.py` `load_mapping`, `edge/ncefiles.py` `load_site_mapping`,
+  `medibus/mapping.py`). `ISOLATION_CODES` moves to `canonical.py`, because the bridge runs without `api/`;
+  `api/clinical.py` re-exports it.
+- The chart door keeps its 400 for the device token (`POST /clinical/{id}` and its preview, `ISOLATION_FROM_DEVICE`,
+  the coordinator's decision of 2026-11-13): it is a request and its answer, not the bridge's queue. The dashboard's
+  mapping of the sentence stays for it.
+- `GET /infection` leaves out every card whose identity the HIS discharged (`identity.state == "discharged"`; the board
+  keeps such a card for up to `DISCHARGED_TTL`, 24 h, with no bed): it is in no list, no `bed_occupants` entry, no unit
+  and no count. `/pharmacy` is not changed by this slice.
+- The card's three isolation words are defined once, in `api/clinical.py`; `api/board.py` and `api/infection.py` import
+  them.
+- Tests: `test_isolation_chart.py` (the door's 200; the uplink delivers a heart rate queued behind a flag; the default
+  table; the three loaders), `medibus/tests/test_mapping_bridge.py`, `test_infection.py` and `test_infection_api.py`
+  (the discharged card), `test_api_board_isolation.py` (the words).
+
 **M1 — the icon (D13).** `shield` is the admin route's (`shell/routes.js:122`). The route takes **`thermo`**: in
 `ui/icons.js`, used by no route and no screen (`drop` is the Sıvı box's, `flask` the Sepsis box's). Test:
 `routes.test.js` pins `icon: "thermo"` and that no other route has it.
@@ -663,12 +688,13 @@ komitesinden gelir; sistem eşik ya da tanım üretmez.» becomes «Enfeksiyon t
 değildir; sistem eşik ya da tanım üretmez.» (no source says what this hospital's committee does). The rest stands.
 Test: `enfeksiyon.strings.test.js` pins the TR note.
 
-**M8 — the flags come from people only; where the box goes (D7, D16, D20).**
+**M8 — the flags come from people only; where the box goes (D7, D16, D20). (A7 ile değişti)**
 - `POST /ingest` refuses the four codes from a device: right after `parse_fhir_observation`, before anything is filed
   or written, 400 `detail="izolasyon bir klinisyen kaydıdır; cihazdan alınmaz"` (inline, so `apiErrors.test.js`' sweep
   of `api/app.py` reads it; an `apiErrors.js` entry and `errors.js` text in four languages). A monitor or the HIS cannot
   decide isolation. Nothing reaches the engine, the trail, the readings record or the unmatched list. D7's last bullet
-  is withdrawn.
+  is withdrawn. **A7:** the place and the «nothing written» stand; the answer is 200 `dropped: "isolation"`, not 400,
+  and the sentence is no longer in `api/app.py` (the chart door's 400 carries it, `ISOLATION_FROM_DEVICE`).
 - The guide says that a flag charted on the wrong patient can be corrected to «izolasyon yok», never back to «kayıt
   yok».
 - The box goes under the Sepsis box, in the left cell of the patient screen's two-column grid
