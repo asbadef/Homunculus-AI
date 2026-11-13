@@ -1,7 +1,7 @@
 # G4-05 — «Enfeksiyon kontrol»: isolation, suspected infection, the antibiotic clock and the sepsis alarms, per unit
 
 **Date:** 2026-11-12 · **Branch:** `feat/g4-enfeksiyon`, cut from main `88f6544c` (G3-05 included) · **Guide section:**
-§3.28 · **Migration:** one, `0023_infection_view` (see D21 for its parent and the numbering rule)
+§3.29 (§3.28 went to G3-06, merged first) · **Migration:** one, `0023_infection_view` (see D21 for its parent and the numbering rule)
 
 **Origin.** The design prototype's «Enfeksiyon kontrol» screen (`origin/tasarim/prototip`,
 `tasarim-taslaklari/app/birim.js` 57–90 strings, 318–390 screen; perm `quality` + `beds`, icon `shield`) shows cards
@@ -395,9 +395,9 @@ export; any write from the page.
 
 ### D20 — guide (§5 A2, M5, M8 ile değişti)
 
-`docs/homunculus-rehber-TR.md`: a new **§3.28 «Enfeksiyon kontrol»** (what the page shows and does not, who sees it,
+`docs/homunculus-rehber-TR.md`: a new **§3.29 «Enfeksiyon kontrol»** (what the page shows and does not, who sees it,
 the box, Decision 18's words, the deploy note), and §3.5's «30 sabit anahtar … en yenisi `workload.view`» becomes
-«31 … en yenisi `infection.view`, «Enfeksiyon kontrol», §3.28». The roadmap row for G4-05 in
+«31 … en yenisi `infection.view`, «Enfeksiyon kontrol», §3.29». The roadmap row for G4-05 in
 `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`.
 
 ### D21 — the migration (§5 A2, M5 ile değişti)
@@ -569,7 +569,7 @@ upgrade head` (`homunculus-engine/Dockerfile.api:56`), which refuses an unknown 
 older image serves against it» is withdrawn. Rollback = `alembic downgrade <the revision the VM ran before this
 release>` in a one-off container of **this** release's image, then the previous tags; in a combined release that is
 the VM's pre-release head (`0019` today), not 0023's `down_revision`. The migration's docstring says so in 0022's words
-(its docstring lines 27–31), and §3.28 says the same. Tests: the migration test's downgrade, as D21.
+(its docstring lines 27–31), and §3.29 says the same. Tests: the migration test's downgrade, as D21.
 
 **A3 — a fresh «0» that only means "nothing recorded" (D10, D13, D15).**
 - `counts` and each `units[].counts` gain `isolation_unrecorded` (cards whose isolation `state` is `unrecorded`,
