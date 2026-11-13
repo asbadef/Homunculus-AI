@@ -9,6 +9,7 @@ admission's key. Postgres (`db_session`). Synthetic ward: tests/kabul_world.py."
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
@@ -143,7 +144,8 @@ async def test_the_audit_row_is_the_cards_and_names_both_numbers_never_the_name(
     assert row.patient_id == FIRST_PROTOCOL                             # E4: the card's key
     assert row.payload == {"admission_id": body["id"], "bed_id": str(w.beds["1"].id),
                            "unit_id": str(w.units["rea"].id), "actor": "nurse@kabul.example.com",
-                           "protocol_no": FIRST_PROTOCOL, "patient_number": body["patient_number"]}
+                           "protocol_no": FIRST_PROTOCOL, "patient_number": body["patient_number"],
+                           "admission_datetime": datetime.fromisoformat(body["admission_datetime"]).isoformat()}
     assert "Sentetik" not in repr([x.payload for x in app.state.audit.records(tenant=SLUG, limit=50)])
 
 
