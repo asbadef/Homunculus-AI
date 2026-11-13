@@ -31,9 +31,39 @@ export const REASONS = new Map([
   ["type_off", "tres.reason.typeOff"],
 ]);
 
+/** The two platforms a hospital's account can point at (the tab's select; the engine's `environment`). */
+export const ENVIRONMENT_KEYS = Object.freeze([["test", "tres.envTest"], ["live", "tres.envLive"]]);
+
+/** The admission states the stay lookup can answer with, other than ACTIVE (said by `stillAdmitted`) and
+ *  DISCHARGED with its time (said by `discharged`) — the engine's `AdmissionState`, each in its own words. */
+export const STAY_STATES = new Map([
+  ["DRAFT", "tres.deliveries.state.DRAFT"], ["PENDING_DISCHARGE", "tres.deliveries.state.PENDING_DISCHARGE"],
+  ["PENDING_TRANSFER", "tres.deliveries.state.PENDING_TRANSFER"], ["TRANSFERRED", "tres.deliveries.state.TRANSFERRED"],
+  ["DISCHARGED", "tres.deliveries.state.DISCHARGED"],
+]);
+
 const TYPE_KEYS = new Map(TYPES);
 const STATUS_KEYS = new Map(STATUSES);
+const ENVIRONMENT_NAMES = new Map(ENVIRONMENT_KEYS);
 
 export const typeLabel = (t, type) => (TYPE_KEYS.has(type) ? t(TYPE_KEYS.get(type)) : String(type ?? ""));
 export const statusLabel = (t, status) => (STATUS_KEYS.has(status) ? t(STATUS_KEYS.get(status)) : String(status ?? ""));
 export const reasonLabel = (t, reason) => (reason == null ? "" : REASONS.has(reason) ? t(REASONS.get(reason)) : String(reason));
+/** An environment as the tab names it; one this build does not know, as the engine's word; none, an empty text. */
+export const environmentLabel = (t, environment) => (ENVIRONMENT_NAMES.has(environment)
+  ? t(ENVIRONMENT_NAMES.get(environment)) : String(environment ?? ""));
+
+/** A hand's rows counted by status, as the toast says them: «Göndərildi 3 · Uğursuz 1». The ledger's order; a status
+ *  this build does not name comes last, as its code. No row at all: the «no records» words. The label comes first and
+ *  the number after it, in every language — so no plural is ever wrong («Failed 1», never «1 records»). */
+export function countsText(t, rows) {
+  const counts = new Map();
+  for (const one of Array.isArray(rows) ? rows : []) {
+    const status = typeof one?.status === "string" && one.status ? one.status : "—";
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+  const known = STATUSES.map(([status]) => status).filter((status) => counts.has(status));
+  const other = [...counts.keys()].filter((status) => !STATUS_KEYS.has(status));
+  const parts = [...known, ...other].map((status) => `${statusLabel(t, status)} ${counts.get(status)}`);
+  return parts.length > 0 ? parts.join(" · ") : t("tres.deliveries.handledNone");
+}
