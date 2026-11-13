@@ -1592,7 +1592,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   const field = () => screen.getByLabelText(/^Qəbul vaxtı/);
   const choose = (text) => fireEvent.change(field(), { target: { value: text } });
   const sentAt = (api, call = 0) => api.admit.mock.calls[call][0].note.admission_datetime;
-  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və irəli vaxt ola bilməz.";
+  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və gələcəkdə ola bilməz.";
 
   async function open(setup) {
     vi.useFakeTimers({ toFake: ["Date"] });

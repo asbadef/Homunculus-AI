@@ -208,6 +208,19 @@ describe("«Kabul zamanı»", () => {
     expect(admittedAtOf(touched(at(11, 31)), FREE)).toBe(new Date(2026, 10, 12, 11, 31).toISOString());
   });
 
+  it("takes the bed's free minute inclusively: a free time on the minute's start (…:30:00.000500Z) is accepted at that very minute", () => {
+    // The server keeps microseconds; Date.parse keeps milliseconds, so the minute's start equals `freeMs` exactly.
+    const ON_THE_MINUTE = new Date(2026, 10, 12, 11, 30, 0, 0).toISOString().replace(/Z$/, "500Z");
+    expect(ON_THE_MINUTE).toMatch(/:00\.000500Z$/);
+    expect(admittedBounds(NOW, ON_THE_MINUTE).minMs).toBe(new Date(2026, 10, 12, 11, 30).getTime());
+    expect(missingAt(touched(at(11, 30)), ON_THE_MINUTE)).toEqual([]);
+    expect(admittedAtOf(touched(at(11, 30)), ON_THE_MINUTE)).toBe(ON_THE_MINUTE);     // `ms <= freeMs`, not `<`
+    expect(toBody(touched(at(11, 30)), null, { freeSince: ON_THE_MINUTE }).note.admission_datetime).toBe(ON_THE_MINUTE);
+    // The minute before is outside the bound and is not the bed's minute: no free-time string for it.
+    expect(missingAt(touched(at(11, 29)), ON_THE_MINUTE)).toEqual(["admittedAt"]);
+    expect(admittedAtOf(touched(at(11, 29)), ON_THE_MINUTE)).toBe(new Date(2026, 10, 12, 11, 29).toISOString());
+  });
+
   it("names the field past either bound, ahead of the clock or unreadable — and never untouched", () => {
     expect(missingAt(touched(at(8, 2)))).toEqual([]);
     expect(missingAt(touched(at(8, 1)))).toEqual(["admittedAt"]);
