@@ -53,6 +53,10 @@ PHONE_DIGITS = 5
 #: A time a few minutes ahead of the server — an admission's, a discharge's — is a clock, not a
 #: claim about the future.
 CLOCK_SLACK = timedelta(minutes=2)
+#: G3-07 (spec D2, the owner's «6 saat»): how far back the form may say the stay began. A patient
+#: measured on arrival and admitted after the paperwork is inside it; a slipped day or month is not.
+#: An engineering bound on a typed time, as CLOCK_SLACK is — not a clinical one.
+BACKDATE_MAX = timedelta(hours=6)
 #: Letters (category Lo) that show nothing: the Hangul fillers. A name of them is a blank name.
 _INVISIBLE_LETTERS = frozenset("ᅟᅠㅤﾠ")
 
@@ -130,6 +134,21 @@ def check_admission(payload: AdmissionCreate, *, today: date, now: datetime | No
         raise field_invalid("comorbidity_codes", f"Not a code the engine reads: {', '.join(unknown)}.")
     if p.consent is None:
         raise field_invalid("consent", "The consent answer is required.")
+
+
+def check_admission_time(at: datetime | None, *, now: datetime) -> None:
+    """G3-07 (spec D2, §3.1 step 5): a time the form sent is at most `BACKDATE_MAX` before `now` —
+    else 422 `field_invalid:admission_datetime`. None, a form that sent no time (the save is
+    stamped), passes. `now` is the server's and carries its time zone; `at` has passed
+    `check_admission`, which refused a time without one.
+
+    Apart from `check_admission` on purpose: the route runs it after the look-up of an earlier send
+    under the form's id (A-19), so a resend whose first send was admitted is answered with that
+    admission, never refused because the clock has moved past the six hours since."""
+    _server_clock("now", now)
+    if at is not None and at < now - BACKDATE_MAX:
+        raise field_invalid("admission_datetime",
+                            "The admission time is more than six hours before now.")
 
 
 def check_discharge(payload: DischargeStart, *, now: datetime,

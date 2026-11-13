@@ -20,7 +20,8 @@ from sqlalchemy import Enum as SqlEnum, String
 
 from homunculus.admission.errors import CODES, Refusal
 from homunculus.admission.form import (
-    CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_discharge, identity_digest, person_name,
+    BACKDATE_MAX, CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_admission_time, check_discharge,
+    identity_digest, person_name,
 )
 from homunculus.admission.models import Admission, DischargeDisposition, Patient
 from homunculus.admission.schemas import (
@@ -574,6 +575,36 @@ def test_the_clock_slack_is_exactly_two_minutes():
     assert caught.value.code == "field_invalid:discharge_at"
     late = (NOW + CLOCK_SLACK + timedelta(microseconds=1)).isoformat()
     assert refused(body(note={"admission_datetime": late})) == "field_invalid:admission_datetime"
+
+
+# ---------------------------------------------------------------- the admission time (G3-07)
+def test_the_admission_time_reaches_back_exactly_six_hours():
+    """G3-07 (spec D2, the owner's «6 saat»): the edge itself passes — in any offset — and a
+    microsecond older is refused as the field."""
+    assert BACKDATE_MAX == timedelta(hours=6)
+    check_admission_time(NOW - BACKDATE_MAX, now=NOW)
+    check_admission_time((NOW - BACKDATE_MAX).astimezone(timezone(timedelta(hours=4))), now=NOW)
+    check_admission_time(NOW, now=NOW)
+    with pytest.raises(Refusal) as caught:
+        check_admission_time(NOW - BACKDATE_MAX - timedelta(microseconds=1), now=NOW)
+    assert (caught.value.status, caught.value.code) == (422, "field_invalid:admission_datetime")
+
+
+def test_a_form_that_sent_no_time_passes_the_six_hours():
+    check_admission_time(None, now=NOW)
+
+
+def test_the_six_hours_are_judged_by_a_server_clock_that_carries_its_zone():
+    with pytest.raises(ValueError, match="time zone"):
+        check_admission_time(None, now=datetime(2026, 10, 25, 12, 0))
+
+
+def test_the_six_hours_are_not_check_admissions_rule():
+    """`check_admission` keeps its own two rules on the time — a zone, and not ahead of the clock:
+    the six hours run in the route, after the look-up of an earlier send (spec §3.1), so a time seven
+    hours back passes the form's rules."""
+    check_admission(body(note={"admission_datetime": (NOW - timedelta(hours=7)).isoformat()}),
+                    today=TODAY, now=NOW)
 
 
 @pytest.mark.parametrize(("now", "admitted_at"), [
