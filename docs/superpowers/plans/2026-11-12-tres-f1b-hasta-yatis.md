@@ -12,7 +12,7 @@
 - **§8 — the panels' form.** «Önizle» opens a dialog (the bodies are long); it says, above the bodies, that the preview holds patient data and that opening it is audited. «Şimdi gönder» is reached from a stay found by its protocol number on the «Gönderimler» panel — the engine's `GET /admin/tres/admissions?key=` (F1a amendment 20).
 - **§8, D27 — the build.** F1's strings take the shared i18n chunk (`Toast-*.js`) from 504.06 kB (F0) to **523.94 kB** (measured on the scratch copy). F1 does NOT split the catalogue: that is a slice of its own, and `origin/main` has split it already (`746f30a9`, «the i18n string tables in their own two chunks, no chunk over 500 kB»), so the note goes at merge. `TresTab-*.js` grows from ≈7 kB to 21.23 kB.
 
-**Gates (measured when the plan is carried out — every `…` replaced):** baseline (F1a's head) dashboard … files / … tests · after F1b dashboard … files / … tests (expected **+2 files, +20 tests**) · build `precache  … entries`, `TresTab-*.js` … kB, shared i18n chunk … kB (500 kB note: yes — accepted, see above) · head `<sha>` · pushed: yes/no · walk on the local stack: done (what was seen) / not done (why).
+**Gates (measured when the plan is carried out — every `…` replaced):** baseline (F1a's head) dashboard 166 files / 4481 tests · after F1b dashboard … files / … tests (expected **+2 files, +20 tests**) · build `precache  … entries`, `TresTab-*.js` … kB, shared i18n chunk … kB (500 kB note: yes — accepted, see above) · head `<sha>` · pushed: yes/no · walk on the local stack: done (what was seen) / not done (why).
 
 ---
 
