@@ -364,8 +364,8 @@ Dalga 3'te geldi: 3.6.
 
 **İzin (permission)**
 - *Basit:* "Panoyu görebilir", "alarm onaylayabilir", "kullanıcı yönetebilir" gibi tek tek haklar.
-- *Homunculus'ta:* 30 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
-  `workload.view`, «İş yükü», §3.26).
+- *Homunculus'ta:* 31 sabit anahtar (`board.view`, `alerts.ack`, `users.manage`, `groups.manage`…; en yenisi
+  `infection.view`, «Enfeksiyon kontrol», §3.28).
   Liste kodda yaşar (`auth/permissions.py`), çünkü yazılımın *neler yapabildiği* yazılımın
   özelliğidir; bunları *kimin* yapabileceği ise hastanenin kararıdır ve veritabanında, gruplarda
   yaşar. Her API rotası bir izinle korunur. Bir test her rotayı kendi iznine sabitler: izni
@@ -2875,6 +2875,104 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     oturumudur (B1d O1–O6).
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g3-cihaz-olcum-kaydi-design.md` (§11 «As built»); plan
   `docs/superpowers/plans/2026-11-11-g3-cihaz-olcum-kaydi.md`.
+
+### 3.28 «Enfeksiyon kontrol»: izolasyon, şüpheli enfeksiyon, antibiyotik süresi ve sepsis alarmları (Grup 4 · G4-05)
+
+- **Ne:** Sol raydaki **«Enfeksiyon kontrol»** sayfası (`/enfeksiyon`; Azerbaycanca «İnfeksiya nəzarəti», Rusça
+  «Инфекционный контроль», İngilizce «Infection control»). Birim birim: kim izolasyonda ve nerede, kimde şüpheli
+  enfeksiyon ya da sepsis alarmı var ve antibiyotik süresi ne durumda, izolasyon yatakları ne halde. Yalnız okur;
+  sayfadan hiçbir şey yazılmaz. Hasta adları görünür (sayfayı açan her varsayılan grup birimin klinisyenidir).
+  Örneklerdeki adlar ve sayılar uydurmadır.
+- **Durum:** kodda (`feat/g4-enfeksiyon`); main'e ve hastane sunucusuna sahibin sözüyle çıkar. Sunucuda göç `0023`
+  çalışmalıdır.
+- **Kim görür:** yeni yetki `infection.view` («“Enfeksiyon kontrol” sayfasını açar …»). Varsayılan **Sorumlu Hekim**,
+  **Ünite Hekimi**, **Hekim**, **Sorumlu Hemşire** ve **Hemşire** grupları taşır (göç `0023` var olan hastanelere verir;
+  sonra kurulan bir hastanenin grupları kendiliğinden taşır); Sistem Yöneticisi her yetkiyi kural gereği taşır; Eczacı,
+  Hızlı Yanıt Ekibi, Denetçi, Üretici Destek ve Biyomedikal taşımaz; başka bir gruba Yönetim › Roller ve
+  yetkiler'den verilebilir. Bir çalışma ekranıdır: yalnız bu yetkiyi taşıyan bir hesap bununla oturum açar ve girişte
+  bu sayfaya düşer. Rayda «İş yükü»nden sonra gelir; kimsenin giriş sayfası değişmedi. Satırdaki yatak ve ad, `board.view`
+  taşıyana hasta ekranını açar. İzolasyon yatakları yapıdan okunur: bir kabul ya da yapı yetkisi gerekir (beş varsayılan
+  grubun hepsi `admissions.view` taşır); yoksa o bölüm «— yapı okunamıyor» der, sayfanın kalanı durur.
+- **Sayfanın sırası (yukarıdan aşağı):**
+  1. **Başlık:** «Enfeksiyon kontrol», «İzolasyon, şüpheli enfeksiyon, antibiyotik süresi ve sepsis alarmları», taze
+     yanıtın saati («09:30 itibarıyla»), **«Birim»** seçici («Tüm birimler» ya da bir birim; yapıdaki açık birimler ve
+     listedeki birimler) ve «Yenile». Seçilen birim yeni okumada artık yoksa seçici «Tüm birimler»e döner ve «Seçili
+     birim artık kapsamınızda değil.» der. Birimi belli olmayan bir hasta yalnız «Tüm birimler»de görünür, sunucu onu
+     orada sayar.
+  2. **Kartlar:** «izolasyonda kayıtlı hasta» (altında «{n} hastada izolasyon kaydı yok»), «boş izolasyon yatağı»
+     («1 / 10»), «şüpheli enfeksiyon işaretli hasta» (altında «{n} hastada işaret yok»), «antibiyotik süresi aşan» ve
+     «sepsis alarmı süren hasta» (altında «yanıtlanmış ya da yanıtlanmamış»: sayı, alarmı süren hastadır; geçmiş ama
+     onaylanmamış alarm listede görünür, sayılmaz).
+  3. **«İzolasyondaki hastalar»:** Yatak · hasta, Birim, İzolasyon (türler etiket olarak — Temas, Damlacık, Solunum,
+     Koruyucu — ve «son kayıt 08:10»), Oda («izolasyon odası» / «izolasyon odasında değil»; yatağı yoksa «— yatağı
+     bilinmiyor», yapıda bulunmayan bir yatak için «— yatak yapıda bulunamadı»). Birim adına, sonra yatak adına göre
+     sıralıdır; birimi olmayan en sonda. Altında: «İzolasyon, bir klinisyenin hasta ekranından bu sisteme kaydettiği
+     önlem türleridir; sistem izolasyon önermez, türünü seçmez. “İzolasyon kaydı yok”, kayıt yapılmadığını söyler;
+     hastanın izolasyonda olmadığı anlamına gelmez.»
+  4. **«İzolasyon yatakları» · «{a} dolu · {b} boş»:** yapıda izolasyon odası işaretli her açık odanın her açık yatağı
+     (Doluluk'un da okuduğu ağaç): «boş», «izolasyonlu hasta» (ad ve türler), «izolasyonsuz hasta», «izolasyon kaydı
+     yok», «dolu — hasta bu listede yok» (yatakta biri var ama kapsamınızda değil), «temizlikte», «rezerve», «kullanım
+     dışı» (neden yazılmaz: neden Doluluk'ta), «bakımda». Yapı yatağı boş derken panoda üstünde hasta varsa (HBYS yatak
+     eşlemesi) kutu «yapıda boş · panoda hasta var» der, asla yalnız «boş» demez; böyle yatak ne boş ne dolu sayılır.
+     Hiçbir kutu yargı rengi taşımaz.
+  5. **«Şüpheli enfeksiyon»:** şüpheli enfeksiyon işaretli ya da Sepsis-3 alarmı (septik şok, sepsis, yeterli sıvıdan
+     önce hipoperfüzyon) olan her hasta — işaret sonradan «yok» yapılsa da alarmı listede kalır. Önce süresi işleyen ya
+     da aşan antibiyotik (en az kalan önde), sonra alarmı süren, sonra kalanlar. Antibiyotik hücresi Eczane'ninkinin
+     aynısıdır. Alarm türleri ölçüt diliyle yazılır: «Septik şok ölçütleri karşılandı», «Sepsis ölçütleri karşılandı»,
+     «Yeterli sıvıdan önce hipoperfüzyon» — tanı değil; «geçti · onaylanmadı», «onaylandı», «ertelendi · bitiş 10:15»
+     eklenir. Altında Eczane'nin iki satırı (“Kayıt yok” ne demek; 1 saatlik antibiyotik penceresi ve kaynağı).
+  6. **Bu sayfada yok:** cihaz günleri (santral kateter, üriner kateter, ventilatör), cihaz kullanım oranı, enfeksiyon
+     oranları, antibiyotik günü ve kültür sonuçları — hiçbirinin bu sistemde kaynak kaydı yok, hiçbiri hesaplanmadı.
+     Enfeksiyon tanımı ve olay sayımı bu sistemin işi değildir; sistem eşik ya da tanım üretmez. Tasarım prototipindeki
+     sayılar ve iki formül (kullanım oranı, 1000 cihaz gününde oran) taşınmadı.
+- **Her sayı ya gerçektir ya da neden yok olduğunu söyler.** Liste 30 saniyede bir okunur (Eczane gibi; sekme
+  görünmüyorsa okunmaz, görününce hemen okunur) ve yapı her okumada yeniden okunur. Son yanıt 90 saniyeden eskiyse kırmızı
+  «Enfeksiyon listesi güncel değil · son yanıt 09:31» çıkar: 0'dan büyük sayılar «son yanıt … itibarıyla» kalır, 0
+  olanlar ve «boş», «izolasyonsuz», «kayıt yok» diyecek her kutu «— liste güncel değil» olur; boş liste cümleleri
+  («Kapsamınızda izolasyonda kayıtlı hasta yok.») yalnız taze yanıtla yazılır. İlk okuma olmadıysa ya da yetki
+  reddedildiyse sayfada kart, tablo, kutu ve ad kalmaz.
+- **Hasta ekranında «İzolasyon» kutusu:** Sepsis kutusunun altında (dar ekranda Sepsis, İzolasyon, İlaç sırasıyla).
+  Durum satırı üç şeyden birini söyler: «İzolasyon: Temas · Damlacık», «Açık izolasyon kaydı yok: son kayıtta hiçbir tür
+  işaretli değil.» ya da «İzolasyon kaydı yok: bu hasta için bu sisteme hiç izolasyon kaydedilmedi.» — kayıt yoksa
+  «izolasyonda değil» denmez. Altında «Son kayıt: 08:10» (kimin kaydettiği «Denetim bütünlüğü»nde, dört `chart`
+  satırında). `clinical.chart` taşıyan dört türü işaretler ve **«İzolasyonu kaydet»**e basar: dört tür birlikte, saatsiz
+  (sunucunun anı) kaydedilir; denetim kaydına adıyla yazılır. Geri alınmaz — yeni kayıt üstüne yazar; izolasyonu
+  bitirmek için dört işaret kaldırılıp kaydedilir. Hiç kayıt yokken dört işaret boşsa düğme «İzolasyon yok olarak
+  kaydet» der. Pano canlı değilken kayıt yapılmaz («Pano güncel değil — kayıt için panonun yeniden bağlanmasını
+  bekleyin.») ve «yok» diyen cümle yazılmaz. İşaretlere dokunduktan sonra başka biri yeni bir kayıt yaptıysa
+  kaydetmeden önce kutu bunu söyler: «Yine de kaydet» ya da «Seçimden vazgeç». Yanlış hastaya işaretlenen bir izolasyon
+  «izolasyon yok» olarak düzeltilebilir, asla «kayıt yok»a geri dönmez.
+- **İzolasyonu yalnız bir kişi kaydeder:** iki kapı da cihazdan gelen bir izolasyon işaretini reddeder (400 «izolasyon
+  bir klinisyen kaydıdır; cihazdan alınmaz»): cihaz kapısı (`POST /ingest`) dört izolasyon kodunu, kayıt kapısı
+  (`POST /clinical` ve önizlemesi) köprünün cihaz kimliğiyle gönderilen bir izolasyon işaretini. İçinde izolasyon
+  işareti olan isteğin tamamı reddedilir; cihaz kimliğiyle girilen öteki klinik alanlar eskisi gibi kaydedilir.
+  Reddedilen istekten hiçbir şey yazılmaz: ne motora, ne denetim kaydına, ne ölçüm kaydına, ne eşleşmeyen listesine
+  gider. Monitör ya da HBYS izolasyon belirleyemez.
+- **Yönetim › Yapı'da oda izolasyon işareti:** var olan bir oda artık «İzolasyon odası yap» / «İzolasyon işaretini
+  kaldır» ile işaretlenir ya da işareti kaldırılır (`structure.manage`). Her değişiklik denetim kaydına
+  `structure.isolation` olarak yazılır («Denetim bütünlüğü»nde «Yapı: izolasyon odası değişti»). Bu dilimden önce
+  işaret yalnız oda kurulurken verilebiliyordu; yapısı işaretsiz kurulmuş bir hastanede yatak bölümü, odalar
+  işaretlenene kadar «Kapsamınızda izolasyon odası tanımlı değil.» der.
+- **Sunucuda:**
+  - dört yeni klinik alan: `isolation_contact`, `isolation_droplet`, `isolation_airborne`, `isolation_protective` (0 ya da
+    1; saat gönderilirse en çok 24 saat geri, ileri değil); hiçbir kural okumaz; «hatalı giriş» ile geri alınmaz ve ölçüm
+    kaydına yazılmaz; cihazdan gelirse iki kapıda da reddedilir;
+  - pano kartında `isolation` bloğu (dört tür, durum sözcüğü, son kaydın saati; kişi yok);
+  - yeni `GET /infection` (`infection.view`): kapsamdaki kartlardan iki liste, yataktaki hastalar ve sayılar; denetim
+    kaydına yazılmaz;
+  - göç `0023`: beş grubun `infection.view` satırı; tablo yok. Önceki imaj bu göçle açılmaz: geri dönüşte önce bu
+    sürümün imajıyla `alembic downgrade` sunucunun sürümden önceki başına (birleşik bir çıkışta o başa), sonra eski
+    imaj.
+- **Kurulum notu:** api ve web birlikte çıkar, `alembic upgrade head` ile (0023 yalnız satır yazar). Web api'den önce
+  çıkmaz: eski api yeni kodları «bilinmeyen klinik alan» diye reddeder ve `/infection`'ı tanımaz. Yetkiler oturum
+  açılışında alınır: dağıtımdan önce açılmış bir oturum sayfayı token yenilenince görür.
+- **Bu dilimde olmayanlar:** cihaz günleri, cihaz kullanım oranı, enfeksiyon oranları, antibiyotik günü, kültürler ve
+  formülleri; izolasyon önerisi, eşik ya da kültür veya tanı ile izolasyon türü arasında bağ; yatak kartlarında, alarm
+  satırlarında ya da Doluluk'ta izolasyon etiketi; izolasyon nedeni ya da serbest metin; izolasyon geçmişi ekranı;
+  izolasyonun yatak atamasında ya da nakilde kullanılması; bildirim; yazdırma ya da dışa aktarma.
+- **Açık:** Azerbaycanca, Rusça ve İngilizce metinler yerel okuma bekliyor.
+- **Kaynak:** `docs/superpowers/specs/2026-11-12-g4-enfeksiyon-design.md` (§5 değişiklikleriyle); plan
+  `docs/superpowers/plans/2026-11-12-g4-enfeksiyon.md`.
 
 ---
 
