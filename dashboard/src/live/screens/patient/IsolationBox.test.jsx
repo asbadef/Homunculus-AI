@@ -279,26 +279,33 @@ describe("the keyboard and the screen reader through a held save", () => {
   });
 });
 
-// Review M2: the box is the patient's. Away and back during a save, the first save's answer neither ends the second's
-// busy state nor wipes the draft made since.
+// Review M2 and its re-review: the box is the patient's, and so is a save in flight. Away and back during a save, the
+// new box is busy until that save lands — a second four-flag write for the same patient never races the first (the
+// server could commit them out of order, and the older choice would win) — and then it saves as any box does.
 describe("a save in flight across a move away and back", () => {
-  it("leaves the second save busy and its draft in place when the first one lands", async () => {
+  it("holds a second save for the patient come back to until the first lands, then allows it", async () => {
     const lands = [];
     const chart = vi.fn(() => new Promise((resolve) => { lands.push(resolve); }));
+    const saveButton = () => within(box()).getByRole("button", { name: SAVE });
     await open({ chart });
     fireEvent.click(boxes()[3]);
     await press(SAVE);                                                // the first save, out
     act(() => { Host.set({ patientId: "S-002", isolation: NOT_ISOLATED, known: true, canChart: true }); });
+    expect(saveButton().getAttribute("aria-busy")).toBeNull();         // another patient: nothing of hers is out
     act(() => { Host.set({ patientId: "S-001", isolation: ISOLATED, known: true, canChart: true }); });
     expect(ticked()).toEqual([true, true, false, false]);             // a new box: the card, no draft
-    fireEvent.click(boxes()[2]);
-    await press(SAVE);                                                // the second save, out
-    expect(chart).toHaveBeenCalledTimes(2);
+    expect(saveButton().getAttribute("aria-busy")).toBe("true");       // … and her save still out
+    await press(SAVE);
+    expect(chart).toHaveBeenCalledTimes(1);
     await act(async () => { lands[0]({ charted: 4 }); await settle(); });
-    expect(within(box()).getByRole("button", { name: SAVE }).getAttribute("aria-busy")).toBe("true");
+    expect(saveButton().getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(boxes()[2]);
+    await press(SAVE);                                                // now the second save goes
+    expect(chart).toHaveBeenCalledTimes(2);
+    expect(saveButton().getAttribute("aria-busy")).toBe("true");
     expect(ticked()).toEqual([true, true, true, false]);
     await act(async () => { lands[1]({ charted: 4 }); await settle(); });
-    expect(within(box()).getByRole("button", { name: SAVE }).getAttribute("aria-busy")).toBeNull();
+    expect(saveButton().getAttribute("aria-busy")).toBeNull();
   });
 });
 

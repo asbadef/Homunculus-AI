@@ -24,7 +24,7 @@
 // the four rows — the box says so and has the board read again (`onRefresh`). The draft stays on every failure; a
 // success re-seeds it — in the patient's own box (keyed, review M2). The save button names what it saves: the patient screen has
 // other «Kaydet» buttons (plan note N8 b).
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
 import { apiErrorText } from "../../apiErrors.js";
@@ -49,12 +49,26 @@ const cardKey = (isolation) => JSON.stringify([isolation?.charted_at ?? null, is
  *  Keyed by the patient (review M2), as the screen keys PatientAdmission: the shell keeps the patient screen mounted
  *  across a move to another patient, and the draft, the busy state and a save's answer are the patient's, not the
  *  box's. A move starts a new box — no draft of the last patient is painted, even for one frame — and a save still out
- *  for a patient left and come back to lands in the box it left from, never on a newer save's busy state or draft. */
+ *  for a patient left and come back to lands in the box it left from, never on a newer box's draft.
+ *
+ *  The saves out are held here, above the keyed box, for as long as the patient screen stays open (its re-review): a
+ *  box made again for a patient come back to is busy until that patient's save lands, so a second four-flag write never
+ *  races the first — the server could commit the two out of order, and the older choice would win. */
 export function IsolationBox(props) {
-  return <PatientIsolationBox key={props.patientId} {...props} />;
+  const [out, setOut] = useState(() => new Set());   // the patients whose isolation save is out
+  const markOut = useCallback((patientId, on) => {
+    setOut((prev) => {
+      if (prev.has(patientId) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(patientId);
+      else next.delete(patientId);
+      return next;
+    });
+  }, []);
+  return <PatientIsolationBox key={props.patientId} {...props} out={out.has(props.patientId)} markOut={markOut} />;
 }
 
-function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, onRefresh }) {
+function PatientIsolationBox({ patientId, isolation, bed, canChart, known, nowMs, onChart, onRefresh, out, markOut }) {
   const { t } = useI18n();
   const toast = useToast();
   const chartedAt = isolation?.charted_at ?? null;
@@ -62,8 +76,8 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
   const [draft, setDraft] = useState(null);           // null: untouched — the boxes follow the card
   const [seededFrom, setSeededFrom] = useState(null); // the card the draft was seeded from, as `cardKey` (§5 A1)
   const [held, setHeld] = useState(false);            // the save was pressed over a newer record (§5 A1)
-  const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
+  const busy = out;                                   // this patient's save is out — from this box or the one before it
+  const sending = useRef(false);                      // … and at once, before the render that says so
   // Review I1: a held save, «Yine de kaydet» and «Seçimden vazgeç» each swap the buttons under the keyboard; the focus
   // goes where the next step is (`focusTo`, read once the new buttons are in place), never to <body>.
   const saveRef = useRef(null);
@@ -97,9 +111,9 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
     setHeld(false);
   }
   async function send(chosen) {
-    if (sending.current) return;
+    if (sending.current || out) return;
     sending.current = true;
-    setBusy(true);
+    markOut(patientId, true);
     setHeld(false);
     const subject = bed;
     let say = null;
@@ -121,8 +135,8 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
         say = [t("patient.isolation.refused", { subject, reason: apiErrorText(t, err) }), "error"];
       }
     } finally {
-      sending.current = false;                           // this patient's box: a box left behind is unmounted
-      setBusy(false);
+      sending.current = false;
+      markOut(patientId, false);                         // the patient's, whichever box of hers is shown now
       if (say) toast(...say);
     }
   }
