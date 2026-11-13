@@ -88,7 +88,7 @@ describe("TresPractitioners", () => {
     fireEvent.change(screen.getByLabelText("Ad · Sentetik Hekim"), { target: { value: "Elçin Rəşad" } });
     await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
     expect(api.saveTresPractitioner).toHaveBeenLastCalledWith(DOCTOR, { family_name: "Sentetikov", given_name: "Elçin Rəşad" });
-    expect(shown("Sentetik Hekim: identifikasiya yadda saxlanıldı.")).toHaveLength(1);
+    expect(shown("Sentetik Hekim: şəxsiyyət məlumatları yadda saxlanıldı.")).toHaveLength(1);
     await click(screen.getByRole("checkbox", { name: "Qeyd olunmuş FİN-i sil" }));
     await click(screen.getByRole("button", { name: "Yadda saxla · Sentetik Hekim" }));
     expect(api.saveTresPractitioner).toHaveBeenLastCalledWith(DOCTOR, { family_name: "Sentetikov", given_name: "Elçin", fin: "" });

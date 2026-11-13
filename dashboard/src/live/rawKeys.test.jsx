@@ -679,7 +679,7 @@ describe("no screen shows a reader a translation key", () => {
     // TRƏS-01 F1: the ledger's rows were drawn, with the two reasons of the review rounds (amendments 23, 26) — and the
     // sweep's lists are the whole vocabulary of tresWords.js, so a status or reason added there is swept here.
     expect(screen.getByText("Evə yazılma vaxtı daxil edilməyib")).toBeInTheDocument();             // tres.reason.dischargeMissing
-    expect(screen.getByText("Xəstə qeydi platformada yoxdur: yatış qeydi onunla birlikdə ötürüldü")).toBeInTheDocument();   // tres.reason.patientUnheld
+    expect(screen.getByText("Xəstə qeydi platformada yoxdur: yatış qeydi də göndərilmədi")).toBeInTheDocument();   // tres.reason.patientUnheld
     expect([...TRES_STATUS_SWEEP].sort()).toEqual(STATUSES.map(([status]) => status).sort());
     expect([...TRES_REASON_SWEEP].sort()).toEqual([...REASONS.keys()].sort());
     expect(rawKeys(document.body)).toEqual([]);

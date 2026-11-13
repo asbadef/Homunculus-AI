@@ -320,7 +320,7 @@ describe("TresTab — phase F1", () => {
       a.tresDepartments.mockResolvedValue([]);
       a.tresPractitioners.mockResolvedValue([]);
     });
-    for (const title of ["Göndərişlər", "Şöbə uyğunlaşdırması", "Həkim identifikasiyaları"]) {
+    for (const title of ["Göndərişlər", "Şöbə uyğunlaşdırması", "Həkimlərin şəxsiyyət məlumatları"]) {
       expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     }
     expect(screen.getByText("Bu mühitdə hələ göndəriş qeydi yoxdur.")).toBeInTheDocument();
