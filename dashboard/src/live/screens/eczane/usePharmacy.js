@@ -18,7 +18,7 @@
 // this browser's clock. The screen corrects its clock with it when the board has no skew (pharmacyModel
 // `clockSkewOf`), so a workstation whose clock is wrong neither reads a dead list as fresh nor a live one as stale.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { msOf } from "./pharmacyModel.js";
+import { skewAtReceipt } from "../common/skewAtReceipt.js";   // G4-05 (spec §5 M9): moved there, unchanged
 
 export const PHARMACY_TICK_MS = 30_000;
 
@@ -26,23 +26,6 @@ const hidden = () => typeof document !== "undefined" && document.visibilityState
 const malformed = () => Object.assign(new Error(""), { malformed: true });
 /** The caller is no longer allowed to see the list (as `apiErrors.js` reads a refusal: by its status). */
 const refused = (error) => error?.status === 401 || error?.status === 403;
-
-/** backendApi's own floor for a measured skew: under it the honest answer is 0. */
-const SKEW_NOISE_MS = 2_000;
-
-/** Server minus browser, in ms, at the moment `answer` landed; null when neither the client nor the answer says.
- *  The answer's own `now` is read the way the client reads the `Date` header (backendApi `noteServerDate`): the
- *  route stamped it before the answer travelled, so a right clock measures minus the latency — under the noise
- *  floor that is 0, and above it the figure is rounded to the second. Injected raw, the jitter would move the
- *  instant every duration is counted against on every answer, and a minute would flicker at its boundary. */
-function skewAtReceipt(api, answer) {
-  const measured = typeof api?.serverClockSkewMs === "function" ? api.serverClockSkewMs() : null;
-  if (Number.isFinite(measured)) return measured;
-  const at = msOf(answer.now);
-  if (at === null) return null;
-  const raw = at - Date.now();
-  return Math.abs(raw) < SKEW_NOISE_MS ? 0 : Math.round(raw / 1000) * 1000;
-}
 
 export function usePharmacy(store, { everyMs = PHARMACY_TICK_MS } = {}) {
   const [state, setState] = useState({ data: null, error: null, skewMs: null });

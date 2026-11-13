@@ -2010,6 +2010,25 @@ describe("G3-04 Eczane call", () => {
   });
 });
 
+// G4-05 — Enfeksiyon kontrol: the infection-control page, built by the engine (homunculus/api/infection.py)
+describe("G4-05 Enfeksiyon kontrol call", () => {
+  it("reads the ward's infection-control list with an authed GET /infection, with nothing on the address", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const answer = { now: "2026-11-12T09:30:00+00:00", counts: { patients: 0 }, units: [], isolated: [], suspected: [],
+      bed_occupants: [], scope: { unrestricted: true }, scope_note: null };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    expect(await api.infection()).toEqual(answer);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/infection");
+    expect(init.method || "GET").toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+});
+
 // G3-05 — Cihaz ölçüm kaydı: the patient's measurement record and the unmatched list (homunculus/api/readings.py)
 describe("G3-05 Cihaz ölçüm kaydı calls", () => {
   it("reads a patient's record for a window, the unmatched list, and sends a link and a rejection", async () => {

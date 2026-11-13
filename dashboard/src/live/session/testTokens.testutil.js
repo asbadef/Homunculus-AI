@@ -90,6 +90,9 @@ export function fakeApi(vi, { access = null } = {}) {
     // G3-04: Eczane — the pharmacist's ward page (screens/eczane)
     pharmacy: vi.fn(),
 
+    // G4-05: Enfeksiyon kontrol — the infection-control page (screens/enfeksiyon)
+    infection: vi.fn(),
+
     // G2-B1a: Hasta Kabul — the admission screen, the sign-off strip, the unit names, Yapı
     structure: vi.fn(),
     admissions: vi.fn(),

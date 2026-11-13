@@ -1013,6 +1013,17 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     },
 
     /**
+     * G4-05 «Enfeksiyon kontrol» (GET /infection, `infection.view`): one row per patient of the caller's scoped board
+     * who is in isolation, or has suspected infection or a Sepsis-3 alarm — with Eczane's antibiotic state — who lies on
+     * each bed, and the counts, whole and per unit (api/infection.py): {now, antibiotic_window_min,
+     * antibiotic_window_source, counts, units, isolated, suspected, bed_occupants, scope, scope_note}. No parameter:
+     * nothing goes on the address. The isolation beds are drawn from GET /tenant/structure, not from this answer.
+     */
+    infection() {
+      return authed("/infection");
+    },
+
+    /**
      * The patient's own normal, written as the caller built it (PUT /clinical/{id}/profile).
      *
      * Not `setProfile` above: that always sends `comorbidities` and `baselines` (an empty list

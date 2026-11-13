@@ -131,6 +131,7 @@ export default defineConfig({
       "/pharmacy",          // G3-04: Eczane — the pharmacist's ward page
       "/readings",          // G3-05: «Eşleşmeyen ölçümler» — the unmatched list, the link, the rejection
       "/quality",           // G4-03: Kalite göstergeleri — GET /quality
+      "/infection",         // G4-05: Enfeksiyon kontrol — GET /infection
     ].map((path) => [path, "http://localhost:8000"])),
   },
   test: {
