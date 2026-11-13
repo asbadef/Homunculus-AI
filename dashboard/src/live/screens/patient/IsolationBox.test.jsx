@@ -267,3 +267,25 @@ describe("a save in flight across a move away and back", () => {
     expect(within(box()).getByRole("button", { name: SAVE }).getAttribute("aria-busy")).toBeNull();
   });
 });
+
+// Review M3: while a save is out, its draft is what was sent — no tick is taken, and «Seçimdən imtina et» discards
+// nothing — so a failure keeps exactly the draft it promises to keep.
+describe("the draft while a save is out", () => {
+  it("holds the boxes and «Seçimdən imtina et» until the answer, and keeps the sent draft on a failure", async () => {
+    let fail;
+    const chart = vi.fn(() => new Promise((resolve, reject) => { fail = reject; }));
+    await open({ chart });
+    fireEvent.click(boxes()[3]);
+    await press(SAVE);
+    expect(boxes().map((input) => input.disabled)).toEqual([true, true, true, true]);
+    const discard = within(box()).getByRole("button", { name: "Seçimdən imtina et" });
+    expect(discard.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(boxes()[0]);
+    await press("Seçimdən imtina et");
+    expect(ticked()).toEqual([true, true, false, true]);
+    await act(async () => { fail(refusal(400, "isolation_contact: yalnız 0 veya 1 olabilir")); await settle(); });
+    expect(ticked()).toEqual([true, true, false, true]);
+    expect(boxes().map((input) => input.disabled)).toEqual([false, false, false, false]);
+    expect(within(box()).getByRole("button", { name: "Seçimdən imtina et" }).getAttribute("aria-disabled")).toBeNull();
+  });
+});

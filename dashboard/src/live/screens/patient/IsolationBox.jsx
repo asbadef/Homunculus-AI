@@ -15,7 +15,8 @@
 // `charted_at` of that moment; if the card carries a newer record when the save is pressed, nothing is sent: the box says
 // a new record came and offers «Yine de kaydet» or «Seçimden vazgeç» (which re-seeds from the card).
 //
-// THE ANSWERS (§5 M2, the fluid dialog's rules): busy while in flight, one at a time, never `disabled`; a write the store
+// THE ANSWERS (§5 M2, the fluid dialog's rules): busy while in flight, one at a time, the button never `disabled` — the
+// boxes and «Seçimden vazgeç» are held meanwhile, so the draft out is the draft kept (review M3); a write the store
 // dropped (`null`: the session changed) or a superseded one says nothing; a discharged number is a warn; a refusal names
 // the bed (never the patient's name, Decision 14) and the reason; no answer (`mayHaveLanded`) may have written some of
 // the four rows — the box says so and has the board read again (`onRefresh`). The draft stays on every failure; a
@@ -73,12 +74,16 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
   const typesText = (types) => (Array.isArray(types) ? types : [])
     .map((type) => (TYPES.includes(type) ? t(`enfeksiyon.type.${type}`) : String(type))).join(" · ");
 
+  // Review M3: while a save is out its draft is what was sent — the boxes take no tick and «Seçimden vazgeç» discards
+  // nothing — so a failure keeps exactly the draft it says it keeps.
   function touch(type) {
+    if (busy) return;
     if (draft === null) setSeededAt(chartedAt);
     setDraft({ ...boxes, [type]: !boxes[type] });
     setHeld(false);
   }
   function discard() {
+    if (busy) return;
     focusTo.current = "save";
     setDraft(null);
     setHeld(false);
@@ -154,7 +159,7 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {TYPES.map((type) => (
                 <label key={type} className="inline-flex items-center gap-1.5 text-13">
-                  <input type="checkbox" checked={boxes[type]} onChange={() => touch(type)} />
+                  <input type="checkbox" checked={boxes[type]} disabled={busy} onChange={() => touch(type)} />
                   {t(`enfeksiyon.type.${type}`)}
                 </label>
               ))}
@@ -174,7 +179,11 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
           ) : (
             <div className="mt-1.5 flex flex-wrap gap-2">
               <Button ref={saveRef} size="sm" busy={busy} onClick={press}>{t(recordNone ? "patient.isolation.saveNone" : "patient.isolation.save")}</Button>
-              {draft !== null ? <Button size="sm" variant="ghost" onClick={discard}>{t("patient.isolation.discard")}</Button> : null}
+              {draft !== null ? (
+                <Button size="sm" variant="ghost" aria-disabled={busy ? "true" : undefined} onClick={discard}>
+                  {t("patient.isolation.discard")}
+                </Button>
+              ) : null}
             </div>
           )}
           {/* A busy Button reads only "unavailable" to a screen reader; the words come from here — and a held save's
