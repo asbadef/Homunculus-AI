@@ -1421,9 +1421,11 @@ def create_app(
         engine.adopt(scratch, patient_id)
         engine.rejudge(patient_id, now)
         cleared = sync_alerts(engine, store, patient_id, now)
-        # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended stood on a value that was never
-        # real, so its escalation chain is not remembered — a real alert of the kind within `escalate_after` gets
-        # its own clock and its own page to the doctor. A restart forgets every chain anyway (rehydrate).
+        # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended is not remembered as a chain — a
+        # real alert of the kind within `escalate_after` gets its own clock and its own page to the doctor. Most
+        # stood on a value that was never real; since G3-06 (D3) the rejudge can also end one by the clock alone
+        # (an `antibiotic_due` whose hour ran out, now `antibiotic_overdue`; a hold past its bound), and its chain
+        # is not remembered either. A restart forgets every chain anyway (rehydrate).
         for item in cleared:
             store.recent.pop((item.patient_id, item.kind), None)
         _audit_cleared(hospital, cleared, now)

@@ -73,7 +73,8 @@ class Engine:
         # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
         self._held_news2_alert: dict[str, Alert] = {}
         # G3-06 (D1; NEWS2's since G2-A2 X9e): patient -> the latest instant the rules judged the patient
-        # at. It never goes back, and every rule of an evaluation judges at it (`_evaluate`).
+        # at. No evaluation moves it back (`adopt` replaces it with a rebuilt patient's), and every rule
+        # of an evaluation judges at it (`_evaluate`).
         self._judged_at: dict[str, datetime] = {}
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
@@ -319,9 +320,10 @@ class Engine:
         most ANCHOR_RESTORE_S before `at`, restored — a corrected toggle, the old episode's anchor,
         and the bounds below do not apply — or else a new episode's. `at` is the recognising
         evaluation's floored instant and the drop is remembered at its own, so the difference is
-        measured in the engine's one-way time; within one engine the floor never goes back, and
-        `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so it is
-        never negative — the `0 <=` is a guard. A new episode's anchor is `anchor_at` (the
+        measured in the engine's one-way time. No evaluation moves the floor back; `adopt` can set
+        a lower one (the rebuilt patient's, which the withdrawal's rejudge lifts at once), but
+        `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the
+        difference is never negative — the `0 <=` is a guard. A new episode's anchor is `anchor_at` (the
         requested instant, or the link's measurement) lifted to the start of the suspicion that
         makes the recognition possible, `infection_at`, and to the rule-out it follows (the drop's
         instant, when one is remembered), and held to `at`: it never goes back before either
