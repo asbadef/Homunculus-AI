@@ -2765,6 +2765,10 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
 
 ## Deploy notes for Lane A (spec §9 — what the blocks must say; Lane A writes them, the owner's «onay» runs them)
 
+> **As built (2026-11-13):** the spec's §12 «Deploy notes for the controller lane» supersede this list where they
+> differ — block A-1's first number is there the patients with an `antibiotic_overdue` episode that ended and was
+> raised again.
+
 - **Images: api only.** No migration, no web change, no bridge change. `alembic heads` is unchanged by this slice.
 - **Block A-1 (before the deploy) prints two numbers and never a patient id.** In a pasted heredoc the `psql` call takes `</dev/null`:
   - an upper bound on the patients whose antibiotic picture the first restart can move (spec §7, items 3–4):
@@ -2784,12 +2788,25 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
 
 ## As run (filled by the controller in Tasks G1, G2 and D1)
 
-- Head: … · date: …
-- G1 Step 1 (engine, no database): … / … / …
-- G1 Step 2 (Postgres): …
-- G1 Step 3 (Python 3.14): …
-- G1 Step 4 (no dashboard, deploy or alembic change): …
-- G2 (the walk): … — notes at `/c/tmp/homunculus-plans/g3-saat/walk/notes.md`
+- Head: `786ff4e1` (code; Tasks 1–6, the owner's anchor refinement `18261d11`, review commits `e1471b87`,
+  `786ff4e1`) · date: 2026-11-13. The chunks ran about 1.8× slower than on the scratch copy (the first took 445 s), so
+  the second and third were each run as two calls to stay under 600 s; the file sets are the plan's.
+- G1 Step 1 (engine, no database): `test_[a-d]*` `1369 passed, 827 skipped` · `test_[e-l]*` without vm_pilot
+  `431 passed, 85 skipped` (`[e-h]`) + `1316 passed, 30 skipped` (`[i-l]`) = 1747 / 115 · `test_[m-z]*` + `rules`,
+  `scoring`, `tenant` `737 passed, 242 skipped` (`[m-r]`) + `667 passed, 345 skipped, 1 xfailed` = 1404 / 587 / 1.
+  **Total 4520 passed, 1529 skipped, 1 xfailed** — six more than expected above: the owner's refinement added five
+  tests to `test_engine_floor.py` (`18261d11`), the review one (`e1471b87`); 26 there instead of 20.
+- G1 Step 2 (Postgres, `saat-pg`): `test_saat_replay.py test_rehydrate.py test_audit_postgres.py test_audit_since.py
+  test_bedside_trail_stores.py` `81 passed`; `test_tasks_postgres.py` `10 passed`; `test_readings_postgres.py`
+  `56 passed in 133.17s` — **147 passed, none skipped**. `alembic heads`: `0021 (head)`, one head. `saat-pg`
+  stopped.
+- G1 Step 3 (Python 3.14): `246 passed, 1 skipped, 1 xfailed` (240 + the six above).
+- G1 Step 4 (no dashboard, deploy or alembic change): `git diff --stat 88f6544c HEAD -- dashboard deploy
+  homunculus-engine/alembic` prints nothing.
+- G2 (the walk): 2026-11-13, images from `786ff4e1`, compose project `g3saat`, tenant `saat-yuruyus`, API-driven —
+  all five items PASS, no finding; item 5 (restart) shows E-6 exactly as accepted (A's overdue unacknowledged,
+  `first_seen_at` null, and a second notification at the next reading) — notes at
+  `/c/tmp/homunculus-plans/g3-saat/walk/notes.md`
 
 ---
 

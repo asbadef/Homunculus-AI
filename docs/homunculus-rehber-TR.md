@@ -1739,6 +1739,8 @@ uydurmadır.
   - denetim kaydına bir `chart_retract` satırı düşer;
   - hastanın motor durumu denetim kaydından, o değer **hiç girilmemiş gibi** yeniden kurulur
     (NEWS2, canlı SOFA, sepsis, antibiyotik saati, alarmlar); yeniden başlatmada da geri gelmez.
+    G3-06'dan beri uyarılar geri alma anında değerlendirilir: son ölçümden beri süresi dolan bir
+    antibiyotik saati «gecikti» olur ve yeni bir uyarı gibi hemşireye bildirilir (3.28).
     İmzalanmış bir SOFA formu yeniden hesaplanmaz: o değerle imzalanmışsa imza olduğu gibi durur,
     gerekirse form yeniden imzalanır. Yanlış değerin tetiklediği bildirim ya da hekim çağrısı da
     geri çağrılmaz;
@@ -2815,7 +2817,8 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     saatiyle** ve kaynağı **cihaz** olarak (grafikte de o saatte görünür, vital ölçüm görevini o saatten sayar).
     Skorlar ve uyarılar onu bağlandığı an, geç gelmiş bir değer olarak değerlendirir: 3.12'deki tazelik kuralıyla
     eski bir değer NEWS2'ye girmez, ve hiçbir saat (antibiyotik süresi, bir alarmın başlangıcı) onun için geriye
-    işlemez.
+    işlemez. G3-06'dan beri bağlanan set sepsis kriterlerini tamamlarsa antibiyotik saati **ölçüm saatinden**
+    işler (şüphenin başlangıcından önce değil): saat çoktan dolmuşsa «gecikti» hemen görünür (3.28).
   - **24 saatten eski** bir ölçüm bağlanamaz, yalnız reddedilir (liste «24 saatten eski: bağlanamaz, yalnız
     reddedilir.» der). Taburcu edilmiş bir hastaya da bağlanamaz: kapanmış bir yatışa bağlama bu dilimde yok.
   - **Yatıştan önce ölçülen set.** Protokol numaraları sırayla verilir; yanlış girilen numara çoğu zaman bir
@@ -2862,10 +2865,9 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
   kaydından tamamlar. Kurulum günü, yatan hastaların eski ölçümleri isteğe bağlı bir betikle kayda doldurulabilir
   (`scripts/backfill_vital_readings.py --open-only`).
 - **Açık:**
-  - Geç gelen bir ölçüm — cihazın beklettiği bir tur ya da «Düzelt»in ölçüm saatine yazdığı doğru değer — kendi ölçüm
-    saatinde değerlendirilir; bu, açık bir «antibiyotik gecikti» uyarısını «antibiyotik zamanı» uyarısına
-    çevirebilir. Bu dilimden önce de böyleydi (geriye tarihli her elle girişte de); düzeltmesi sahibin kararını
-    bekliyor. Listeden bağlanan ölçümde bu olmaz (yukarıda).
+  - **Kapandı (G3-06, 3.28):** geç gelen bir ölçüm — cihazın beklettiği bir tur ya da «Düzelt»in ölçüm saatine
+    yazdığı doğru değer — artık hastanın en son değerlendirildiği andan geriye değerlendirilmez; açık bir
+    «antibiyotik gecikti» uyarısı «antibiyotik zamanı»na dönmez.
   - Bir ventilatör köprüsü (MEDIBUS) gerçek motora sürekli veri göndermeye başlarsa, «her NEWS2 girdisi sayılır»
     kuralı yüzünden o hastanın vital ölçüm görevi hiç vadeye gelmez; köprü canlıya alınmadan önce karar gerekir.
   - Nakil olmuş bir hastanın nakilden önceki ölçümleri saatlik tamamlamayla ya da kurulum betiğiyle kayda yazılırsa
@@ -2875,6 +2877,85 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     oturumudur (B1d O1–O6).
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g3-cihaz-olcum-kaydi-design.md` (§11 «As built»); plan
   `docs/superpowers/plans/2026-11-11-g3-cihaz-olcum-kaydi.md`.
+
+### 3.28 Saat geri gitmez: geç gelen bir ölçüm saati geri çevirmez (Grup 3 · G3-06)
+
+- **Ne:** Bir ölçüm motora ölçüldüğünden saatler sonra ulaşabilir: cihazın bekletip geç gönderdiği bir tur, yatak
+  başında kendi saatine girilen bir set, «Düzelt»in ölçüm saatine yazdığı doğru değer, «Eşleşmeyen ölçümler»den
+  bağlanan bir set. Bu dilimden önce böyle bir değer **kendi ölçüm saatinde** değerlendiriliyordu: dört saat önceki
+  bir değer, süresi çoktan dolmuş bir antibiyotik saatini «gecikti»den «kalan süre»ye çevirebiliyor, onaylanmış bir
+  «gecikti» uyarısını kapatıp bir sonraki ölçümde **yeni** bir uyarı (yeni bildirim, yeni yükseltme) olarak geri
+  getirebiliyordu. Artık motor bir hastayı, o hastayı en son değerlendirdiği andan **geriye** değerlendirmez.
+  **Durum:** kodda (`feat/g3-saat-geri-gitmez`); main'de ve hastane sunucusunda değil — ikisi de sahibin sözüyle.
+  Göç yoktur. Örneklerdeki değerler uydurmadır.
+- **Sözcükler.**
+  - *Değerlendirme anı:* motorun kurallarını (NEWS2, sepsis, septik şok, 3 saatlik sıvı penceresi, antibiyotik saati,
+    model) çalıştırdığı an. Geç gelen değer bu anda değerlendirilir; **değerin kendi saati değişmez**: grafikte,
+    «Ölçüm kaydı»nda ve denetim kaydında ölçüldüğü saatte durur, tazeliği de o saatten sayılır.
+  - *Taban:* hastanın en son değerlendirildiği an; hiç geri gitmez. NEWS2 için G2-A2'den beri böyleydi; artık her
+    kural için böyledir.
+  - *Şüphenin başlangıcı:* şüpheli enfeksiyonun, en son «yok» işaretinden sonra ilk kez «var» işaretlendiği ölçüm
+    saati (hiç «yok» işareti yoksa ilk «var» işareti). «Var»ın yeniden işaretlenmesi onu ileri taşımaz.
+- **Ne değişir.**
+  - **«Gecikti» geri dönmez.** Geç gelen bir tur ya da geriye tarihli bir giriş antibiyotik saatini geri çevirmez.
+    Açık ve onaylanmış bir «gecikti» uyarısı onayıyla ve ilk görülme saatiyle aynı uyarı olarak kalır; yeni bildirim
+    gitmez.
+  - **Geç gelen değer sepsis kriterlerinin saatler önce karşılandığını gösterirse «gecikti» hemen görünür.**
+    Antibiyotik saati, kriterleri tamamlayan ölçümün saatinden işler (sahibin kararı: «ölçüm saatinden»), ama
+    **şüphenin başlangıcından ve son «enfeksiyon yok» işaretinden önce asla** (sahibin kararı: «Şüpheden önceye
+    gitmesin»). Örnek: şüpheli enfeksiyon 7 saat önce işaretlenmiş bir hastada 6 saat önce ölçülmüş bir değer sepsis
+    kriterlerini tamamlarsa saat 6 saat önceden başlar ve «gecikti» hemen çıkar; şüphe 30 dakika önce işaretlenmişse
+    saat 30 dakika önceden başlar (ekranda «Antibiotic window: 30 min remaining»). «Sıfır anı»nın nasıl tanımlanacağı bilgi tabanında açık bir
+    sorudur; bu bir işletme kuralıdır, klinik bir iddia değildir.
+  - **«Hatalı giriş» ve «Düzelt»ten sonra kurallar hastayı o anda yeniden değerlendirir.** Hasta yine geri alınan
+    değer hiç girilmemiş gibi kurulur (3.12); ama uyarılar artık kalan son ölçümün saatine göre değil, geri alma
+    anına göre okunur. Son ölçümden beri süresi dolan bir antibiyotik saati «gecikti» olur; bu, geri almanın ortaya
+    çıkardığı yeni bir uyarı gibi işaretlenir ve hemşireye bildirilir.
+  - **Listeden bağlanan set bağlandığı an değerlendirilir, saati ölçümden işler** (sahibin kararı: «Bağlama anında
+    değerlendir, saat ölçümden»). NEWS2 seti bağlandığı anda sayar: saatler önceki bir set NEWS2'ye eski değer olarak
+    girmez (3.27). Ama set sepsis kriterlerini tamamlarsa antibiyotik saati ölçümden başlar (yine şüphenin
+    başlangıcından ve son «yok» işaretinden önce değil).
+  - **Yeniden başlatma aynı resmi verir.** Denetim kaydı yeniden oynatılırken her satır canlıdaki anlarla
+    değerlendirilir, her «hatalı giriş» satırında hasta o satırın saatinde yeniden değerlendirilir, ve oynatma hiçbir
+    hastayı sunucu saatinin 2 dakika ötesinde değerlendirmez: saati ileri gitmiş bir sunucunun ya da saati okunamayan
+    bir satırın hastanın tabanını geleceğe taşıması böylece önlenir.
+- **Ne değişmez.** Kurallar, eşikler ve pencereler (1 saatlik antibiyotik, 3 saatlik sıvı, 15 dakikalık işaret
+  düzeltme penceresi, 24 saatlik geriye tarih sınırı) aynıdır. Kayıt kapıları aynı değerleri aynı saatlerle kaydeder.
+  Yeni ekran, yetki, rol ya da göç yoktur. Gölge motor (Aşama B) da aynı anları alır.
+- **Sınırlar.**
+  - Yeni bir ölçüm gelmeden motorda zaman ilerlemez: bir «antibiyotik zamanı» uyarısı, süresi dolunca kendiliğinden
+    «gecikti» olmaz; hastanın bir sonraki ölçümünde ya da bir geri almada olur. Uyarının özetindeki dakika da hastanın
+    en son değerlendirildiği ana göre sayılır (yürüyüşte geç gelen turdan sonra özet «OVERDUE by 25 min» derken duvar
+    saatine göre gecikme 30 dakikaydı). Panodaki ve «Eczane»deki geri sayım ise duvar saatiyle işler (bu dilimden önce de
+    böyleydi).
+  - Bu bölümdeki «gecikti» ve «kalan süre», iki uyarının (`antibiotic_overdue`, `antibiotic_due`) adıdır; ekranlar
+    motorun İngilizce özetini gösterir («Antibiotic OVERDUE by 25 min», «Antibiotic window: 30 min remaining»).
+  - Geç gelen bir değer, ancak kendi kodunun en yeni ölçümüyse SOFA'ya girer; daha eskisi yalnız bir değerlendirmeyi
+    tetikler.
+  - **15 dakikalık işaret düzeltme penceresi hastanın değerlendirildiği anlarla sayılır, duvar saatiyle değil.**
+    «Enfeksiyon yok» işaretinden sonra «var» 15 dakika içinde yeniden işaretlenirse bu bir düzeltmedir ve eski
+    antibiyotik saati geri gelir. Arada hastaya ölçüm gelmediyse geç bir düzeltme de eski saati geri getirir; arada
+    gelen ölçümler 15 dakikayı geçirdiyse «var», saati «yok»un hemen sonrasına geri alınmış olsa bile yeni bir şüphe
+    ve yeni bir saattir (en erken «yok»un işlendiği andan başlar).
+  - **Açık (sahibin kararı):** yanlışlıkla girilen bir «enfeksiyon yok» işareti 15 dakikadan geç düzeltilirse
+    başlayan yeni saatin bugün geri dönüşü yoktur: şüphe işareti «hatalı giriş» ile geri alınamaz (sunucu reddeder,
+    3.12). Şüphe işaretine «hatalı giriş» açmak ayrı bir karardır.
+  - **Kabul edilen fark (sahip; planın E-6'sı):** «gecikti»yi bulan ölçüm, uyarı onaylandıktan sonra geri alınırsa
+    canlı panoda uyarı onaylı ve ilk görülme saatiyle kalır; ama API yeniden başlatılırsa uyarı onaysız ve «ilk
+    görülme» saati olmadan geri gelir. Hastanın bir sonraki ölçümünde yeni bir ilk görülme saati alır ve **hemşireye
+    aynı uyarı için ikinci bir bildirim gider** (yürüyüşte görüldü); onaysız kaldığı için oradan yükseltilebilir.
+    Bir test bu farkı bilerek kırmızı tutar; düzeltilirse test bunu söyler.
+  - **Tersi de olabilir (incelemede bulundu):** yanlış bir değerin değerlendirmesi onaylı bir uyarıyı kapattıysa,
+    canlıda onay o anda düşer; değer geri alınınca uyarı yeni ve onaysız döner. API yeniden başlatılırsa yanlış değer
+    oynatılmadığı için uyarı hiç kapanmamış sayılır ve **eski onay geçerli kalır**: uyarı onaylı görünür, yükseltilmez.
+  - Kurulumdan sonraki ilk yeniden başlatma eski kaydı yeni kurala göre oynatır: geriye tarihli ölçüm almış
+    hastalarda pano kurulumdan önceki panodan farklı olabilir — bir «zamanı» uyarısı «gecikti» olabilir, ya da
+    eskiden ikiye bölünmüş bir «gecikti» tek bir uyarı olarak eski onayıyla geri gelebilir.
+- **Arka planda.** Motor her hasta için bir taban tutar (`_judged_at`); her değerlendirme «istenen an» ile tabanın
+  geç olanında yapılır. Geri alma, hastayı denetim kaydından kurduktan sonra onu o anda yeniden değerlendirir
+  (`Engine.rejudge`).
+- **Kaynak:** `docs/superpowers/specs/2026-11-12-g3-saat-geri-gitmez-design.md` (§12 «As built»); plan
+  `docs/superpowers/plans/2026-11-12-g3-saat-geri-gitmez.md`.
 
 ---
 
