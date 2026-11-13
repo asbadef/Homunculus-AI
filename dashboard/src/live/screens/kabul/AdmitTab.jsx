@@ -58,6 +58,15 @@
 // admission's number when the nurse's units hold its bed. Nothing was written. «Kabul et» is held as
 // for `request_conflict`, with words of its own, and nothing is sent again or retried; only «Yeni
 // qəbul» leaves the hold. The open admission is discharged first.
+//
+// «KABUL ZAMANI» (G3-07, spec D1, §5). First in the «Kabul» box; untouched it shows the current minute
+// of the server-corrected clock and sends nothing — the server stamps the save. Touched, the chosen
+// minute goes out (admitForm.js `admittedAtOf`), bounded by six hours, the chosen bed's free time and
+// the clock. A refusal of the time — too old, before the bed was free, before the person's last
+// discharge — is said on the toast after the bed, the beds are read again (the bed's new time moves
+// the bound) and the focus goes to the field from where a press leaves it. Nothing is held. A send with
+// no answer near the six-hour edge may find its minute named by the panel a minute later: she moves it,
+// and the send that follows looks for the first send's admission first, as every send does (A-19).
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -66,14 +75,17 @@ import { useStructure } from "../../data/StructureProvider.jsx";
 import { admissible, bedLabel, indexStructure, normId } from "../../data/structure.js";
 import { Announce, Box, Button, Field, Icon, Input, Note, Select, Tag, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
+import { dayStamp } from "../../i18n/dates.js";
 import { doneFor, mayHaveLanded, reasonOf, refusedFor } from "../admin/refusal.js";
+import { useBoardNow } from "../common/BoardState.jsx";
 import {
   ADMISSION_TYPES, BLOOD_GROUPS, COMORBIDITIES, CONSENTS, EARLIEST_BIRTH, ENGINE_FAILED, NATIONALITIES,
-  RELATIONS, SEXES, SOURCES, ageOf, missing, toBody,
+  RELATIONS, SEXES, SOURCES, admittedBounds, ageOf, missing, toBody,
 } from "./admitForm.js";
 import { freshForm, newRequestId, sameName, useAdmitDraft } from "./admitDraft.js";
 import { BedPicker } from "./BedPicker.jsx";
 import { boardKeyOf } from "./boardKey.js"; //                    G2-B1d: the card key (E12)
+import { localInput } from "./DischargeDialog.jsx";
 import { PrintLabelButton } from "./label/PrintLabelButton.jsx"; // G2-B1d: the protocol label (§6)
 import { ReservedAsk } from "./ReservedAsk.jsx";            // G2-B3a (D5)
 
@@ -90,6 +102,13 @@ const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.nam
 
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
+
+/** G3-07: the refusals of «Kabul zamanı» — older than six hours, before the bed was free, before the
+ *  person's last discharge. Each is said, the beds read again and the field focused; nothing is held. */
+const TIME_REFUSALS = new Set(["field_invalid:admission_datetime", "admitted_before_bed_free",
+  "admitted_before_discharge"]);
+/** How often the field's «now» and its bounds are read again: the bedside form's cadence. */
+const CLOCK_EVERY_MS = 30_000;
 
 /** The bed an admit answer is named after: the form's — or, when the answer names another bed, the
  *  bed she lies in now, by the structure's name ("" when it does not hold it), never the bed she
@@ -226,7 +245,11 @@ export function AdmitTab() {
   const panelId = `${uid}-panel`;
   const heldId = `${uid}-held`;
   const today = localToday();
-  const gaps = useMemo(() => missing(form, today), [form, today]);
+  // G3-07: the server-corrected clock (the shell's BoardProvider, as the bedside form's), and the
+  // chosen bed's free time — the server's string, as the structure answered it.
+  const nowMs = useBoardNow(CLOCK_EVERY_MS);
+  const freeSince = index.beds.get(normId(form.bedId))?.stateSince ?? null;
+  const gaps = useMemo(() => missing(form, today, { now: nowMs, freeSince }), [form, today, nowMs, freeSince]);
   const wrong = (field) => (tried ? gaps.find((g) => g.field === field) : null);
   const errorOf = (field) => (wrong(field) ? t(wrong(field).key) : undefined);
   const set = (patch) => draft.update((s) => ({ form: { ...s.form, ...patch } }));
@@ -285,6 +308,12 @@ export function AdmitTab() {
   }
 
   const bedText = form.bedLabel ?? "";
+  // G3-07: «Kabul zamanı»'s bounds, and its hint — with the chosen bed's free time once one is chosen.
+  const bounds = admittedBounds(nowMs, freeSince);
+  const freeMs = Date.parse(freeSince ?? "");
+  const admittedHint = Number.isFinite(freeMs)
+    ? `${t("kabul.admittedAtHint")} ${t("kabul.admittedAtBedSince", { time: dayStamp(freeMs, nowMs) })}`
+    : t("kabul.admittedAtHint");
 
   /** The form's patient admitted — by this send's answer, or found after one that got none. Every
    *  send under that name is done with, and the form is emptied for the next patient. */
@@ -415,6 +444,17 @@ export function AdmitTab() {
       await reload();
       return;
     }
+    if (TIME_REFUSALS.has(err?.apiCode)) {
+      // G3-07 (spec §5): the time was refused and nothing was written. Said after the bed; the beds
+      // are read again (a bed's new `state_since` moves the field's min); the field is marked and
+      // takes the focus from where a press leaves it. Nothing is held: she changes the time and sends.
+      toast(refusedFor(t, sent.bed, reasonOf(t, err)), "error");
+      draft.update({ tried: true });
+      await reload();
+      if (!draft.live) return;
+      if (focusIsIdle(submitRef.current)) setFocusTo({ field: "admittedAt" });
+      return;
+    }
     if (mayHaveLanded(err)) {
       draft.update((s) => ({ unanswered: [...s.unanswered.filter((x) => !sameSend(x, sent)), sent] }));
       const tree = await reload();
@@ -470,7 +510,7 @@ export function AdmitTab() {
       setAsk({ bedId: form.bedId, bed: bedText });
       return;
     }
-    const body = toBody(form, sent.requestId, { confirmReserved: saidYes });
+    const body = toBody(form, sent.requestId, { confirmReserved: saidYes, freeSince });
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -547,6 +587,13 @@ export function AdmitTab() {
         </Box>
 
         <Box title={t("kabul.groupAdmission")} icon="clip" level={2}>
+          {/* G3-07: untouched it shows the current minute and sends nothing; touched, the minute chosen. */}
+          <Field label={t("kabul.f.admittedAt")} error={errorOf("admittedAt")} hint={admittedHint}>
+            <Input id={idOf("admittedAt")} type="datetime-local"
+              value={form.admittedAtTouched ? form.admittedAt : localInput(nowMs)}
+              min={localInput(bounds.minMs)} max={localInput(bounds.maxMs)}
+              onChange={(e) => set({ admittedAt: e.target.value, admittedAtTouched: true })} />
+          </Field>
           <Field label={t("kabul.f.type")} required error={errorOf("type")}>
             <Select id={idOf("type")} value={form.type} onChange={(e) => set({ type: e.target.value })}>
               <option value="">{t("kabul.choose")}</option>

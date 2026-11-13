@@ -20,6 +20,7 @@ import { ANNOUNCE_DELAY_MS } from "../../ui/index.js";
 import { AdmitTab } from "./AdmitTab.jsx";
 import { admitDraftOf } from "./admitDraft.js";
 import { KabulScreen } from "./KabulScreen.jsx";
+import { localInput } from "./DischargeDialog.jsx";
 import { BED, DOCTOR, NURSE, REA, UUID_TEXT, mountKabul, row, settle, structure, toasts } from "./kabul.testutil.js";
 
 /** The side panel: the missing fields, «Qəbul et», and the hold's reason under it — the form's own
@@ -1576,5 +1577,123 @@ describe("AdmitTab · a reserved bed (G2-B3a, D5, X1)", () => {
     await sayYes();
     expect(api.admit).toHaveBeenCalledTimes(1);
     expect(api.admit.mock.calls[0][0]).toMatchObject({ note: { bed_id: BED(5) }, confirm_reserved: true });
+  });
+});
+
+// G3-07 «Kabul zamanı» (spec D1, §5): first in the «Kabul» box; untouched it shows the current minute and sends
+// nothing; touched, the chosen minute — the same string on every send of the form — bounded by six hours, the
+// chosen bed's free time and the clock. Its three refusals are said, the beds read again, the field focused.
+describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
+  // The clock pinned at 14:00:30 local (Date only: the screen's own timers run as ever).
+  const NOW = new Date(2026, 10, 12, 14, 0, 30).getTime();
+  const at = (h, m) => localInput(new Date(2026, 10, 12, h, m).getTime());
+  /** Bed 1 free since 11:30:40.123456 — the server's string, microseconds and all. */
+  const FREE = new Date(2026, 10, 12, 11, 30, 40, 123).toISOString().replace(/Z$/, "456Z");
+  const field = () => screen.getByLabelText(/^Qəbul vaxtı/);
+  const choose = (text) => fireEvent.change(field(), { target: { value: text } });
+  const sentAt = (api, call = 0) => api.admit.mock.calls[call][0].note.admission_datetime;
+  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və irəli vaxt ola bilməz.";
+
+  async function open(setup) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    return mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+      a.structure.mockResolvedValue(withBed(1, { state_since: FREE }));
+      setup?.(a);
+    } });
+  }
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("shows the current minute, bounded by six hours and the clock; a chosen bed moves the bound to its free time and says it", async () => {
+    await open();
+    expect(field().getAttribute("type")).toBe("datetime-local");
+    expect(field().value).toBe(at(14, 0));
+    expect(field().getAttribute("min")).toBe(at(8, 2));                      // a minute inside six hours, rounded up
+    expect(field().getAttribute("max")).toBe(at(14, 1));
+    expect(screen.getByText("Dəyişdirilməsə, qeydin anı yazılır. Ən çox 6 saat geriyə.")).toBeTruthy();
+    fillRequired();                                                           // bed 1
+    expect(field().getAttribute("min")).toBe(at(11, 30));
+    expect(screen.getByText(/Çarpayı 11:30-dən boşdur: qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    expect(missingNow()).toEqual([]);
+  });
+
+  it("sends no time untouched, and the chosen minute in ISO UTC once touched", async () => {
+    const { api } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    await press();
+    expect("admission_datetime" in api.admit.mock.calls[0][0].note).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
+    fillRequired();
+    choose(at(12, 15));
+    await press();
+    expect(sentAt(api, 1)).toBe(new Date(2026, 10, 12, 12, 15).toISOString());
+  });
+
+  it("sends the bed's free time as the server wrote it for the minute that holds it", async () => {
+    const { api } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(11, 30));
+    await press();
+    expect(sentAt(api)).toBe(FREE);
+  });
+
+  it("resends a send that got no answer under the same id with the same time", async () => {
+    const { api } = await open((a) => a.admit.mockRejectedValueOnce(timedOut()).mockResolvedValueOnce(admitted()));
+    fillRequired();
+    choose(at(11, 30));
+    await press();                                                           // no answer; bed 1 still free
+    await press();
+    const [first, second] = api.admit.mock.calls.map(([body]) => body);
+    expect(second.request_id).toBe(first.request_id);
+    expect(second.note.admission_datetime).toBe(first.note.admission_datetime);
+    expect(first.note.admission_datetime).toBe(FREE);
+    expect(screen.getByText("H2600042")).toBeTruthy();
+  });
+
+  it("holds «Qəbul et» on a time outside its bounds, names it, and takes the focus there", async () => {
+    const { api } = await open();
+    fillRequired();
+    for (const text of [at(8, 1), at(11, 29), at(14, 2)]) {
+      choose(text);
+      expect(missingNow()).toEqual([TOO_FAR]);
+    }
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+    expect(errorOf(field())).toBe(TOO_FAR);
+  });
+
+  it("keeps the chosen minute in the session's draft, and «Yeni qəbul» clears it", async () => {
+    const { store } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(12, 15));
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: at(12, 15), admittedAtTouched: true });
+    await press();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Yeni qəbul" })); });
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: "", admittedAtTouched: false });
+    expect(field().value).toBe(at(14, 0));
+  });
+
+  it.each([
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz)."],
+    ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
+    ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
+  ])("%s: said on the toast after the bed, the beds read again, the field focused — and nothing held", async (code, status, words) => {
+    const { api } = await open((a) => a.admit
+      .mockRejectedValueOnce(refusal(status, "English words a screen must not show", { apiCode: code }))
+      .mockResolvedValueOnce(admitted()));
+    fillRequired();
+    choose(at(12, 0));
+    const reads = api.structure.mock.calls.length;
+    await press();
+    expect(toasts().getAllByText(`${BED1}: ${words}`).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/English words/);
+    expect(api.structure.mock.calls.length).toBeGreaterThan(reads);
+    expect(document.activeElement).toBe(field());
+    expect(admitButton().getAttribute("aria-disabled")).toBeNull();
+    choose(at(12, 30));
+    await press();
+    expect(api.admit).toHaveBeenCalledTimes(2);
+    expect(sentAt(api, 1)).toBe(new Date(2026, 10, 12, 12, 30).toISOString());
   });
 });
