@@ -476,14 +476,20 @@ class ShadowLane:
         return self.engines.get(hospital)
 
     # --- the mirror (D1) ----------------------------------------------------------------------
-    def mirror_observation(self, hospital: str, obs: Observation, *, now: datetime, real: Engine) -> None:
-        """`now` is the door's: the instant the real engine judged `obs` at. With the install
-        pending this does nothing (`_installed`): the install, when the next pass runs it, copies a
-        real engine that holds `obs` already."""
+    def mirror_observation(self, hospital: str, obs: Observation, *, now: datetime, real: Engine,
+                           judge_at: datetime | None = None) -> None:
+        """`now` is the door's wall clock. The shadow engine is handed the real engine's two
+        instants (G3-06, D5): judged at min(the stamp, `now`) — or, for a linked reading, at
+        `judge_at`, the link's wall clock — and a recognition the reading completes anchored at
+        min(the stamp, `now`), its measurement. Its own floor does the rest: the copy the install
+        makes carries the real engine's (D1). With the install pending this does nothing
+        (`_installed`): the install, when the next pass runs it, copies a real engine that holds
+        `obs` already."""
         engine = self._installed(hospital)
         if engine is None:
             return
-        engine.ingest(obs, now=min(obs.timestamp, now))
+        requested = min(obs.timestamp, now)
+        engine.ingest(obs, now=requested if judge_at is None else judge_at, anchor_at=requested)
         # A charted input can open or end a linked patient's shadow finding; an unlinked patient
         # has none (the class docstring), and a provisional link waits for its card.
         link = self.linked.get(hospital, {}).get(obs.patient_id)

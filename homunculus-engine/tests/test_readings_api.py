@@ -645,8 +645,9 @@ class TestLinking:
     def test_a_back_dated_link_is_judged_now_and_leaves_an_overdue_antibiotic_overdue(self, acknowledged):
         """B6 review: every link is back-dated (up to 24 h). Judged at its measurement, a linked SpO2 from six hours
         ago would have replaced the `antibiotic_overdue` with an `antibiotic_due` (the hour running again — false
-        reassurance) and, acknowledged, ended its episode. A link is judged at the wall clock; the value keeps its
-        own time. A restart agrees: the replay judges a linked `ingest` row where the link did."""
+        reassurance) and, acknowledged, ended its episode. A link is judged at the wall clock and anchored at its
+        measurement (G3-06, D4: here the anchor was set by `_overdue`'s charted MAP, not by the link); the value
+        keeps its own time. A restart agrees: the replay judges a linked `ingest` row where the link did."""
         audit, store, identities = InMemoryAuditLog(), _Flaky(admitted={("h1", KEY): ADMISSION}), _identities()
         first, _, _ = _app(audit=audit, store=store, identities=identities)
         with TestClient(first) as client:

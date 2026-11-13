@@ -6,6 +6,7 @@ judges the alerts as of its own instant; and a restart (a second app on the same
 and values only (CLAUDE.md rule 6)."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -14,8 +15,19 @@ from fastapi.testclient import TestClient
 from homunculus.api.app import create_app
 from homunculus.api.audit import InMemoryAuditLog
 from homunculus.api.identity import Caller
+from homunculus.api.infinity_shadow import shadow_settings_from_env
+from homunculus.api.monitor_samples import InMemorySamples
+from homunculus.api.readings import POLICY_UNMATCHED
 from homunculus.canonical import SignalCode
+from tests.test_infinity_shadow_isolation import TABLE
 from tests.test_ingest_apply import obs
+from tests.test_readings_api import (
+    ADMISSION, KEY, _ago, _assign, _identities, _ids, _resolve_scope, _send,
+)
+from tests.test_readings_api import _card as _key_card
+from tests.test_readings_api import _chart as _key_chart
+from tests.test_readings_api import _resolve as _readings_resolve
+from tests.test_readings_ingest import _Flaky
 
 TOKEN = "tok"
 DEVICE = {"Authorization": f"Bearer {TOKEN}"}
@@ -224,3 +236,52 @@ class TestAWithdrawal:
             assert [(n.subject, n.payload["audience"]) for n in notes] == [("antibiotic_overdue", "nurse")]
             live = _card(c)
         _same_after_a_restart(audit, live)
+
+
+def _linking_app(tmp_path, audit, store, identities) -> TestClient:
+    """The unmatched list's app (tests/test_readings_api.py `_app`: KEY admitted, the policy that lists an unknown
+    number) with the shadow lane at stage `rules`, so the link's mirror reaches a shadow engine (Aşama B)."""
+    table = tmp_path / "device-beds.json"
+    table.write_text(json.dumps(TABLE), encoding="utf-8")
+    shadow = shadow_settings_from_env({"INFINITY_CLINICAL_STAGE": "rules", "INFINITY_SHADOW_TOKEN": "s" * 40,
+                                       "INFINITY_SHADOW_HOSPITAL": "h1", "INFINITY_DEVICE_BEDS_PATH": str(table)},
+                                      {TOKEN: "h1"})
+    app = create_app({TOKEN: "h1"}, run_escalation_loop=False, resolve_jwt=_readings_resolve,
+                     resolve_scope=_resolve_scope, audit=audit, identities=identities, readings=store,
+                     unknown_readings=POLICY_UNMATCHED, samples=InMemorySamples(), shadow=shadow)
+    return TestClient(app)
+
+
+class TestALinkedSet:
+    """D4, D5: a set linked from «Eşleşmeyen ölçümler» is judged at the link and a recognition it completes is
+    anchored at its measurement — in the real engine, in the shadow engine and after a restart."""
+
+    @pytest.mark.parametrize("judged_up_to_now", [True, False], ids=["judged-up-to-now", "infection-only"])
+    def test_a_set_measured_six_hours_ago_that_completes_sepsis_is_overdue_at_once(self, tmp_path,
+                                                                                    judged_up_to_now):
+        audit, identities = InMemoryAuditLog(), _identities()
+        store = _Flaky(admitted={("h1", KEY): ADMISSION})
+        stamp = _ago(hours=6)
+        with _linking_app(tmp_path, audit, store, identities) as c:
+            _key_chart(c, [{"code": "suspected_infection", "value": 1}], _ago(hours=7))
+            if judged_up_to_now:
+                _key_chart(c, [{"code": "temperature", "value": 37.0}], _ago(minutes=1))
+            # MAP 60 and platelets 120 — two SOFA points — from a point-of-care device, under a mistyped number.
+            _send(c, [("map", 60), ("platelets", 120)], when=stamp, device="POC-7")
+            r = _assign(c, _ids(c))
+            assert r.status_code == 200, r.text
+            assert "antibiotic_overdue" in r.json()["alerts"] and "antibiotic_due" not in r.json()["alerts"]
+            live = _key_card(c)
+            assert "antibiotic_overdue" in _firing(live) and "antibiotic_due" not in _firing(live)
+            assert datetime.fromisoformat(_anchor(live)) == stamp
+            real = c.app.state.board_link._engine("h1")
+            assert real.recognized_at(KEY) == stamp
+            shadow = c.app.state.shadow_lane.engines["h1"]
+            assert shadow.recognized_at(KEY) == stamp
+            assert {a.kind for a in shadow.active_alerts(KEY)} & {"antibiotic_due", "antibiotic_overdue"} == \
+                {"antibiotic_overdue"}
+            alerts = sorted((a.kind, a.severity, a.urgency) for a in real.active_alerts(KEY))
+        with _linking_app(tmp_path, audit, store, identities) as again:
+            restarted = again.app.state.board_link._engine("h1")
+            assert restarted.recognized_at(KEY) == stamp, "the same anchor exactly"
+            assert sorted((a.kind, a.severity, a.urgency) for a in restarted.active_alerts(KEY)) == alerts
