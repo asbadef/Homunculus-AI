@@ -36,6 +36,19 @@ ANCHOR_RESTORE_S = 900
 HOLD_MAX_S = 8 * 3600
 
 
+def _suspicion_start(state: PatientState) -> datetime | None:
+    """When the current suspicion of infection began (G3-06, D2, owner: «Şüpheden önceye gitmesin»):
+    the stamp of the FIRST `suspected_infection` mark charted present since the last one charted
+    absent — a repeated present mark never moves it. None when the latest mark is absent or there is
+    none. The marks are in stamp order, as `PatientState` keeps them."""
+    start = None
+    for mark in reversed(state.history(SignalCode.SUSPECTED_INFECTION)):
+        if mark.value < 1.0:
+            break
+        start = mark.timestamp
+    return start
+
+
 def _level(alert: Alert) -> tuple[Severity, Urgency]:
     """How loud an alert is — the order a held NEWS2 may step down in, never up (G2-A2, X9d)."""
     return Severity[alert.severity.upper()], Urgency[alert.urgency.upper()]
@@ -138,9 +151,13 @@ class Engine:
         #    instant, restores the old anchor: infection charted absent and present again is a
         #    corrected toggle, the same episode, and an antibiotic charted in the gap counts against
         #    the restored hour. A later recognition gets its own anchor: `anchor_at` — the requested
-        #    instant at the doors, the reading's measurement at the link (D4) — never after `at`.
-        #    Requested instants can run backwards; compared on them, a back-dated recognition
-        #    "before" the drop restored the anchor however long ago the rule-out was.
+        #    instant at the doors, the reading's measurement at the link (D4) — never after `at`,
+        #    and never before the suspicion that makes the recognition possible, the start of the
+        #    current one (the first infection mark charted present since the last absent one; a
+        #    repeated present mark does not move it), nor before the rule-out it follows (D2, owner:
+        #    «Şüpheden önceye gitmesin»; `_new_anchor`). Requested instants can run backwards;
+        #    compared on them, a back-dated recognition "before" the drop restored the anchor
+        #    however long ago the rule-out was.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.
@@ -148,7 +165,10 @@ class Engine:
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
             if patient_id not in self._recognized_at:
-                self._recognized_at[patient_id] = self._new_anchor(patient_id, min(anchor_at, at), at)
+                # A recognition kind fires only with infection charted present (septic_shock.evaluate):
+                # the current suspicion makes it possible — the hour never starts before it began.
+                suspected_at = _suspicion_start(state) or anchor_at
+                self._recognized_at[patient_id] = self._new_anchor(patient_id, anchor_at, at, suspected_at)
         elif infection is None or infection.value < 1.0:
             dropped = self._recognized_at.pop(patient_id, None)
             if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
@@ -280,17 +300,24 @@ class Engine:
         stale = vitals + [label for labels in charts.values() for label in labels]
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
-    def _new_anchor(self, patient_id: str, anchor: datetime, at: datetime) -> datetime:
+    def _new_anchor(self, patient_id: str, anchor_at: datetime, at: datetime,
+                    infection_at: datetime) -> datetime:
         """The anchor of a recognition with none running (X12; G3-06, D2): the anchor dropped at
-        most ANCHOR_RESTORE_S before `at`, restored, or else `anchor`. `at` is the recognising
+        most ANCHOR_RESTORE_S before `at`, restored — a corrected toggle, the old episode's anchor,
+        and the bounds below do not apply — or else a new episode's. `at` is the recognising
         evaluation's floored instant and the drop is remembered at its own, so the difference is
         measured in the engine's one-way time; within one engine the floor never goes back, and
         `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so it is
-        never negative — the `0 <=` is a guard. Either way the remembered drop is spent."""
+        never negative — the `0 <=` is a guard. A new episode's anchor is `anchor_at` (the
+        requested instant, or the link's measurement) lifted to the start of the suspicion that
+        makes the recognition possible, `infection_at`, and to the rule-out it follows (the drop's
+        instant, when one is remembered), and held to `at`: it never goes back before either
+        (D2, owner: «Şüpheden önceye gitmesin»). Either way the remembered drop is spent."""
         dropped = self._dropped_anchor.pop(patient_id, None)
         if dropped is not None and 0 <= (at - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
             return dropped[0]
-        return anchor
+        bounds = [anchor_at, infection_at] + ([dropped[1]] if dropped is not None else [])
+        return min(max(bounds), at)
 
     def active_alerts(self, patient_id: str) -> list[Alert]:
         return list(self._alerts.get(patient_id, {}).values())
