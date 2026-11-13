@@ -50,6 +50,7 @@ from homunculus.api.clinical import (
     RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
     RETRACT_UNKNOWN, RETRACTABLE_CODES, ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
+    ISOLATION_CODES,                                              # G4-05: refused at /ingest (spec §5 M8)
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -1944,6 +1945,11 @@ def create_app(
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        # G4-05 (spec §5 M8): isolation is a clinician's record. A monitor or the HIS cannot decide it, so the four flags
+        # are refused right here — before the engine, the trail, the measurement record or the unmatched list hears of
+        # them. An inline literal: the dashboard's apiErrors.test.js reads it from this file and holds it mapped.
+        if obs.code in ISOLATION_CODES:
+            raise HTTPException(status_code=400, detail="izolasyon bir klinisyen kaydıdır; cihazdan alınmaz")
         # G2-A11 (D3), as G3-05 (D4) changed it: a reading for a number whose admission here was discharged
         # never reaches the engine — no evaluation, no hook, no stamp, no frame, no notification. The owner's
         # decision (2026-10-26) stands: no alert and no page may come of it. Since G3-05 its VALUE is kept, in

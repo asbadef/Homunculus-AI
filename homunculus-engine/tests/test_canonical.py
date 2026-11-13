@@ -33,3 +33,10 @@ def test_signal_codes_cover_the_sepsis_pathway():
     }
     names = {c.name for c in SignalCode}
     assert required <= names
+
+
+def test_the_four_isolation_flags_are_signal_codes():
+    """G4-05 (spec D3, D7): the patient's isolation precautions, as a clinician charts them — no rule reads them."""
+    assert [c.value for c in (SignalCode.ISOLATION_CONTACT, SignalCode.ISOLATION_DROPLET,
+                              SignalCode.ISOLATION_AIRBORNE, SignalCode.ISOLATION_PROTECTIVE)] == [
+        "isolation_contact", "isolation_droplet", "isolation_airborne", "isolation_protective"]

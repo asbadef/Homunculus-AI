@@ -57,6 +57,12 @@ class SignalCode(Enum):
     # Clinical context (not computable from telemetry — provided by the clinician/record)
     SUSPECTED_INFECTION = "suspected_infection"   # 1.0 = infection suspected
     ANTIBIOTIC_ADMINISTERED = "antibiotic_administered"  # 1.0 = a dose was given
+    # G4-05 «Enfeksiyon kontrol» (spec D3, D7): the patient's isolation precautions as a clinician charts them, four
+    # flags — 1.0 = the precaution is in place, 0.0 = it is not. No rule reads them; no device may send them.
+    ISOLATION_CONTACT = "isolation_contact"
+    ISOLATION_DROPLET = "isolation_droplet"
+    ISOLATION_AIRBORNE = "isolation_airborne"
+    ISOLATION_PROTECTIVE = "isolation_protective"
 
 
 @dataclass(frozen=True)

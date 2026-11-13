@@ -100,6 +100,14 @@ CHARTABLE: dict[SignalCode, str] = {
     SignalCode.OTHER_INTAKE_ML: "mL",
     SignalCode.DRAIN_OUTPUT_ML: "mL",
     SignalCode.OTHER_OUTPUT_ML: "mL",
+    # G4-05 «Enfeksiyon kontrol» (spec D3, D7): the patient's isolation precautions — four flags, 1 or 0 (`_BOOLEAN`),
+    # charted from the patient screen's «İzolasyon» box. Not withdrawable (they stay out of RETRACTABLE_CODES, and so
+    # out of the measurement record): a flag is corrected by a new entry, as the suspected-infection mark is (X22). No
+    # rule reads them, and no device sends them (`/ingest` refuses them, spec §5 M8).
+    SignalCode.ISOLATION_CONTACT: "bool",
+    SignalCode.ISOLATION_DROPLET: "bool",
+    SignalCode.ISOLATION_AIRBORNE: "bool",
+    SignalCode.ISOLATION_PROTECTIVE: "bool",
 }
 
 # Bounds that catch a slipped decimal point or a wrong unit, not clinical judgement. They are
@@ -206,9 +214,15 @@ RETRACT_UNKNOWN = "bu hastada böyle bir ölçüm değeri yok"
 RETRACT_ALREADY = "bu değer zaten hatalı giriş olarak işaretlenmiş"
 RETRACT_DISCHARGED = "taburcu edilmiş bir hastada değer geri alınamaz"
 
+#: G4-05 (spec D3, D7): the four isolation flags in the one order the board's `isolation` block, GET /infection and the
+#: dashboard follow — contact, droplet, airborne, protective. A flag's name on the card is its slug after `isolation_`.
+ISOLATION_CODES: tuple[SignalCode, ...] = (SignalCode.ISOLATION_CONTACT, SignalCode.ISOLATION_DROPLET,
+                                           SignalCode.ISOLATION_AIRBORNE, SignalCode.ISOLATION_PROTECTIVE)
+
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,
-            SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ON_RESP_SUPPORT}   # G2-A4 (D4)
+            SignalCode.SUPPLEMENTAL_OXYGEN, SignalCode.ON_RESP_SUPPORT,   # G2-A4 (D4)
+            *ISOLATION_CODES}                                             # G4-05 (spec D7)
 
 
 # Vitals a clinician may chart a personal baseline range for. These are the parameters NEWS2
@@ -327,9 +341,10 @@ def _check_bedside(built: list[ChartedEntry], recorded_at: datetime | None, now:
     only when one was sent (an untouched time is the server's clock), and only for a request that charts one
     of the six; MAP is compared with a systolic in the SAME request — one form's two numbers, not an older
     reading's. Raises with the clinician's sentence; all-or-nothing, as the loop above. G3-03 (D3): the time bound
-    covers the fluid ledger's eight codes too — a volume is a measurement."""
+    covers the fluid ledger's eight codes too — a volume is a measurement. G4-05 (spec D7): and the four isolation
+    flags — a flag stamped tomorrow would stay the latest value, and no save today could end the isolation."""
     codes = {item.observation.code for item in built}
-    if recorded_at is not None and codes & (BEDSIDE_VITALS | _FLUID_SIGNALS):
+    if recorded_at is not None and codes & (BEDSIDE_VITALS | _FLUID_SIGNALS | set(ISOLATION_CODES)):
         if recorded_at < now - BEDSIDE_BACKDATE:
             raise ClinicalEntryError(AT_TOO_OLD)
         if recorded_at > now + BEDSIDE_SKEW:
