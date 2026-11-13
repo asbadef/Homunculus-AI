@@ -302,6 +302,31 @@ describe("Decision 18 (spec D15, §5 A3, A4)", () => {
   });
 });
 
+describe("the bed section's reach: the units the answer's scope covers", () => {
+  const neonatalOpen = () => {
+    const ward = tree();
+    ward.sites[0].units[1].is_active = true;                              // Neonatal open, with its isolation room N-1
+    return ward;
+  };
+
+  it("draws and counts under «Bütün şöbələr» no isolation room of a unit outside a restricted scope", async () => {
+    await open({ setup: (api) => api.structure.mockResolvedValue(neonatalOpen()) });
+    expect(tiles().map((li) => li.querySelector("b").textContent)).not.toContain("N1");
+    expect(tally()).toBe("4 doludur · 1 boşdur");
+    expect(card("free_beds")).toBe("1 / 10");
+  });
+
+  it("draws and counts every isolation room for an unrestricted scope", async () => {
+    await open({ setup: (api) => {
+      api.structure.mockResolvedValue(neonatalOpen());
+      api.infection.mockResolvedValue(answer({ scope: { ...SCOPE, unrestricted: true } }));
+    } });
+    expect(tiles().map((li) => li.querySelector("b").textContent)).toContain("N1");
+    expect(tally()).toBe("4 doludur · 2 boşdur");
+    expect(card("free_beds")).toBe("2 / 11");
+  });
+});
+
 describe("the bed section's own source: the structure tree (§5 S1)", () => {
   it("says the tree cannot be read without a structure key, and the rest of the page stands", async () => {
     const { api } = await open({ perms: KEY_ONLY });

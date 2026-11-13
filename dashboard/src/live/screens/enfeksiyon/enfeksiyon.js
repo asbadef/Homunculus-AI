@@ -91,6 +91,15 @@ export function isolationBeds(tree, answer) {
   return out;
 }
 
+/** The tiles a selection shows, and so what the tally and the «boş izolasyon yatağı» card count: a chosen unit's own;
+ *  under «Tüm birimler» those of every unit inside the answer's scope — the units the cards and the lists cover — with a
+ *  unit the scope cannot be read for kept (`unitInScope` not false), as the filter offers it. An unrestricted scope
+ *  sees every one. A new array. */
+export function tilesFor(tiles, answer, selected, index = null) {
+  return tiles.filter((tile) => (selected === ALL ? unitInScope(answer, tile.unitId, index) !== false
+    : tile.unitKey === selected));
+}
+
 /** «{a} dolu · {b} boş» and «boş izolasyon yatağı» «{free} / {total}» (§5 S1): every tile, the free ones, and those
  *  whose bed state has a patient (OCCUPIED and the two pending states, occupancy.js `WITH_PATIENT`). A conflict tile is
  *  in the total and in neither of the two (§5 A4 a). */

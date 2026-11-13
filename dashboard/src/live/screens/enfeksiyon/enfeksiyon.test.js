@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import { indexStructure } from "../../data/structure.js";
 import {
   ALL, TILES, alarmItems, bedTally, countCell, freeBedsCell, isolationBeds, roomCell, selectionOf, sortRows, tileOf,
-  tileWords, unitChoices, unitInScope, unitOf,
+  tileWords, tilesFor, unitChoices, unitInScope, unitOf,
 } from "./enfeksiyon.js";
 import {
   ALI, AYSE, BED, ELIF, KAMRAN, LEYLA, MURAD, NEO, NIGAR, REA, REA_COUNTS, SCOPE, UNNAMED, answer, at, row, tree,
@@ -126,6 +126,25 @@ describe("the units inside the answer's scope", () => {
     expect(unitInScope(answer(), REA.toUpperCase(), index)).toBe(true);
     expect(unitInScope(null, NEO, index)).toBeNull();
     expect(unitInScope(answer({ scope: { ...SCOPE, unrestricted: undefined } }), NEO, index)).toBeNull();
+  });
+
+  // The bed section covers the units the cards and the lists cover: under «Tüm birimler» an isolation room of a unit
+  // outside a restricted scope is neither drawn nor counted; a unit the scope cannot be read for stays.
+  it("draws and counts under «Tüm birimler» only the isolation rooms of units inside the scope", () => {
+    const ward = bothOpen();
+    const index = indexStructure(ward);
+    const view = (a, selected = ALL) => tilesFor(isolationBeds(ward, a), a, selected, index);
+    const labels = (tiles) => tiles.map((tile) => tile.label);
+    const restricted = view(answer());
+    expect(labels(restricted)).not.toContain("N1");                   // Neonatal's isolation room: outside the grant
+    expect(bedTally(restricted)).toEqual({ total: 10, free: 1, occupied: 4 });
+    const unrestricted = view(answer({ scope: { ...SCOPE, unrestricted: true } }));
+    expect(labels(unrestricted)).toContain("N1");
+    expect(bedTally(unrestricted)).toEqual({ total: 11, free: 2, occupied: 4 });
+    const unplaced = answer({ scope: { ...SCOPE, unit_ids: [], bed_ids: ["55555555-5555-4555-8555-555555555599"] } });
+    expect(unitInScope(unplaced, NEO, index)).toBeNull();
+    expect(labels(view(unplaced))).toContain("N1");                   // cannot tell: never claimed outside
+    expect(labels(view(answer(), REA))).toEqual(labels(restricted));  // a chosen unit: its own rooms, as before
   });
 });
 

@@ -31,7 +31,7 @@ import { antibioticCell, clockSkewOf, isFresh, msOf } from "../eczane/pharmacyMo
 import { WHY, structureSource } from "../ozet/ozet.js";
 import {
   ALL, TYPES, alarmItems, bedTally, countCell, freeBedsCell, isolationBeds, roomCell, selectionOf, sortRows, tileWords,
-  unitChoices, unitInScope, unitOf,
+  tilesFor, unitChoices, unitInScope, unitOf,
 } from "./enfeksiyon.js";
 import { useInfection } from "./useInfection.js";
 
@@ -374,8 +374,8 @@ export function EnfeksiyonScreen() {
   const ordering = { unitOf: (row) => unitOf(row, tree.index), unitName: names.nameOf, lang };
   const isolated = sortRows(selection.isolated, ordering);
   const suspected = sortRows(selection.suspected, { ...ordering, byGroup: true });
-  const tiles = data && source.ok
-    ? isolationBeds(tree.structure, data).filter((tile) => selected === ALL || tile.unitKey === selected) : [];
+  // The bed section covers the units the cards and the lists cover: under «Tüm birimler», the scope's (tilesFor).
+  const tiles = data && source.ok ? tilesFor(isolationBeds(tree.structure, data), data, selected, tree.index) : [];
   const tally = bedTally(tiles);
   const answeredMs = msOf(data?.now);
   const answered = answeredMs === null ? "—" : dayStamp(answeredMs, nowMs);
