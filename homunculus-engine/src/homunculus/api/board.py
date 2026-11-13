@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from homunculus.api.ackstore import AckStore
+from homunculus.api.clinical import ISOLATION_CODES          # G4-05
 from homunculus.api.patient_identity import IdentityRecord, IdentityStore, is_tombstone
 from homunculus.canonical import SignalCode
 from homunculus.pipeline import Engine
@@ -232,6 +233,25 @@ def _sepsis_context(engine: Engine, state, patient_id: str) -> dict:
     }
 
 
+def _isolation(state) -> dict:
+    """G4-05 «Enfeksiyon kontrol» (spec D8, §5 S2): the patient's isolation as charted. Each of the four flags is
+    three-valued — None: never charted; else whether its latest value is ≥ 1 — `types` are the ones in place, in
+    ISOLATION_CODES' order, and `state` is the server's word: `isolated` (a type is in place), `not_isolated` (a flag was
+    charted and none is in place), `unrecorded` (none was ever charted). `charted_at` is the newest of the four latest
+    observations' times (a save stamps all four alike), or None. Who charted it is the `chart` rows' (/denetim): the
+    card names nobody (S2). «Unrecorded» is not «not isolated»: nobody recorded anything in this system."""
+    flags: dict[str, bool | None] = {}
+    times: list[datetime] = []
+    for code in ISOLATION_CODES:
+        obs = state.latest(code)
+        flags[code.value.removeprefix("isolation_")] = None if obs is None else obs.value >= 1.0
+        if obs is not None:
+            times.append(obs.timestamp)
+    types = [name for name, on in flags.items() if on]
+    word = "isolated" if types else "not_isolated" if times else "unrecorded"
+    return {**flags, "types": types, "state": word, "charted_at": _iso(max(times)) if times else None}
+
+
 def _rrt_call(call: dict | None) -> dict | None:
     """G2-B5 (D4): the open call to the rapid-response team, as the card carries it — or None."""
     if not call:
@@ -360,6 +380,8 @@ def identity_only_board(record: IdentityRecord, bedmap: BedMap | None = None) ->
             "news2": None,
         },
         "identity": {**record.as_board(), **_bed_resolution(record, bedmap)},
+        # G4-05 (spec D8): no engine state, so no isolation charted — null, which every reader takes as «unrecorded».
+        "isolation": None,
     }
 
 
@@ -405,6 +427,8 @@ def patient_board(engine: Engine, patient_id: str, store: AckStore,
         "sepsis": _sepsis_context(engine, state, patient_id),
         # Infusions, the antibiotic clock, and the two numbers a pharmacist reads them against.
         "meds": _meds(engine, state, patient_id, now),
+        # G4-05 (spec D8): the isolation precautions a clinician charted — the flags and their time, no person.
+        "isolation": _isolation(state),
         # Aşama B (D6): the shadow engine's picture for a monitor-linked patient; None otherwise and
         # below the stage `rules`. Built by the lane (api/infinity_rules.py), never here — this
         # module holds no reference to it.
