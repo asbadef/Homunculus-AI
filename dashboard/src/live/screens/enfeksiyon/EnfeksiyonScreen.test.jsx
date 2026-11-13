@@ -108,7 +108,7 @@ describe("the infection-control page", () => {
     expect(cell(SUSPECTED, "S-102", "antibiotic").textContent).toContain("Müddət gedir · 20 dəq qalıb");
     expect(cell(SUSPECTED, "S-107", "antibiotic").textContent).toBe("Qeyd yoxdur");
     expect(cell(SUSPECTED, "S-103", "sepsis").textContent).toBe("Septik şok meyarları ödənilib");
-    expect(cell(SUSPECTED, "S-107", "sepsis").textContent).toBe("Septik şok meyarları ödənilibkeçdi · təsdiqlənməyib");
+    expect(cell(SUSPECTED, "S-107", "sepsis").textContent).toBe("Septik şok meyarları ödənilib keçdi · təsdiqlənməyib");
     expect(cell(SUSPECTED, "S-102", "sepsis").textContent).toBe("Açıq sepsis siqnalı yoxdur");
     expect(cell(SUSPECTED, "S-103", "sepsis").querySelector("[data-tone]").getAttribute("data-tone")).toBe("crit");
   });

@@ -266,7 +266,8 @@ function AlarmCell({ row, fresh, nowMs }) {
     return (
       <span key={`${item.kind}-${at}`} data-alarm={item.kind} className="block">
         <StatusPill tone={item.tone}>{fresh ? kind : t("enfeksiyon.alarm.lastAnswer", { kind })}</StatusPill>
-        {notes.length > 0 ? <span className="ms-1 text-12 text-mute">{notes.join(" · ")}</span> : null}
+        {/* A space, not only a margin: the text a reader copies or hears does not run together (review M7). */}
+        {notes.length > 0 ? <>{" "}<span className="ms-1 text-12 text-mute">{notes.join(" · ")}</span></> : null}
       </span>
     );
   });
