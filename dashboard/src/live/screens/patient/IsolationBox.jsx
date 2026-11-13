@@ -11,9 +11,11 @@
 // board is not LIVE, says no «yok» at all (Decision 18): an isolated card keeps its types with «pano güncel değil», the
 // other two become one sentence that the state cannot be shown. Nothing is saved from a board that is not LIVE (§5 A1).
 //
-// NO BLIND OVERWRITE (§5 A1). Untouched, the boxes follow the card. Once touched they are a draft, seeded from the card's
-// `charted_at` of that moment; if the card carries a newer record when the save is pressed, nothing is sent: the box says
-// a new record came and offers «Yine de kaydet» or «Seçimden vazgeç» (which re-seeds from the card).
+// NO BLIND OVERWRITE (§5 A1). Untouched, the boxes follow the card. Once touched they are a draft, seeded from the card
+// of that moment — its four flags, its state and its `charted_at` (`cardKey`): `charted_at` alone is not enough, since a
+// partial, back-dated chart from another client can change the flags without moving it (engine review M1). If any of
+// them differs when the save is pressed, nothing is sent: the box says a new record came and offers «Yine de kaydet» or
+// «Seçimden vazgeç» (which re-seeds from the card).
 //
 // THE ANSWERS (§5 M2, the fluid dialog's rules): busy while in flight, one at a time, the button never `disabled` — the
 // boxes and «Seçimden vazgeç» are held meanwhile, so the draft out is the draft kept (review M3); a write the store
@@ -34,6 +36,12 @@ import { msOf } from "../eczane/pharmacyModel.js";
 /** The boxes a card's block seeds: a flag charted true is ticked; false and never charted are not. */
 export const seedOf = (isolation) => Object.fromEntries(TYPES.map((type) => [type, isolation?.[type] === true]));
 
+/** What a draft was seeded from, as one comparable value (§5 A1, engine review M1): `charted_at`, the state and the
+ *  four three-valued flags (true / false / never charted). */
+const flagOf = (value) => (value === true ? 1 : value === false ? 0 : null);
+const cardKey = (isolation) => JSON.stringify([isolation?.charted_at ?? null, isolation?.state ?? "unrecorded",
+  ...TYPES.map((type) => flagOf(isolation?.[type]))]);
+
 /** `isolation`: the card's block (api/board.py `_isolation`), or null — read as «unrecorded». `bed`: the toast's subject
  *  (the bed label, else the key). `known`: the board is LIVE. `onChart(entries)` saves for this patient and resolves to
  *  the store's answer; `onRefresh()` reads the board again.
@@ -52,7 +60,7 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
   const chartedAt = isolation?.charted_at ?? null;
   const state = isolation?.state ?? "unrecorded";
   const [draft, setDraft] = useState(null);           // null: untouched — the boxes follow the card
-  const [seededAt, setSeededAt] = useState(null);     // the card's `charted_at` the draft was seeded from (§5 A1)
+  const [seededFrom, setSeededFrom] = useState(null); // the card the draft was seeded from, as `cardKey` (§5 A1)
   const [held, setHeld] = useState(false);            // the save was pressed over a newer record (§5 A1)
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
@@ -78,7 +86,7 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
   // nothing — so a failure keeps exactly the draft it says it keeps.
   function touch(type) {
     if (busy) return;
-    if (draft === null) setSeededAt(chartedAt);
+    if (draft === null) setSeededFrom(cardKey(isolation));
     setDraft({ ...boxes, [type]: !boxes[type] });
     setHeld(false);
   }
@@ -119,7 +127,7 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
     }
   }
   function press() {
-    if (draft !== null && chartedAt !== seededAt) {
+    if (draft !== null && cardKey(isolation) !== seededFrom) {
       focusTo.current = "anyway";
       setHeld(true);                                     // a newer record came: nothing is sent (§5 A1)
       return;

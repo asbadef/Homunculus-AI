@@ -213,6 +213,28 @@ describe("no blind overwrite (§5 A1)", () => {
     expect(onChart).toHaveBeenCalledTimes(1);
   });
 
+  // Engine review M1: a partial, back-dated chart can change the flags and the state without moving `charted_at`.
+  it("holds a save when the card's flags or state changed under the same charted_at", async () => {
+    const { onChart } = await open({ isolation: NOT_ISOLATED });
+    fireEvent.click(boxes()[0]);
+    act(() => { Host.set({ patientId: "S-001", known: true, canChart: true,
+      isolation: { ...NOT_ISOLATED, airborne: true, types: ["airborne"], state: "isolated" } }); });   // charted_at still T1
+    await press(SAVE);
+    expect(onChart).not.toHaveBeenCalled();
+    expect(within(box()).getByText(`Bu arada yeni izolyasiya qeydi gəldi (${dayStamp(Date.parse(T1), NOW)}); seçiminiz ona baxılaraq edilməyib.`))
+      .toBeInTheDocument();
+    await press("Yenə də yadda saxla");
+    expect(onChart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hold a save when the card's flags, state and charted_at are as seeded", async () => {
+    const { onChart } = await open({ isolation: NOT_ISOLATED });
+    fireEvent.click(boxes()[0]);
+    act(() => { Host.set({ patientId: "S-001", isolation: { ...NOT_ISOLATED, types: [] }, known: true, canChart: true }); });
+    await press(SAVE);
+    expect(onChart).toHaveBeenCalledTimes(1);
+  });
+
   it("follows the card while untouched: a newer record is no conflict", async () => {
     const { onChart } = await open();
     act(() => { Host.set({ patientId: "S-001", isolation: { ...NOT_ISOLATED, charted_at: T2 }, known: true, canChart: true }); });
