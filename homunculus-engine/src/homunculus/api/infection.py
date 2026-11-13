@@ -62,6 +62,16 @@ def sepsis_alarms_of(card: dict) -> list[dict]:
              "snooze_until": (a.get("snooze") or {}).get("until")} for a in alerts]
 
 
+#: The card identity's `state` for a patient the HIS discharged (api/patient_identity.py): the card stays on the board for
+#: up to DISCHARGED_TTL, with no bed and no unit. It is on no list and in no count here (§5 A7, code review 2026-11-13).
+DISCHARGED = "discharged"
+
+
+def _discharged(card: dict) -> bool:
+    identity = card.get("identity")
+    return isinstance(identity, dict) and identity.get("state") == DISCHARGED
+
+
 def _firing(alarms: list[dict]) -> bool:
     return any(alarm["resolved_at"] is None for alarm in alarms)
 
@@ -106,8 +116,9 @@ def ward_infection(cards: list[dict], *, now: datetime) -> dict:
     """The answer of GET /infection without its scope block (spec D10 and the answer after §5). `cards` are the
     caller's scoped board cards; `units` names every unit a card is on, with that unit's counts (a card on no unit is
     counted only in the whole); a card with a bed is one `bed_occupants` entry. A board with no card answers the whole
-    shape: zeros and empty lists."""
-    rows = sorted((row_of(card) for card in cards), key=lambda row: row["patient_id"])
+    shape: zeros and empty lists. A card the HIS discharged is left out before anything is built (§5 A7): it is in no
+    list, no occupant and no count."""
+    rows = sorted((row_of(card) for card in cards if not _discharged(card)), key=lambda row: row["patient_id"])
     units = sorted({row["unit_id"] for row in rows if row["unit_id"]})
     return {
         "now": _iso(now),

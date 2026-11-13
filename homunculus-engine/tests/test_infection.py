@@ -199,3 +199,22 @@ class TestTheOccupantsAndTheCounts:
     def test_a_not_isolated_card_is_not_counted_as_unrecorded(self):
         answer = ward_infection([card("S-101", isolation=iso()), card("S-102")], now=NOW)
         assert (answer["counts"]["isolated"], answer["counts"]["isolation_unrecorded"]) == (0, 1)
+
+
+class TestTheDischarged:
+    def test_a_card_the_his_discharged_is_on_no_list_and_in_no_count(self):
+        """§5 A7 (code review, 2026-11-13): a HIS discharge keeps its card on the board for up to 24 hours
+        (api/patient_identity.py DISCHARGED_TTL); the infection page leaves it out — both lists, the occupants, the units
+        and every count — measured or identity-only alike."""
+        gone = card("S-109", bed_id="b2", unit="u2", isolation=iso("contact"), suspected=True, meds=clock(-60),
+                    alerts=[alert("sepsis")])
+        gone["identity"]["state"] = "discharged"
+        gone_unmeasured = identity_only("S-110", bed_id="b3", unit="u2")
+        gone_unmeasured["identity"]["state"] = "discharged"
+        here = card("S-101", bed_id="b1", unit="u1", isolation=iso("droplet"))
+        here["identity"]["state"] = "admitted"
+        answer = ward_infection([gone, gone_unmeasured, here], now=NOW)
+        assert ids(answer["isolated"]) == ["S-101"] and answer["suspected"] == []
+        assert [o["patient_id"] for o in answer["bed_occupants"]] == ["S-101"]
+        assert [u["unit_id"] for u in answer["units"]] == ["u1"]
+        assert answer["counts"] == {**ZERO, "patients": 1, "isolated": 1, "suspected_unrecorded": 1}

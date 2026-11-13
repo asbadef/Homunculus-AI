@@ -220,6 +220,24 @@ class TestTheScope:
         assert answer["isolated"] == [] and "p-a1" not in [o["patient_id"] for o in answer["bed_occupants"]]
         assert answer["counts"]["patients"] == 2
 
+    def test_a_patient_the_his_discharged_is_off_the_page_while_the_board_keeps_the_card(self):
+        """§5 A7 (code review, 2026-11-13): the HIS's discharge keeps the card on the board for up to 24 hours, with no
+        bed; the infection page lists and counts it nowhere — not even for a caller whose scope is the whole hospital."""
+        identities = _identities()
+        with TestClient(_app(identities=identities)) as client:
+            _isolate(client, "p-a1", "contact")
+            _raise_sepsis(client, "p-a1", datetime.now(timezone.utc) - timedelta(hours=3))
+            identities.apply("demo", IdentityRecord(patient_id="p-a1", given="Örnek Hasta", family="Bir",
+                                                    state="discharged", source="comed",
+                                                    updated_at=datetime.now(timezone.utc)))
+            (kept,) = [p for p in client.get("/patients", headers=NURSE).json()["patients"] if p["patient_id"] == "p-a1"]
+            answer = _infection(client).json()
+        assert kept["identity"]["state"] == "discharged"                              # still on the board
+        assert answer["isolated"] == answer["suspected"] == []
+        assert "p-a1" not in [o["patient_id"] for o in answer["bed_occupants"]]
+        assert answer["counts"] == {"patients": 2, "isolated": 0, "isolation_unrecorded": 2, "suspected": 0,
+                                    "suspected_unrecorded": 2, "clock_missed": 0, "sepsis_open": 0}
+
 
 class TestTheTrail:
     def test_the_read_appends_nothing_to_the_audit_log(self, ward):
