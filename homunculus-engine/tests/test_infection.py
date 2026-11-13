@@ -7,6 +7,7 @@ board's shape (api/board.py); synthetic keys and names only (CLAUDE.md rule 6)."
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from homunculus.api.infection import SEPSIS_KINDS, ward_infection
 from homunculus.api.pharmacy import antibiotic_of
@@ -218,3 +219,11 @@ class TestTheDischarged:
         assert [o["patient_id"] for o in answer["bed_occupants"]] == ["S-101"]
         assert [u["unit_id"] for u in answer["units"]] == ["u1"]
         assert answer["counts"] == {**ZERO, "patients": 1, "isolated": 1, "suspected_unrecorded": 1}
+
+    def test_the_word_is_the_identity_stores_own(self):
+        """Re-review (2026-11-13): «discharged» is api/patient_identity.py's word (`DISCHARGED`), imported here and never
+        spelled again, as the three isolation words are api/clinical.py's (review M3)."""
+        from homunculus.api import infection, patient_identity
+        assert patient_identity.DISCHARGED == "discharged" and infection.DISCHARGED is patient_identity.DISCHARGED
+        source = Path(__file__).resolve().parents[1] / "src" / "homunculus" / "api" / "infection.py"
+        assert '"discharged"' not in source.read_text(encoding="utf-8")

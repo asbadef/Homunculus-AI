@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from homunculus.api.clinical import ISOLATED, UNRECORDED       # review M3: the words are defined once, there
+from homunculus.api.patient_identity import DISCHARGED         # re-review: the identity store's own word
 from homunculus.api.pharmacy import ANTIBIOTIC_WINDOW_SOURCE, CLOCK_OPEN, antibiotic_of
 from homunculus.rules.antibiotic_clock import WINDOW as ANTIBIOTIC_WINDOW
 
@@ -62,9 +63,9 @@ def sepsis_alarms_of(card: dict) -> list[dict]:
              "snooze_until": (a.get("snooze") or {}).get("until")} for a in alerts]
 
 
-#: The card identity's `state` for a patient the HIS discharged (api/patient_identity.py): the card stays on the board for
-#: up to DISCHARGED_TTL, with no bed and no unit. It is on no list and in no count here (§5 A7, code review 2026-11-13).
-DISCHARGED = "discharged"
+#: `DISCHARGED` (imported above) is the card identity's `state` for a patient the HIS discharged — api/patient_identity.py's
+#: word: the card stays on the board for up to DISCHARGED_TTL, with no bed and no unit. It is on no list and in no count
+#: here (§5 A7, code review 2026-11-13).
 
 
 def _discharged(card: dict) -> bool:

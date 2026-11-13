@@ -37,10 +37,11 @@ _log = logging.getLogger(__name__)
 PROTOCOL_SYSTEM = "http://homunculus.local/protocol-no"
 DISCHARGED_TTL = timedelta(hours=24)
 _ADMITTED = "admitted"
-_DISCHARGED = "discharged"
+#: Public since G4-05's re-review: api/infection.py reads a card's `identity.state` against this word, never a copy.
+DISCHARGED = "discharged"
 # FHIR Encounter.status -> admission state. "unknown" is what the bridge sends for a trigger that
 # says nothing about admission (a transfer, a demographics update): the state stays as it was.
-_ENCOUNTER_STATUS = {"in-progress": _ADMITTED, "finished": _DISCHARGED, "unknown": None}
+_ENCOUNTER_STATUS = {"in-progress": _ADMITTED, "finished": DISCHARGED, "unknown": None}
 # Which feed a record came from ("comed" | "manuel" today). Bounded to a short token because it
 # is written into the append-only audit and rendered on cards; free text here would be a channel
 # for exactly the content those two places must never carry.
@@ -55,7 +56,7 @@ def is_tombstone(record: IdentityRecord | None) -> bool:
     discharge is not one: its card keeps its 24-hour retention, and its readings are still
     evaluated. The one predicate — the board, BoardLink, the alert lifecycle and the doors read
     this (A-25, Lane A's O1)."""
-    return record is not None and record.source == KABUL and record.state == _DISCHARGED
+    return record is not None and record.source == KABUL and record.state == DISCHARGED
 
 
 _key_warned = False
@@ -190,7 +191,7 @@ def parse_fhir_patient(resource: dict) -> IdentityRecord:
         given=given,
         birth_date=birth_date,
         sex=sex,
-        state=None if active is None else (_ADMITTED if active else _DISCHARGED),
+        state=None if active is None else (_ADMITTED if active else DISCHARGED),
         source=source,
         updated_at=when,
     )
@@ -283,7 +284,7 @@ def _merge(existing: IdentityRecord | None, incoming: IdentityRecord) -> Identit
     if incoming.diagnoses:
         changed["diagnoses"] = incoming.diagnoses
     state = incoming.state if incoming.state is not None else (base.state or _ADMITTED)
-    if state == _DISCHARGED:
+    if state == DISCHARGED:
         # The bed is freed; `bed_id`/`unit_id` stay as the last place (the board ignores them on
         # a discharged record, a removal frame carries them).
         changed.update(unit="", room="", bed="")
@@ -304,7 +305,7 @@ class IdentityStore(Protocol):
 
 def _is_expired(record: IdentityRecord, cutoff: datetime) -> bool:
     # A discharged `kabul` record never expires: it is the tombstone that keeps the card away.
-    return (record.state == _DISCHARGED and record.updated_at is not None
+    return (record.state == DISCHARGED and record.updated_at is not None
             and record.updated_at < cutoff and record.source != KABUL)
 
 
@@ -332,7 +333,7 @@ class InMemoryIdentityStore:
     def patient_ids(self, hospital: str) -> list[str]:
         # G2-B1a: a `kabul` tombstone is kept for good, so it is not in the board's inventory.
         return sorted(pid for (h, pid), r in self._rows.items() if h == hospital
-                      and not (r.state == _DISCHARGED and r.source == KABUL))
+                      and not (r.state == DISCHARGED and r.source == KABUL))
 
     def expired(self, hospital: str, now: datetime,
                 ttl: timedelta = DISCHARGED_TTL) -> list[IdentityRecord]:
@@ -462,7 +463,7 @@ class SqliteIdentityStore:
         return [r[0] for r in self._conn.execute(
             "SELECT patient_id FROM identity WHERE tenant = ?"
             " AND NOT (COALESCE(state, '') = ? AND COALESCE(source, '') = ?)"
-            " ORDER BY patient_id", (hospital, _DISCHARGED, KABUL))]
+            " ORDER BY patient_id", (hospital, DISCHARGED, KABUL))]
 
     def expired(self, hospital: str, now: datetime,
                 ttl: timedelta = DISCHARGED_TTL) -> list[IdentityRecord]:
@@ -470,14 +471,14 @@ class SqliteIdentityStore:
         rows = self._conn.execute(
             _SELECT + " WHERE tenant = ? AND state = ? AND updated_at IS NOT NULL"
             " AND updated_at < ?" + _PRUNABLE + " ORDER BY patient_id",
-            (hospital, _DISCHARGED, cutoff)).fetchall()
+            (hospital, DISCHARGED, cutoff)).fetchall()
         return [self._record(r) for r in rows]
 
     def prune(self, now: datetime, ttl: timedelta = DISCHARGED_TTL) -> int:
         cutoff = (to_utc(now) - ttl).isoformat()
         cur = self._conn.execute(
             "DELETE FROM identity WHERE state = ? AND updated_at IS NOT NULL AND updated_at < ?"
-            + _PRUNABLE, (_DISCHARGED, cutoff))
+            + _PRUNABLE, (DISCHARGED, cutoff))
         self._conn.commit()
         return cur.rowcount
 
