@@ -74,6 +74,10 @@ export function patientFromBoard(entry) {
     // against: {pressors, on_pressor, antibiotic_given, antibiotic_at, antibiotic_clock,
     // creatinine, weight_kg}. `antibiotic_given: null` means nobody charted it either way.
     meds: entry?.meds ?? null,
+    // G4-05 (spec D8): the isolation precautions a clinician charted — {contact, droplet, airborne, protective (each
+    // true / false / null), types, state, charted_at} — or null on a card with none (identity-only, or an older api),
+    // which the patient screen's «İzolasyon» box reads as «unrecorded».
+    isolation: entry?.isolation ?? null,
     // Aşama B (D6): the shadow engine's picture of a monitor-linked patient — {news2, vitals,
     // findings} — and null for a patient with no monitor link. Carried through untouched: it is
     // the engine's reading of the monitor's UNVALIDATED numbers, never mixed into `vitals`,

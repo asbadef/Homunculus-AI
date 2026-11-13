@@ -1,6 +1,7 @@
 // src/live/screens/patient/PatientScreen.jsx — one patient, as the engine describes them (G1-11).
-// It writes FIVE things, and says so in as many words (`patient.onlyWrite`), each only for a
-// `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since Group 2 ·
+// It writes SIX things, and says so in as many words (`patient.onlyWrite`), each only for a
+// `clinical.chart` holder: whether an infection is suspected (Task 15B, Decision 27); since G4-05, from the
+// «İzolasyon» box (`IsolationBox.jsx`, spec D16), the patient's isolation precautions; since Group 2 ·
 // slice 1, from the trends box, the patient's own normal ranges; since G2-A3, from the Meds box
 // (`meds/MedsBox.jsx`, D4), the medication and fluid entries — a pressor rate, a bolus, the weight,
 // "antibiotic given"; since G2-A4, from the SOFA form (`sofa/SofaBox.jsx`, D3), the measurements that
@@ -67,6 +68,7 @@ import { MedsBox } from "./meds/MedsBox.jsx";
 import { VitalsEntry } from "./VitalsEntry.jsx"; // G3-01 (D3b)
 import { SofaBox } from "./sofa/SofaBox.jsx"; // G2-A4 (D1)
 import { FluidsBox } from "./fluids/FluidsBox.jsx"; // G3-03 (D10)
+import { IsolationBox } from "./IsolationBox.jsx"; // G4-05 (D16)
 import { ReadingsBox } from "./readings/ReadingsBox.jsx"; // G3-05 (D16)
 import { ShadowFindingsBox } from "./shadow/ShadowFindingsBox.jsx";
 import { CODE_LABEL, CODE_UNIT, VIA_KEY, own } from "./shadow/shadowVitals.js";
@@ -501,7 +503,13 @@ export function PatientScreen({ params }) {
           </section>
 
           <div className="grid gap-2 min-[861px]:grid-cols-2">
-            <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
+            {/* G4-05 (spec D16, §5 M8): the left cell is a column — Sepsis, then İzolasyon; Meds stays on the right, and on
+                a narrow screen the order is Sepsis, İzolasyon, Meds. */}
+            <div className="grid content-start gap-2">
+              <Sepsis sepsis={patient.sepsis} canChart={canChart} onChart={chart} pending={charting} />
+              <IsolationBox patientId={id} isolation={patient.isolation ?? null} bed={bed} canChart={canChart} known={known}
+                nowMs={nowMs} onChart={(entries) => board.store.chart(id, entries)} onRefresh={() => board.store.refresh()} />
+            </div>
             <MedsBox meds={patient?.meds ?? null} bed={bed} canChart={canChart} patientId={id} nowMs={nowMs}
               onChart={(entries, at) => board.store.chart(id, entries, at)} onSaved={fluidsMayHaveMoved} />
           </div>

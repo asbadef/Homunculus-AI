@@ -76,16 +76,17 @@ afterEach(() => {
 });
 
 describe("the patient screen", () => {
-  it("names the bed and the patient, and says the five things it writes and that the SOFA form is signed too", async () => {
+  it("names the bed and the patient, and says the six things it writes and that the SOFA form is signed too", async () => {
     await open({ payload: board([entry("S-001", [], FULL)]) });
     expect(screen.getByRole("heading", { level: 1, name: "Ayşe Sentetik" })).toBeInTheDocument();
     // One h1 and no more: the shell moves focus to <main> after every move, and the screen's own
     // heading is what a reader lands on.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByText("REA-01 · 2")).toBeInTheDocument();
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/beş şey yazır/);
-    // G3-01 (D3b): the bedside set, entered with «Ölçmə daxil et», and that a value can be withdrawn.
-    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, xəstənin norması, dərman \/ maye qeydi, SOFA formasından daxil edilən ölçmələr və «Ölçmə daxil et» ilə daxil edilən çarpayı başı ölçmələri/);
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/altı şey yazır, hər altısı/);
+    // G3-01 (D3b): the bedside set, entered with «Ölçmə daxil et», and that a value can be withdrawn. G4-05 (spec §5
+    // M6): the isolation record, after the suspected-infection mark.
+    expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/şübhəli infeksiya işarəsi, izolyasiya qeydi, xəstənin norması, dərman \/ maye qeydi, SOFA formasından daxil edilən ölçmələr və «Ölçmə daxil et» ilə daxil edilən çarpayı başı ölçmələri/);
     expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/«səhv qeyd» kimi geri götürülə bilər/);
     // G2-A4 review 2: signing needs scores.sign only — a right of its own, not one on top of clinical.chart.
     expect(screen.getByText(/heç nə yazılmır/)).toHaveTextContent(/imzası ayrıca scores\.sign səlahiyyəti tələb edir/);
@@ -1109,6 +1110,31 @@ describe("charting a suspected infection", () => {
     await openChartable();
     expect(screen.getByText(/audit qeydinə yazılır/)).toBeInTheDocument();
     expect(screen.getByText(/Geri alınmır/)).toBeInTheDocument();
+  });
+
+  // G4-05 (spec D16, §5 M8): the «İzolyasiya» box — under the Sepsis box in the left cell of the two-column grid (Meds
+  // on the right), reading the card's own block, saving all four flags for the patient shown through the store.
+  it("draws the isolation box under the Sepsis box, in its cell, and reads the card's block", async () => {
+    const isolation = { contact: true, droplet: null, airborne: null, protective: null, types: ["contact"],
+      state: "isolated", charted_at: ago(600) };
+    await openChartable({ payload: board([entry("S-001", [], { ...SEPSIS, isolation })]) });
+    const sepsis = screen.getByRole("heading", { name: "Sepsis-3 konteksti" }).closest("div.rounded-box");
+    const box = screen.getByRole("heading", { name: "İzolyasiya" }).closest("div.rounded-box");
+    expect(sepsis.parentElement).toBe(box.parentElement);
+    expect(sepsis.nextElementSibling).toBe(box);
+    expect(box.parentElement.nextElementSibling).toBe(screen.getByRole("heading", { name: "Dərman və antibiotik" }).closest("div.rounded-box"));
+    expect(within(box).getByRole("note").textContent).toBe("İzolyasiya: Təmas");
+  });
+
+  it("saves the four isolation flags for the patient shown, with no time, and reads the board again", async () => {
+    const { api } = await openChartable();
+    const before = api.boardPatients.mock.calls.length;
+    const box = screen.getByRole("heading", { name: "İzolyasiya" }).closest("div.rounded-box");
+    fireEvent.click(within(box).getByRole("checkbox", { name: "Damcı" }));
+    await act(async () => { fireEvent.click(within(box).getByRole("button", { name: "İzolyasiyanı yadda saxla" })); await settle(); });
+    expect(api.chart).toHaveBeenCalledWith("S-001", [{ code: "isolation_contact", value: 0 }, { code: "isolation_droplet", value: 1 },
+      { code: "isolation_airborne", value: 0 }, { code: "isolation_protective", value: 0 }], null);
+    expect(api.boardPatients.mock.calls.length).toBe(before + 1);
   });
 
   it("charts one entry, in the engine's own code and value", async () => {

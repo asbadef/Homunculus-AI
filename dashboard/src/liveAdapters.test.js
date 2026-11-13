@@ -18,6 +18,15 @@ const entry = {
 };
 
 describe("patientFromBoard", () => {
+  // G4-05 (spec D8): the card's isolation block, untouched; null on a card with none (identity-only, or older).
+  it("carries the card's isolation block through, and null when there is none", () => {
+    const isolation = { contact: true, droplet: null, airborne: false, protective: null, types: ["contact"],
+      state: "isolated", charted_at: "2026-11-12T08:10:00+00:00" };
+    expect(patientFromBoard({ ...entry, isolation }).isolation).toEqual(isolation);
+    expect(patientFromBoard(entry).isolation).toBeNull();
+    expect(patientFromBoard({ ...entry, isolation: null }).isolation).toBeNull();
+  });
+
   it("carries the machine-measured vitals across", () => {
     expect(patientFromBoard(entry).vitals)
       .toEqual({ hr: 123, map: 61, sbp: 96, spo2: 89, temp: 38.4, rr: 28 });
