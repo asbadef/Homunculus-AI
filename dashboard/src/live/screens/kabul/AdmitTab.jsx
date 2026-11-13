@@ -65,11 +65,13 @@
 // the clock. Cleared and left, it is untouched again (review M-1): the current minute, nothing sent. A
 // refusal of the time — too old, before the bed was free, before the person's last discharge — is said on
 // the toast after the bed, the beds are read again (the bed's new time moves the bound), the refused time
-// stays and the field says the server's words under it until she changes the time (review M-2: the panel
-// cannot name what only the server knows), and the focus goes to the field from where a press leaves it.
-// Nothing is held. A send with
-// no answer near the six-hour edge may find its minute named by the panel a minute later: she moves it,
-// and the send that follows looks for the first send's admission first, as every send does (A-19).
+// stays and the field says the server's words under it (review M-2: the panel cannot name what only the
+// server knows), and the focus goes to the field from where a press leaves it. The words stand only while
+// what the server judged is still the form's: the time, and the bed for the bed's free time, the name and
+// birth date for the person's last discharge (final review: another bed, another name is another judgement).
+// Nothing is held. A send that got no answer near the six-hour edge may find its minute named by the
+// panel a minute later: she moves it, and the send that follows looks for the first send's admission
+// first, as every send does (A-19).
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiErrorKey } from "../../apiErrors.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -112,6 +114,22 @@ const TIME_REFUSALS = new Set(["field_invalid:admission_datetime", "admitted_bef
   "admitted_before_discharge"]);
 /** How often the field's «now» and its bounds are read again: the bedside form's cadence. */
 const CLOCK_EVERY_MS = 30_000;
+
+/** G3-07 (final review): does the server's refusal of the time still describe the form? `refused` is what
+ *  `failed` kept — the code, its words, the time sent and what the server judged it against. It stands
+ *  while the form holds that time and, by the code:
+ *   * `admitted_before_bed_free` (the bed's free time): the same bed;
+ *   * `admitted_before_discharge` (the person's last discharge): the same name and birth date — the
+ *     server's identity of a person — whatever the bed;
+ *   * `field_invalid:admission_datetime` (older than six hours, ahead of the clock, or before the birth
+ *     date): the same birth date. */
+function refusalStands(refused, form) {
+  if (!refused?.reason) return false;
+  if (refused.value !== (form.admittedAtTouched ? form.admittedAt : null)) return false;
+  if (refused.code === "admitted_before_bed_free") return normId(refused.bedId) === normId(form.bedId);
+  if (refused.code === "admitted_before_discharge") return sameName(refused.name, form.name) && refused.dob === form.dob;
+  return refused.dob === form.dob;
+}
 
 /** The bed an admit answer is named after: the form's — or, when the answer names another bed, the
  *  bed she lies in now, by the structure's name ("" when it does not hold it), never the bed she
@@ -317,10 +335,9 @@ export function AdmitTab() {
   const admittedHint = Number.isFinite(freeMs)
     ? `${t("kabul.admittedAtHint")} ${t("kabul.admittedAtBedSince", { time: dayStamp(freeMs, nowMs) })}`
     : t("kabul.admittedAtHint");
-  // The server's refusal of the time (review M-2) stands while the field holds the time it refused.
+  // The server's refusal of the time (review M-2) stands while the form is what it judged (`refusalStands`).
   const refused = form.admittedAtRefused;
-  const admittedRefused = refused?.reason && refused.value === (form.admittedAtTouched ? form.admittedAt : null)
-    ? t(refused.reason.key, refused.reason.vars) : undefined;
+  const admittedRefused = refusalStands(refused, form) ? t(refused.reason.key, refused.reason.vars) : undefined;
 
   /** The form's patient admitted — by this send's answer, or found after one that got none. Every
    *  send under that name is done with, and the form is emptied for the next patient. */
@@ -401,8 +418,9 @@ export function AdmitTab() {
 
   // Every step after an `await` first asks whether the draft is still live: a send of a session
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
-  // `sentTime`: «Kabul zamanı» as the send had it — the text, or null when untouched (G3-07, M-2).
-  async function failed(err, sent, sentTime = null) {
+  // `judged`: what the send had that the server judges «Kabul zamanı» against (G3-07, M-2): the time as
+  // typed (null when untouched), the bed, and the person — name and birth date.
+  async function failed(err, sent, judged = { value: null }) {
     if (err?.apiCode === "bed_reserved") {
       // G2-B3a (X1): the bed was reserved after the picker read it. Nothing was written: read the
       // beds again and ask, as for a bed the picker shows reserved.
@@ -462,7 +480,7 @@ export function AdmitTab() {
       // the time and sends.
       toast(refusedFor(t, sent.bed, reasonOf(t, err)), "error");
       draft.update((s) => ({ tried: true,
-        form: { ...s.form, admittedAtRefused: { value: sentTime, reason: apiErrorKey(err) } } }));
+        form: { ...s.form, admittedAtRefused: { ...judged, code: err.apiCode, reason: apiErrorKey(err) } } }));
       await reload();
       if (!draft.live) return;
       if (focusIsIdle(submitRef.current)) setFocusTo({ field: "admittedAt" });
@@ -524,7 +542,9 @@ export function AdmitTab() {
       return;
     }
     const body = toBody(form, sent.requestId, { confirmReserved: saidYes, freeSince });
-    const sentTime = form.admittedAtTouched ? form.admittedAt : null;        // what a refusal of the time marks (M-2)
+    // What a refusal of the time marks (M-2), and what it was judged against: the field stays marked only
+    // while the form still holds these.
+    const judged = { value: form.admittedAtTouched ? form.admittedAt : null, bedId: form.bedId, name: form.name, dob: form.dob };
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -556,7 +576,7 @@ export function AdmitTab() {
         bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
-      if (draft.live) await failed(err, sent, sentTime);
+      if (draft.live) await failed(err, sent, judged);
     } finally {
       draft.update({ sending: false });
     }

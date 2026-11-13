@@ -36,7 +36,9 @@ export default {
     comorbiditiesTextHint: "Kaydedilir; motora kod olarak gönderilmez.",
     // G3-07 (spec §5): «Kabul zamanı»'s hint, and the chosen bed's free time beside it.
     admittedAtHint: "Değiştirilmezse kaydın anı yazılır. En çok 6 saat geriye.",
-    admittedAtBedSince: "Yatak {time}'den beri boş: kabul zamanı bundan önce olamaz.",
+    // No suffix to inflect ({time} is «11:30» or «11.11 23:00»), and true of a reserved bed too: the time is
+    // when the bed's state began — freed, or reserved.
+    admittedAtBedSince: "Yatağın boşaldığı ya da rezerve edildiği an: {time} — kabul zamanı bundan önce olamaz.",
     sms: "SMS ile bilgilendirme izni",
     sex: { female: "Kadın", male: "Erkek" },
     type: { medical: "Medikal yatış", surgical: "Ameliyat", icu: "Yoğun bakım", procedure: "Müdahale" },
@@ -247,7 +249,7 @@ export default {
     noAllergy: "Məlum allergiyası yoxdur",
     comorbiditiesTextHint: "Yadda saxlanılır; mühərrikə kod kimi göndərilmir.",
     admittedAtHint: "Dəyişdirilməsə, qeydin anı yazılır. Ən çox 6 saat geriyə.",
-    admittedAtBedSince: "Çarpayı {time}-dən boşdur: qəbul vaxtı bundan əvvəl ola bilməz.",
+    admittedAtBedSince: "Çarpayının boşaldığı və ya rezerv edildiyi an: {time} — qəbul vaxtı bundan əvvəl ola bilməz.",
     sms: "SMS ilə məlumatlandırma icazəsi",
     sex: { female: "Qadın", male: "Kişi" },
     type: { medical: "Tibbi yatış", surgical: "Əməliyyat", icu: "Reanimasiya", procedure: "Müdaxilə" },
@@ -441,7 +443,7 @@ export default {
     noAllergy: "Известной аллергии нет",
     comorbiditiesTextHint: "Сохраняется; системе как код не передаётся.",
     admittedAtHint: "Если не менять, записывается момент сохранения. Не более 6 часов назад.",
-    admittedAtBedSince: "Койка свободна с {time}: время приёма не может быть раньше.",
+    admittedAtBedSince: "Койка освободилась или была зарезервирована: {time} — время приёма не может быть раньше.",
     sms: "Согласие на SMS-уведомления",
     sex: { female: "Женский", male: "Мужской" },
     type: { medical: "Терапевтическая госпитализация", surgical: "Операция", icu: "Реанимация", procedure: "Вмешательство" },
@@ -635,7 +637,7 @@ export default {
     noAllergy: "No known allergy",
     comorbiditiesTextHint: "Stored; not sent to the engine as a code.",
     admittedAtHint: "Left unchanged, the moment of saving is recorded. At most 6 hours back.",
-    admittedAtBedSince: "The bed has been free since {time}: the admission time cannot be earlier.",
+    admittedAtBedSince: "When the bed became free or was reserved: {time} — the admission time cannot be earlier.",
     sms: "SMS updates allowed",
     sex: { female: "Female", male: "Male" },
     type: { medical: "Medical admission", surgical: "Surgery", icu: "Intensive care", procedure: "Procedure" },

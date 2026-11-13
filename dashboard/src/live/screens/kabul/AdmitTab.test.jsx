@@ -1625,7 +1625,8 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
     expect(screen.getByText("Dəyişdirilməsə, qeydin anı yazılır. Ən çox 6 saat geriyə.")).toBeTruthy();
     fillRequired();                                                           // bed 1
     expect(field().getAttribute("min")).toBe(at(11, 30));
-    expect(screen.getByText(/Çarpayı 11:30-dən boşdur: qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    // No suffix to inflect, and true of a reserved bed too: the time is when the bed's state began.
+    expect(screen.getByText(/Çarpayının boşaldığı və ya rezerv edildiyi an: 11:30 — qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
     expect(missingNow()).toEqual([]);
   });
 
@@ -1710,7 +1711,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
     pickBed5();                                                              // free since 13:00
     expect(field().value).toBe(at(12, 15));
     expect(field().getAttribute("min")).toBe(at(13, 0));
-    expect(screen.getByText(/Çarpayı 13:00-dən boşdur: qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    expect(screen.getByText(/Çarpayının boşaldığı və ya rezerv edildiyi an: 13:00 — qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
     expect(missingNow()).toEqual([TOO_FAR]);
     expect(admitButton().getAttribute("aria-disabled")).toBe("true");
     await press();
@@ -1795,5 +1796,81 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
     await settle();
     expect(field().value).toBe(at(12, 30));
     expect(field().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  // Final review: the server's words are about what it judged — the time AND the bed (its free time) or the
+  // person (her last discharge, her birth date): they stand only while those are still the form's.
+  describe("the server's words stand only while what was refused is still the form's", () => {
+    const BED_WORDS = "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz.";
+    const DISCHARGE_WORDS = "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz.";
+    const INVALID_WORDS = "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz).";
+    const dobField = () => screen.getByLabelText(/^Doğum tarixi/);
+    /** Everything the field is described by — the toast says the words too, and stays. */
+    const fieldWords = () => (field().getAttribute("aria-describedby") ?? "").split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
+    const pickBed1 = () => fireEvent.click(within(screen.getByRole("group", { name: "Otaq 1" })).getByRole("button", { name: "1 · Otaq 1 · Reanimasiya" }));
+    /** Bed 1 free since 11:30:40 (`FREE`), bed 5 since 09:00 — earlier, so 12:00 stands on both. */
+    const bed5Earlier = () => {
+      const tree = withBed(1, { state_since: FREE });
+      tree.sites[0].units[0].rooms[1].beds[0].state_since = new Date(2026, 10, 12, 9, 0).toISOString();
+      return tree;
+    };
+    /** The form (bed 1, 12:00) sent once and refused with `code`. */
+    async function refused(code, status) {
+      await open((a) => {
+        a.structure.mockResolvedValue(bed5Earlier());
+        a.admit.mockRejectedValueOnce(refusal(status, "English words", { apiCode: code }));
+      });
+      fillRequired();
+      choose(at(12, 0));
+      await press();
+    }
+
+    it("admitted_before_bed_free is about that bed: another bed clears it, the same bed again brings it back", async () => {
+      await refused("admitted_before_bed_free", 409);
+      expect(field().getAttribute("aria-invalid")).toBe("true");
+      expect(errorOf(field())).toBe(BED_WORDS);
+      pickBed5();                                                            // free since 09:00: 12:00 stands
+      expect(field().value).toBe(at(12, 0));
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(BED_WORDS);
+      expect(missingNow()).toEqual([]);
+      pickBed1();                                                            // the bed the server refused
+      expect(errorOf(field())).toBe(BED_WORDS);
+    });
+
+    it("admitted_before_bed_free is not about the person: a name or a birth date changed leaves it", async () => {
+      await refused("admitted_before_bed_free", 409);
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqa" } });
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(errorOf(field())).toBe(BED_WORDS);
+    });
+
+    it("admitted_before_discharge is about the person: a changed name or birth date clears it, another bed does not", async () => {
+      await refused("admitted_before_discharge", 409);
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);
+      pickBed5();
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // her last discharge is the same on any bed
+      fireEvent.change(nameField(), { target: { value: "  sentetik   HASTA " } });
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // the same name, typed otherwise
+      fireEvent.change(nameField(), { target: { value: "Sentetik Başqa" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(DISCHARGE_WORDS);
+      fireEvent.change(nameField(), { target: { value: "Sentetik Hasta" } });
+      expect(errorOf(field())).toBe(DISCHARGE_WORDS);                        // and back: the refused person again
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(DISCHARGE_WORDS);
+    });
+
+    it("field_invalid:admission_datetime also depends on the birth date (the engine's guard): a changed one clears it, another bed does not", async () => {
+      await refused("field_invalid:admission_datetime", 422);
+      expect(errorOf(field())).toBe(INVALID_WORDS);
+      pickBed5();
+      expect(errorOf(field())).toBe(INVALID_WORDS);
+      fireEvent.change(dobField(), { target: { value: "1971-06-06" } });
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      expect(fieldWords()).not.toContain(INVALID_WORDS);
+    });
   });
 });
