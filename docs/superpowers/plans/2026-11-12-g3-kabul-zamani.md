@@ -2718,8 +2718,27 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
 - G1 Step 5 (build): `✓ built in 4.55s`, `precache  74 entries (1646.16 KiB)`, no `larger than 500 kB` line;
   `KabulScreen-*.js` 37.25 kB.
 - G1 Step 6 (Python 3.14): `157 passed, 21 skipped`.
-- G2 (the walk): not run with the gates — the controller dispatches it separately — notes at
-  `/c/tmp/homunculus-plans/g3-kabulz/walk/notes.md`
+- G2 (the walk), run 2026-11-13 on code head `1397d8a8` (the D1 docs commit; images built from it, the worktree clean
+  before and after): separate compose project `g3kabul` (containers `g3kwalk-*`, web `127.0.0.1:18206`, alembic `0021`),
+  synthetic data only, headless Chrome in Turkish at 1440 and 390 px. Record (outside the repository, with the
+  screenshots): `/c/tmp/homunculus-plans/g3-kabul/walk/notes.md` (the plan's `g3-kabulz` path was not used). **Items 1–5
+  and 390 px: PASS; no finding for G3-07.** Adaptations: no bridge — the device sets went to `/ingest` with the tenant
+  token; beds 1 and 3 moved a day back (a bed counts as free since its creation, so a two-hour back kabul was not
+  possible on a bed made minutes earlier — the bound at work); the on-screen 422 and one 390 px refusal forced by
+  rewriting the POST body; the natural bed refusal from a stale structure. Observations: O-1 a set under the patient's
+  OWN number, measured before the back-dated start, is recorded on the stay (only the link checks the start — G3-05's
+  door, unchanged; open item 8 of the spec's §11); O-2 error toasts do not auto-close; O-3 a direct `#/patients/…` load
+  lands on Yataklar; O-4 the seeded tenant's zone is «UTC»; O-5 an artefact of the forcing. Summary: spec §11.
+- Final review polish, after the walk (not walked; tests): `f274d9d4` — the bed hint reworded without a suffix and
+  without «boş» for a reserved bed (tr «Yatağın boşaldığı ya da rezerve edildiği an: {time} — kabul zamanı bundan önce
+  olamaz.»), the server's words under the field stand only for the bed / the person they judged (+4 tests in
+  `AdmitTab.test.jsx`), a comment re-set; `48ab42de` — `form.check_admission_not_before_birth`, run by the route after
+  `check_admission_time` with the hospital's date of the time sent (+2 no-database tests, +3 Postgres route tests), the
+  422's words widened in four languages. Gates: dashboard `src/live/screens/kabul` + `src/live/i18n` 26 files, 522
+  passed; `test_admission_form.py` 154 passed; `test_admission_time.py` 24 passed on `kabulz-pg` (stopped after);
+  `test_admission_api.py -k "date or time or newborn or hospital"` 5 passed, 1 skipped. The guide's §3.8 and §3.27 say
+  what the bed bound is on each path and name the birth-date rule. A whole-suite re-run and the build's precache line
+  are the controller's.
 
 ---
 

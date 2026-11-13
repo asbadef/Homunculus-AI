@@ -63,7 +63,9 @@ behaves exactly as today.
 3. `_earlier` (`:514–517`): a form sent before under this `request_id` is answered with its admission (A-19).
 4. The attending is a physician (`:522–524`), 422.
 5. **new** `form.check_admission_time(at, now=now)`: 422 `field_invalid:admission_datetime` when
-   `at < now − BACKDATE_MAX`. `now` is the route's (`:495`).
+   `at < now − BACKDATE_MAX`. `now` is the route's (`:495`). *(As built, final review: the same step goes on with
+   `form.check_admission_not_before_birth` — the same 422 when the DATE of `at` in the hospital's zone is before the
+   patient's date of birth; §11.)*
 6. One open admission per person (`:525–527`), 409 `duplicate_open_admission`.
 7. `bed_closed` (`:528–529`); `bed_reserved` without the confirmation (`:534–536`).
 8. **new** The bed bound (D3): only for a bed AVAILABLE or RESERVED; a RESERVED bed reaches this step only with
@@ -256,12 +258,15 @@ it (G3-05 D11: «Soyad ad ve doğum yılı hastayla eşleşiyor mu?»), the name
   implementer and wait for a native reader (O5).
   - `f.admittedAt`: «Kabul zamanı».
   - `admittedAtHint`: «Değiştirilmezse kaydın anı yazılır. En çok 6 saat geriye.»
-  - `admittedAtBedSince`: «Yatak {time}'den beri boş: kabul zamanı bundan önce olamaz.»
+  - `admittedAtBedSince`: «Yatağın boşaldığı ya da rezerve edildiği an: {time} — kabul zamanı bundan önce olamaz.»
+    (As built: the first draft's «Yatak {time}'den beri boş: …» put a fixed suffix on a time that Turkish inflects —
+    «11:30'dan», «23:00'ten» — and said «boş» of a reserved bed, whose time is the reservation's start; §11.)
   - `miss.admittedAt`: «Kabul zamanı: en çok 6 saat geriye, yatağın boşaldığı andan önce ve gelecekte olamaz.»
     (As built: «gelecekte olamaz» in place of the first draft's «ileri bir saat olamaz», and likewise in az and en;
     §11.)
   - `invalid.admissionDatetime`, widened from «… (gelecekte olamaz).» (tr `:204`, az `:392`, ru `:580`, en `:768`):
-    «Kabul zamanı geçerli değil (gelecekte ya da 6 saatten eski olamaz).»
+    «Kabul zamanı geçerli değil (gelecekte ya da 6 saatten eski olamaz).» (As built: «… (gelecekte, 6 saatten eski ya da
+    doğum tarihinden önceki bir günde olamaz).» — the birth-date guard of §11 answers the same code.)
   - `err.admittedBeforeBedFree`: «Kabul zamanı, yatağın boşaldığı andan önce olamaz.»
   - `err.admittedBeforeDischarge`: «Kabul zamanı, bu hastanın son taburcusundan önce olamaz.»
 - **Denetim: no change.** The page shows no payload (`DenetimScreen.jsx:10`). It reads only the actor keys
@@ -413,8 +418,9 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
 ## 11. As built
 
 Plan: `docs/superpowers/plans/2026-11-12-g3-kabul-zamani.md`. Built on `feat/g3-kabul-zamani`; code head `3fa46665`
-(the docs commit follows it); gates run 2026-11-13 (the lines are in the plan's «As run» block). No migration (alembic
-head `0021`), no environment variable, no route, no permission, no event type.
+(the docs commit follows it; the final review's polish, `f274d9d4` and `48ab42de`, follows that — see «Final review
+polish» below); gates run 2026-11-13 (the lines are in the plan's «As run» block). No migration (alembic head `0021`),
+no environment variable, no route, no permission, no event type.
 
 **Commits by task** (after the plan, `0993360c`):
 
@@ -427,7 +433,10 @@ head `0021`), no environment variable, no route, no permission, no event type.
 | E3 — the route's bounds and the audit row | `4a167831`; review minors `3fa46665` |
 | E4 — the stay-start readers, end to end | `f687dadd` |
 | W3 — the field on the Kabul tab | `02f096b1`; review `0391536a` (M-1, M-2, M-3) |
-| D1 — the guide, the roadmap row, this section | the docs commit after `3fa46665` |
+| D1 — the guide, the roadmap row, this section | `1397d8a8` |
+| Final review polish — the dashboard (hint wording, the refusal's scope) | `f274d9d4` |
+| Final review polish — the engine's birth-date guard, the 422's widened words | `48ab42de` |
+| Final review polish — the guide, this section, the plan's «As run» | the docs commit after `48ab42de` |
 
 What differs from the design above (the plan's departures, E-1 … E-7, and the reviews):
 
@@ -454,6 +463,34 @@ What differs from the design above (the plan's departures, E-1 … E-7, and the 
   time she chose while the refused send was out is not marked (M-2). Tests pin a bed with a later free time and a
   clock tick past a typed time (the panel names it, «Kabul et» is held) and the draft across a tab remount (M-3).
 
+**Final review polish** (`f274d9d4` dashboard; `48ab42de` engine and the 422's words; the guide):
+
+1. **The bed hint has no suffix and does not say «boş» of a reserved bed.** tr «Yatağın boşaldığı ya da rezerve edildiği
+   an: {time} — kabul zamanı bundan önce olamaz.»; az, ru, en say the same without a suffix. The first draft's
+   «Yatak {time}'den beri boş» fixed a suffix that Turkish inflects with the time («11:30'dan», «23:00'ten», and
+   `dayStamp`'s «11.11 23:00») and called a RESERVED bed free, whose time is the reservation's start (O3).
+2. **The server's words under the field stand only for what the server judged** (`AdmitTab.jsx` `refusalStands`). The
+   refused record keeps, beside the time, the bed id and the name and birth date of the send. `admitted_before_bed_free`
+   stands while the form holds that bed — another bed, free earlier, clears it; `admitted_before_discharge` while the
+   name (as `sameName` reads it) and the birth date are the same — another bed leaves it, another name or birth date
+   clears it; `field_invalid:admission_datetime` while the birth date is the same. The same bed again brings them
+   back. Tests for each.
+3. A comment in `AdmitTab.jsx` that wrapped mid-sentence is re-set.
+4. **The guide** (§3.8, §3.27) says what the bound is on each path: the «Temizlik bitti · boş» press for a bed that was
+   cleaned; the reservation's start for a reserved bed; the moment of the un-reserve or the return to service for a bed
+   that went that way; the form's hint shows the real time.
+5. **A time on a day before the birth is refused** (the NICU). `form.check_admission_not_before_birth(admitted_on,
+   born=)`: 422 `field_invalid:admission_datetime` when the DATE of the time sent, in the hospital's own zone, is before
+   the date of birth; the birth day passes, and a form that sent no time is not asked. The route runs it right after
+   `check_admission_time`, so also after the look-up of an earlier send, and reads the date with
+   `hospital_today(zone, sent_at)` — the mechanism of the birth date's own `today` (A-10). A child born at 00:30 local
+   and admitted at 00:40 is not refused for the UTC date being the day before, when the tenant's zone is set. Tests: the
+   rule (no database, `test_admission_form.py`) and the route (`test_admission_time.py`, Asia/Baku by a stand-in zone
+   database as `test_admission_api.py` does: 00:30 on the birth day passes, 23:30 the day before is refused, and the
+   same instant under a UTC tenant is refused). The dashboard's words for the code widen in four languages: tr «Kabul
+   zamanı geçerli değil (gelecekte, 6 saatten eski ya da doğum tarihinden önceki bir günde olamaz).» The form does not
+   bound the field by the birth date: the server's refusal is said under the field (item 2).
+
 The open item of §5 is settled: the Kabul screen is under the shell's `BoardProvider` (`LiveApp.jsx` wraps every phase
 in it), so the field's clock is `useBoardNow`, the server-corrected one.
 
@@ -477,6 +514,13 @@ head `0021`; precache 73 → **74** entries (1646.16 KiB; `KabulScreen-*.js` 37.
 - Dashboard: **178 files, 4789 tests** passed (the plan's 4780, +1 of the W2 review, +8 of the W3 review).
 - `vite build`: `precache 74 entries (1646.16 KiB)`; no «larger than 500 kB» line.
 
+**Gates of the final review polish** (2026-11-13, head `48ab42de`; the selections the polish touches, not a whole
+suite): dashboard `src/live/screens/kabul` + `src/live/i18n` 26 files, **522 passed** (`AdmitTab.test.jsx`,
+`admitForm.test.js`, `admitDraft.test.jsx`, `apiErrors.test.js`, `strings.test.js` alone: 442 — the polish adds 4 tests
+to `AdmitTab.test.jsx`); engine, no database, `test_admission_form.py` **154 passed** (+2); Postgres (`kabulz-pg`, stopped
+after) `test_admission_time.py` **24 passed** (+3), `test_admission_api.py -k "date or time or newborn or hospital"` 5
+passed, 1 skipped. A whole-suite run, and the build's precache line, are the controller's.
+
 **Open, for the owner:**
 
 1. **The bed bound is when the bed's current state began** (`state_updated_at`). A reservation made and lifted, or a
@@ -489,10 +533,44 @@ head `0021`; precache 73 → **74** entries (1646.16 KiB; `KabulScreen-*.js` 37.
 5. **A transfer's arrival time is not back-datable** (§9, D7); Doluluk's tile and the bed card show the save, not the
    stay's start (O1).
 6. **The az/ru/en strings await a native reader** (O5).
+7. **The birth-date guard reads the tenant's time zone** (`Tenant.timezone`, «UTC» until set; the walk's seeded tenant is
+   still «UTC»). In a Baku hospital left on «UTC», a child born between 00:00 and 03:59 local and admitted in that window
+   with a typed «Kabul zamanı» is refused, the UTC date being the day before the birth. An untouched field sends no
+   time and is never asked. The tenant's zone should be set before the ward uses the field.
+8. **A device set under the patient's OWN number, measured before the back-dated stay began, is recorded on the stay**
+   (walk O-1; below). Only the link checks the stay's start; ingest under a live number checks none (G3-05's door,
+   unchanged here).
 
 **Deploy, for the controller lane** (full notes at the end of the plan): api + web only, **api first**; no migration,
 no environment variable; rollback web first. The ward is told beforehand of the field, its six hours, that it is set at
 the kabul or never, and that «Temizlik bitti · boş» is pressed when the cleaning ends.
 
-**Local walk (§6):** not run with these gates; the controller dispatches Task G2 separately, and its outcome is added
-here and to the plan's «As run».
+**Local walk (§6, Task G2), 2026-11-13.** Record: `/c/tmp/homunculus-plans/g3-kabul/walk/notes.md` (outside the
+repository, with the screenshots). Run on code head `1397d8a8` (images built from it; the worktree clean before and
+after), in a separate compose project `g3kabul` (containers `g3kwalk-*`, web `127.0.0.1:18206`, alembic `0021`), on
+synthetic data only (tenant `kabul-yuruyus`, «Test Hasta …», the typo number `202600000010`, device `CONNEX-3A`), the
+dashboard driven headless in Turkish at 1440 and 390 px. **All five items and 390 px PASS; no finding for G3-07.** The
+polish above came after the walk and is pinned by tests, not walked.
+
+| Item | What the walk saw |
+|---|---|
+| 1 untouched | The emptied field, left, shows the current minute and no mark; «Kabul et» sent no `admission_datetime`; 201; the row's time is the save's (0.7 ms before `created_at`); the audit row carries `admission_datetime` and no `backdated`. |
+| 2 two hours back | `min` six hours inside, `max` a minute ahead; 09:15 sent as `…T05:15:00.000Z`, 201; the row's time 09:15, the audit row `backdated: true`; the vital task's `anchor_at` is that time (Görevlerim). |
+| 3 seven hours back | A time under `min` is named by the panel, «Kabul et» `aria-disabled`, pressed anyway 0 POSTs; the API at 7 h back: 422 `field_invalid:admission_datetime`, no row, no number spent; the forced on-screen 422 says the sentence under the field and on the toast. |
+| 4 bed and discharge | After «Temizlik bitti · boş» the field's `min` is the release; a time a minute before it, 409 `admitted_before_bed_free` (the API, and on screen from a stale structure, where the refusal re-read the hint to the new time); readmitting a discharged person before her discharge, 409 `admitted_before_discharge`, then 201 a minute after it; refusals spent no protocol number. |
+| 5 device sets | Sets under the typo number, 1 h and 7 h back, land `unmatched`; linking the 1 h set to the back-dated stay: 200, the record shows it at its own time; the 7 h set: 409 `reading_before_stay`, still listed. |
+| 390 px | The field is 259 px wide, the hint wraps under it, no horizontal scroll, light and dark; the refusal state and toast fit. |
+
+*Adaptations (not findings).* No bridge: the device sets were posted to `/ingest` with the tenant token (as the previous
+walk). Beds 1 and 3 were moved a day back (`state_updated_at`), because a bed counts as free since its creation: before
+that, bed 1 read «Yatak 11:12'den beri boş» with `min` 11:12, so a kabul two hours back was not possible on a bed made
+two minutes earlier — the bound at work. The on-screen 422 and one refusal at 390 px were forced (the POST body rewritten
+in flight); the natural bed refusal used a stale structure (a reservation made and cancelled through the API moved the
+bed's time on). A refused send keeps the form (the session draft): the next patient typed into it inherited the refused,
+touched time until the field was emptied and left (M-1).
+
+*Observations (not G3-07 defects).* **O-1** a set under the patient's own number, measured before the back-dated start,
+is recorded on the stay without refusal (open item 8). **O-2** error toasts stay until closed (G3-05 walk O-1). **O-3** a
+direct load of `#/patients/…` lands on Yataklar (G3-05 walk E-10). **O-4** the seeded tenant's zone is «UTC» (Görevlerim
+reads «Nöbet 00:00 → 00:00»; open item 7). **O-5** in the forced refusals the field kept the in-bounds time typed while the
+server judged the rewritten one — an artefact of the forcing, not a screen behaviour.

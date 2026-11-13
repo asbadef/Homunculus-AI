@@ -1183,8 +1183,10 @@ ekranı, bkz. 3.14):
   alanlar" paneli eksik her zorunlu alanı adıyla söyler; panel boşalmadan kabul gönderilmez.
   Form yarıda bırakılıp başka bir sekmeye ya da ekrana geçilse de kaybolmaz; onu "Yeni kabul" ya
   da oturumun kapanması temizler. Kabul zamanı yatağın boşaldığı andan — "Temizlik bitti · boş"a
-  basıldığı andan — önce olamadığı için o düğmeye temizlik bittiği anda basılır: geç basılırsa o yatağa
-  yapılan kabul, düğmeye basıldığı andan geriye çekilemez.
+  basıldığı andan — önce olamaz (rezerve bir yatakta sınır rezervin başladığı andır; rezervi
+  kaldırılmış ya da kullanıma açılmış bir yatakta o işlemin yapıldığı an; formun ipucu gerçek saati
+  gösterir). Bu yüzden o düğmeye temizlik bittiği anda basılır: geç basılırsa o yatağa yapılan kabul,
+  düğmeye basıldığı andan geriye çekilemez.
 - **Nakil / Taburcu** (B1b'den önce yalnız «Taburcu»): iki liste — "Taburcusu başlatılan"
   (sorumlu hemşirenin onayını bekleyenler) ve "Yatan hastalar". İmzalı her yatan hastanın satırında
   «Nakil» ve «Taburcuyu başlat» düğmeleri durur (3.20).
@@ -2831,8 +2833,11 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     numarası bilinmeyen bir set gibi herkese görünür: ölçüldüğü servis onu kendi hastasına bağlayabilir ya da
     reddedebilir. Ölçüm gerçekten o hastanınsa — hasta ölçüldükten sonra kabul edildiyse — kabul formunda «Kabul
     zamanı» hastanın geldiği dakikaya çekilir (G3-07). Alan değiştirilmezse kaydın anı yazılır, eskisi gibi. Seçilen
-    zaman en çok 6 saat geriye gider; yatağın boşaldığı andan («Temizlik bitti · boş»a basıldığı an — bu yüzden düğmeye
-    temizlik bittiği anda basılır) ve aynı hastanın son taburcusundan önce olamaz. Yatış o andan başlar: seçilen
+    zaman en çok 6 saat geriye gider; yatağın boşaldığı andan («Temizlik bitti · boş»a basıldığı an; rezerve bir
+    yatakta rezervin başladığı an, rezervi kaldırılmış ya da kullanıma açılmış bir yatakta o işlemin yapıldığı an —
+    formun ipucu gerçek saati gösterir; bu yüzden düğmeye temizlik bittiği anda basılır) ve aynı hastanın son
+    taburcusundan önce olamaz; ayrıca hastanın doğum tarihinden önceki bir güne (hastanenin kendi saatiyle) denk
+    gelemez. Yatış o andan başlar: seçilen
     zamandan 2 dakika öncesinden itibaren ölçülmüş bir set bağlanabilir. Bu pencerede hastanın kendi numarasıyla
     ölçülmüş bir seti yalnız o hastayı görenler görür. Bedeli: başka bir servisin bir sonraki numarayla yanlış girdiği
     ve bu pencerede ölçülmüş bir tur da bu hastaya bağlanabilir hâle gelir; bağlamadan önceki kimlik sorusu ve cihazın
