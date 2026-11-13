@@ -2,9 +2,14 @@
 
 **Date:** 2026-11-12 · **Branch:** `feat/g3-saat-geri-gitmez` (from main `88f6544c`) · **Migration:** none
 **Status:** Approved by the owner 2026-11-12 («İkisine de evet»; link anchoring: «Ölçüm saatinden»; a linked set:
-«Bağlama anında değerlendir, saat ölçümden»). The owner's one change to the first draft: a LINKED set is **judged at
-the link moment** and a recognition it completes is **anchored at the reading's measurement time** (D2, D4). The
-implementation plan follows. Group 3, slice 6 (the number is free on the roadmap,
+«Bağlama anında değerlendir, saat ölçümden»; the anchor's lower bound: «Şüpheden önceye gitmesin»). The owner made
+two changes to the first draft:
+- a LINKED set is **judged at the link moment**, and a recognition it completes is **anchored at the reading's
+  measurement time** (D2, D4);
+- an anchor is **never earlier than the suspicion** (the latest suspected-infection mark charted present) **or the
+  last rule-out** (D2).
+
+The implementation plan follows. Group 3, slice 6 (the number is free on the roadmap,
 `docs/superpowers/plans/2026-10-01-tasarim-entegrasyonu-yol-haritasi.md`). Code references were read at `88f6544c`.
 **Amends:** G2-A2 X9e (and the wording of X10 and X10b), G3-01 D10 and D12, G2-A1 X12's restore test, and G3-05's
 D12 amendment **for anchoring only**: a linked set is still judged at the link, and its recognition is now anchored
@@ -61,7 +66,7 @@ What main does today:
 | # | Decision | Why |
 |---|---|---|
 | D1 | **One floor per patient for every rule.** At the top of each evaluation the engine computes `at = max(now, self._judged_at.get(pid, now))` and stores `at`. Every rule that takes an instant gets `at`: septic shock, sepsis and the 3 h fluid window, the anchor's drop and restore test (D2), the antibiotic clock and the model. NEWS2, the patient-relative layer and the hold already do. `_news2_judged_at` is renamed `_judged_at` and stays in `_PER_PATIENT`, so `forget`, `copy` and `adopt` carry it. **The values keep their own timestamps**: the state stores a reading at its stamp, freshness is measured from each reading's stamp, and trends, the readings record, the vital task and the audit's `obs_ts` are untouched. The engine never reads a clock. `at` is only ever an instant a caller asked for, so a back-dated reading is judged at the patient's last judged instant, not at the wall clock. | One instant per patient, so no rule can disagree with another about "now". X9e already proved the pattern on NEWS2. A late value is information about the past; it is no reason to judge the present as if it were the past. |
-| D2 | **Anchor of a recognition that a back-dated reading completes: the measurement time (owner: «ölçüm saatinden»).** `Engine.ingest` gains a keyword `anchor_at` (default: its `now`). A recognition's anchor is `min(anchor_at, at)`; the `min` is a guard, since every caller passes `anchor_at <= now <= at`. **At the doors** `anchor_at` is the requested instant itself, `min(stamp, wall)`: one instant for both. **At the link** (D4) it is `min(stamp, wall_now)`, while the set is judged at `wall_now`. Either way the anchor is the reading's stamp, and the clock is judged at `at`. A recognition completed by a reading measured 6 h ago shows `antibiotic_overdue` at once, on a patient judged up to now and on a linked set alike. A patient's first evaluation at a door has no floor (`at` = the requested instant), so a fresh patient is judged at the doors exactly as today. **The restore rule, exactly:** (1) a drop is remembered with the dropping evaluation's floored instant, `_dropped_anchor[pid] = (anchor, at)`; (2) a recognition restores the dropped anchor if and only if `0 <= (at - dropped_at).total_seconds() <= ANCHOR_RESTORE_S`, where `at` is the recognising evaluation's floored instant; (3) otherwise its anchor is its anchor instant, and the remembered drop is spent either way, as today. Within one engine the floor never goes back, and `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the difference is never negative. The `0 <=` is written out as a guard. | The owner's choice. At the doors the engine's anchor is already the requested instant (`pipeline.py:134`); what changes there is the instant the clock is read at, and at the link the anchor moves from the link to the measurement. Time zero is an open question in the vault (`Homunculus/wiki/concepts/antimicrobial-timing-sepsis.md`, «Time-zero must be defined and defensible»), so this is an operational rule, not a clinical claim. The restore window measures how far apart a toggle and its correction were (X12). Floored instants measure that in the engine's own one-way time. Requested instants do not, which is the latent bug (§1). |
+| D2 | **Anchor of a recognition that a back-dated reading completes: the measurement time (owner: «ölçüm saatinden»).** **…but never before the suspicion or the last rule-out (owner: «Şüpheden önceye gitmesin»).** `Engine.ingest` gains a keyword `anchor_at` (default: its `now`). **At the doors** `anchor_at` is the requested instant itself, `min(stamp, wall)`: one instant for both. **At the link** (D4) it is `min(stamp, wall_now)`, while the set is judged at `wall_now`. **The rule, exactly, for a recognition with no anchor running:** (1) a drop is remembered with the dropping evaluation's floored instant, `_dropped_anchor[pid] = (anchor, at)`. (2) A recognition restores the dropped anchor if and only if `0 <= (at - dropped_at).total_seconds() <= ANCHOR_RESTORE_S`, where `at` is the recognising evaluation's floored instant: a corrected toggle keeps the old episode's anchor (X12). (3) Otherwise its anchor is `min(max(anchor_at, infection_at, dropped_at), at)`. Here `infection_at` is the stamp of the latest `suspected_infection` reading, `state.latest(SUSPECTED_INFECTION).timestamp`. A recognition always finds it charted present: both recognition kinds need it ≥ 1 (`septic_shock.py:48`). `dropped_at` is the remembered drop's instant from (1), and it is left out when no drop is remembered. The outer `min(…, at)` keeps the anchor from passing the instant the clock is judged at; an infection mark stamped ahead of the clock could otherwise do so. (4) The remembered drop is spent either way, as today. The clock is judged at `at`. A recognition completed by a reading measured 6 h ago, after the suspicion was charted, shows `antibiotic_overdue` at once, on a patient judged up to now and on a linked set alike. One completed by a reading older than the suspicion runs from the suspicion. A patient's first evaluation at a door has no floor (`at` = the requested instant), so a fresh patient is judged at the doors exactly as today. Within one engine the floor never goes back, and `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so the difference in (2) is never negative. The `0 <=` is written out as a guard. | The owner's choices. At the doors the engine's anchor was already the requested instant (`pipeline.py:134`). What changes there is the instant the clock is read at and the two lower bounds; at the link the anchor moves from the link to the measurement. The lower bounds answer two cases the Tasks 1–2 reviewer reproduced. **Without the suspicion bound:** infection charted at +300, then a bilirubin stamped +0 completed sepsis and read «OVERDUE by 240 min» at once, although suspicion began at +300. **Without the rule-out bound (and with requested instants in the restore test):** a rule-out at +71, a new infection at +126, then a bilirubin drawn at +60 arriving at +130 restored the old episode's dose and silenced the clock. Time zero is an open question in the vault (`Homunculus/wiki/concepts/antimicrobial-timing-sepsis.md`, «Time-zero must be defined and defensible»), so this is an operational rule, not a clinical claim. The restore window measures how far apart a toggle and its correction were (X12). Floored instants measure that in the engine's own one-way time. Requested instants do not, which is the latent bug (§1). |
 | D3 | **A withdrawal re-judges at its own instant.** There is a new method `Engine.rejudge(patient_id, now)`. It runs the same evaluation as `ingest`, adds no reading, uses the instant `max(now, floor)` and returns the alerts. A patient the engine does not hold answers `[]` and is not created. `_adopt_rebuilt` calls it right after `engine.adopt` and before the hook, with no `await` in between (`app.py:1416–1417`). This is what makes the restart agree (D4): **the trail-replayers re-judge at every `chart_retract` row.** `rehydrate` rejudges there at the row's write time and runs the hook at that same write time. `rebuild_patient` rejudges at the patient's earlier withdrawals: the route already reads them (`app.py:1512–1513`). G3-01 D10's «as if never charted» still holds for the state, the anchor and the profile. **The alerts are judged at the withdrawal's instant.** So a withdrawal can bring up an alert the clock has reached since the last reading: an `antibiotic_due` whose hour has run out is `antibiotic_overdue` after the withdrawal. It is stamped and told to the nurse like any alert a withdrawal uncovers (G3-01 X3, `_stamp_uncovered`, `_tell_uncovered`). | The reviewers' scenario: without this the rebuild ends at «60 min remaining» and the overdue ends or latches. Without the replay's half, a restart after the withdrawal would bring the «60 min remaining» back. |
 | D4 | **The doors keep one instant; the link passes two (owner: «Bağlama anında değerlendir, saat ölçümden»).** **Doors:** X10's `min(stamp, wall)` at `/ingest` and `/clinical` stays as it is. It is now the *requested* instant: the engine floors it for the judgement and uses it unfloored as the anchor (D2). **Link:** `_apply_reading` keeps `judge_at` (the link is its only caller, `app.py:966`) and calls `engine.ingest(obs, now=judge_at, anchor_at=min(obs.timestamp, wall_now))`. The link judges at `wall_now`, floored like everything else (G3-05 D12 as amended, kept for the judgement), and anchors at the reading's stamp. A set measured 6 h ago is therefore not current at the link: NEWS2 finds it stale and it cannot raise NEWS2 by itself, on a patient the engine has never judged too. A recognition it completes runs its hour from the measurement, so an hour already past shows «gecikti» at once. **Replay:** `rehydrate._replay_ingest` hands an ordinary row `now = min(stamp, written)`. A linked row (`payload.reading` present) gets `now = written`, as G3-05 does today, and `anchor_at = min(stamp, written)`. Both instants are capped by D6, in id order. **Restart equals live for a link.** The anchor is exactly equal: a linked reading is at most 24 h old (G3-05 D12's bound), so its stamp is earlier than both `wall_now` and the row's `ts`, written after it. Both sides anchor at the stamp, and D6's cap never bites on it, since the stamp is before the restart. The judgement instant is equal to within the request: `wall_now` live, the row's `ts` in the replay. That is G3-05's own tolerance, and the floor follows both alike. With D3, a restart equals live. The hook's instant does not change anywhere: the request's wall clock at the doors, the link and the withdrawal, and the row's write time in the replay. | The owner's decision. A late set's values are old by the time it is linked, and judging them as current would page on stale data. Its measurement is still when the criteria were met. The floor belongs to the engine; the doors keep saying what they ask for, and the trail keeps recording it. |
 | D5 | **Shadow lane: the mirror passes the real engine's two instants.** `Engine.copy` carries `_judged_at` (the install starts the shadow engine from the real engine's floor, `infinity_rules.py:395`), so `mirror_observation` (`:486`) and `sample` (`:611`) can no longer go back. `mirror_observation` gains a keyword `judge_at` (default None) and calls `engine.ingest(obs, now=min(obs.timestamp, now) if judge_at is None else judge_at, anchor_at=min(obs.timestamp, now))`. `_apply_reading` hands it the link's `judge_at` (`app.py:1869`). A linked set is then judged at the link and anchored at its stamp in the shadow engine too, while a door's reading keeps one instant there as well. `_settle`'s `adopt` (`:640–644`) resets an unlinked patient to the real engine's floor, which is right: the patient goes back to the real picture. The lane never writes the real engine (`adopt` only reads `other`). `retract_observation` still does not re-judge (the lane judges at its next sample, `:500–509`). | This closes G3-05 open item (c): the shadow engine judges and anchors every reading where the real one does. The lane is non-clinical (Aşama B D1). |
@@ -89,14 +94,16 @@ def _evaluate(self, patient_id, state, requested, anchor_at):
     at = max(requested, self._judged_at.get(patient_id, requested))     # D1
     self._judged_at[patient_id] = at
     # today's body, in today's order, every `now` and `judge_at` replaced by `at`, except:
-    #   anchor set:  self._recognized_at[pid] = self._new_anchor(pid, min(anchor_at, at), at)   (D2)
-    #   anchor drop: self._dropped_anchor[pid] = (dropped, at)                                   (D2)
+    #   anchor set:  self._recognized_at[pid] = self._new_anchor(pid, anchor_at, at, infection.timestamp)  (D2)
+    #                (`infection` is today's `state.latest(SignalCode.SUSPECTED_INFECTION)`, `pipeline.py:131`)
+    #   anchor drop: self._dropped_anchor[pid] = (dropped, at)                                              (D2)
 
-def _new_anchor(self, patient_id, anchor, at):
+def _new_anchor(self, patient_id, anchor_at, at, infection_at):
     dropped = self._dropped_anchor.pop(patient_id, None)
     if dropped is not None and 0 <= (at - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
-        return dropped[0]
-    return anchor
+        return dropped[0]                              # a corrected toggle: the old episode's anchor (X12)
+    bounds = [anchor_at, infection_at] + ([dropped[1]] if dropped is not None else [])
+    return min(max(bounds), at)                        # «Şüpheden önceye gitmesin»
 ```
 
 The instants each caller passes:
@@ -118,7 +125,8 @@ the 3 h fluid window (`septic_shock.py`, Sepsis-3 and SSC 2026) keep their sourc
 ## 4. Changes by file
 
 - `src/homunculus/pipeline.py`:
-  - `ingest`'s keyword `anchor_at`, `_evaluate`, `rejudge` and `_new_anchor(pid, anchor, at)` (§3);
+  - `ingest`'s keyword `anchor_at`, `_evaluate`, `rejudge` and `_new_anchor(pid, anchor_at, at, infection_at)`
+    (§3);
   - `_judged_at` in `_PER_PATIENT` (`:49–50`) and `__init__` (`:60–61`);
   - the comment at `:97–102` and the `forget` docstring (`:283–289`) reworded.
 - `src/homunculus/api/rehydrate.py`:
@@ -160,7 +168,8 @@ the 3 h fluid window (`septic_shock.py`, Sepsis-3 and SSC 2026) keep their sourc
   `min(stamp, written)` are now the *requested* instant, and the instant the rules judge at is its floor. X10b gains
   D6's cap.
 - **G2-A1 X12.** `ANCHOR_RESTORE_S` is measured between floored instants, and a negative difference never restores
-  (D2). For readings in time order, which covers every X12 test, nothing moves.
+  (D2). A new anchor is never earlier than the latest suspicion mark or the remembered drop (D2 (3)). In the X12
+  tests every anchor is set by the reading that charts the suspicion, or after it, in time order, so nothing moves.
 - **G3-01 D10.** «Every score as if the value had never arrived» holds for the state. The alerts are judged at the
   withdrawal's instant (D3).
 - **G3-01 D12.** The restart scores as the live rebuild did, now including the rejudge at each `chart_retract` row.
@@ -258,18 +267,33 @@ to decide, and this slice does not change it.
 - **Overdue stays overdue.** Sepsis at +0, `antibiotic_overdue` at +120. A reading stamped −240 then gives
   `antibiotic_overdue` («OVERDUE by 60 min», judged at +120) and no `antibiotic_due`. Run with an `AckStore` and
   `sync_alerts`: an acknowledged overdue keeps its acknowledgement and first sight, and its episode does not end.
-- **A late recognition is overdue at once.** On a patient judged up to +360, a reading stamped +0 that completes
-  SOFA gives `recognized_at == +0` and `antibiotic_overdue` at once («OVERDUE by 300 min»).
+- **A late recognition is overdue at once.** Suspected infection is charted at −30. On a patient judged up to +360,
+  a reading stamped +0 that completes SOFA gives `recognized_at == +0` and `antibiotic_overdue` at once («OVERDUE by
+  300 min»).
   - A fresh patient whose first reading is stamped 6 h back is judged at that stamp, as today («60 min
     remaining»).
-- **The restore test.**
-  - Old episode: anchor +0, the antibiotic given at +20, a rule-out at +71. New infection: charted at +126 with SOFA
-    not met. A back-dated reading stamped +60, of a code with no newer reading, then completes SOFA.
+- **The anchor never precedes the suspicion** (the reviewer's first case). Infection is charted at +300 (the
+  patient is judged up to +300). A bilirubin stamped +0, a code with no newer reading, then arrives and completes
+  sepsis. The anchor is +300, not +0, and the clock reads `antibiotic_due` «60 min remaining», not «OVERDUE by
+  240 min».
+- **The anchor never precedes the last rule-out, and it does not restore across it** (the reviewer's second case).
+  - Old episode: anchor +0, the antibiotic given at +20, a rule-out at +71. New infection: charted at +126 with
+    SOFA not met. A bilirubin drawn at +60, a code with no newer reading, arrives at +130 and completes SOFA.
   - Today the +0 anchor is restored (a negative difference) and the +20 dose silences the clock.
-  - Under this slice the recognition is not a restore (`at - dropped_at` = 55 min). Its anchor is +60, the dose does
-    not count, and the clock reads overdue.
-  - Companion: a corrected toggle whose completing reading is back-dated, within 15 floored minutes of the drop,
-    restores the anchor.
+  - Under this slice the recognition is not a restore: judged at the floor +126, `at - dropped_at` is 55 min. Its
+    anchor is `max(+60, +126, +71)` = +126, the +20 dose does not count, and the clock reads `antibiotic_due` «60
+    min remaining».
+- **The drop bounds a back-dated re-chart.** The patient is judged up to +100. A rule-out is charted then,
+  back-dated to +71, and dropped at the floor +100. A device reading at +125 moves the floor to +125. Suspicion is
+  re-charted present at wall +130, back-dated to +80, and that completes sepsis.
+  - It is judged at +125, 25 floored minutes after the drop, so this is a new hour, not a restore.
+  - Its anchor is `max(+80, +80, +100)` = +100: never before the engine registered the rule-out.
+  - Companion: with no reading between, the same re-chart is judged at the floor +100, 0 floored minutes after the
+    drop, and the old anchor is restored. The window is measured on the patient's judged time, which moves with
+    the patient's evaluations, not with the wall clock (D1: the engine reads no clock).
+- **The restore still works.** A corrected toggle whose completing reading is back-dated, within 15 floored
+  minutes of the drop, restores the old anchor; the bounds do not apply to a restore.
+- **The anchor never passes `at`.** A suspicion mark stamped ahead of the floor gives an anchor of `at` exactly.
 - **`rejudge`.** It answers the evaluation's alerts and moves the floor. It is a no-op that creates nothing for an
   unknown patient. A `due` whose hour has passed by `now` becomes `overdue`.
 - **`_PER_PATIENT`** lists `_judged_at` (the existing pin, `test_engine_adopt.py:66`), and `forget`, `copy` and
@@ -283,8 +307,8 @@ to decide, and this slice does not change it.
 - **`/clinical` back-dated.** The same with a bedside set whose `recorded_at` is 3 h back.
 - **«Düzelt».** A device value is withdrawn, then the corrected value is charted at the reading's own time. The
   overdue stays overdue and stays acknowledged.
-- **A link is judged at the link and anchored at the measurement** (D4). Infection is charted. A set measured 6 h
-  ago, linked from the list, completes sepsis. The answer and the card show `antibiotic_overdue` at once, never
+- **A link is judged at the link and anchored at the measurement** (D4). Infection is charted 7 h back. A set
+  measured 6 h ago, linked from the list, completes sepsis. The answer and the card show `antibiotic_overdue` at once, never
   `antibiotic_due`, and `recognized_at` equals the set's stamp. The case runs twice: on a patient judged up to now,
   and on one whose only entry before the link is the suspected-infection chart, 7 h back. A patient the engine has
   never judged cannot have sepsis completed by a link: the criterion needs infection charted. The never-judged case
@@ -397,7 +421,10 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
   - a late reading (a device round sent late, a set charted at its own time) never turns «gecikti» back into «kalan
     süre»;
   - when a late reading shows that the sepsis criteria were met hours ago, «gecikti» appears at once, because the
-    hour runs from the measurement (the owner's choice);
+    hour runs from the measurement (the owner's choice). It never runs from before the infection suspicion was
+    charted, or from before a rule-out;
+  - a suspicion charted present again more than 15 min after it was ruled out starts a new hour, even if its time
+    is set back to just after the rule-out. The 15 min are counted on the patient's readings, not the wall clock;
   - after «hatalı giriş» or «Düzelt», the alerts are judged as of that moment, so an antibiotic hour that ran out
     since the last reading reads «gecikti»;
   - a set linked from «Eşleşmeyen ölçümler» is scored at the moment it is linked, so an hours-old set is too old to
@@ -414,10 +441,24 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
   the pharmacy already count down at the wall clock.
 - **SOFA's "latest by stamp".** A back-dated value enters SOFA only when it is the newest of its code
   (`PatientState.latest`); otherwise it triggers an evaluation at the floor and changes no SOFA input.
-- **The anchor's own time.** By D2 the anchor is the requested instant, including when the completing reading is
-  stamped before the suspected-infection entry that the recognition needs, or before a rule-out (§8.1's restore
-  case: +60). The engine does not fold the infection entry's own time into the anchor. Such a recognition reads
-  overdue from that stamp: an earlier «gecikti», never a later one. Time zero stays a vault open question.
+- **Time zero.** D2 anchors at the measurement, bounded below by the latest suspicion mark and the last rule-out.
+  That is an operational rule; the vault's open question («Time-zero must be defined and defensible») stands.
+- **A mistaken rule-out corrected late (the Tasks 1–2 reviewer's note, informational).** A suspicion re-charted
+  present more than 15 floored minutes after a rule-out is now a new hour, even when its time is set back to just
+  after the rule-out. It starts no earlier than the drop (§8.1). The 15 minutes are counted on the patient's judged
+  time, which the patient's readings move; with no reading between, a late re-chart still restores. Before this
+  slice, a re-chart back-dated to within 15 min of the rule-out's *requested* instant restored the old anchor,
+  whatever the wall clock.
+  - The reviewer named «hatalı giriş» as the tool for a mistaken rule-out. **In the code it is not:**
+    `retract_entry` refuses a `suspected_infection` row with 409 `RETRACT_NOT_BEDSIDE`, because the code is not in
+    `RETRACTABLE_CODES` (G3-01 X22; `clinical.py:191–198`, `app.py:1518–1524`). The sepsis panel tells the user
+    the mark «geri alınmaz».
+  - Today, then, a rule-out corrected after 15 min has no undo, and the new hour stands. Opening «hatalı giriş» to
+    the suspicion mark is a separate decision.
+- **"The latest" suspicion mark.** The lower bound is the stamp of the latest `suspected_infection` reading. If
+  suspicion is charted present at +0 and charted present again at +200, with no rule-out between and no
+  recognition yet, a recognition completed by a reading stamped +100 runs from +200, not from +0. A re-chart of a
+  mark that is already present moves the bound.
 - **The preview** (`POST /clinical/{id}/preview`, `app.py:1317–1347`): it scores a copy of the state at the request's
   instant and never goes through the engine.
 - **The shadow lane's not re-judging after a withdrawal** (D5).
