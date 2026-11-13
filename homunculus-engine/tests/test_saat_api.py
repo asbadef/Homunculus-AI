@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from homunculus.api.app import create_app
@@ -161,4 +162,65 @@ class TestALateReadingAtTheDoors:
             assert (after["antibiotic_overdue"]["acknowledged"], after["antibiotic_overdue"]["first_seen_at"]) == \
                 (True, before["first_seen_at"])
             assert _count(audit, "alert_cleared") == cleared
+        _same_after_a_restart(audit, live)
+
+
+class TestAWithdrawal:
+    """D3: «hatalı giriş» re-judges the patient at the withdrawal's own instant — the state as if the value had
+    never arrived, the alerts as of now."""
+
+    def test_withdrawing_the_reading_that_found_the_hour_gone_leaves_the_overdue(self):
+        """The reviewers' scenario: a MAP at -90 min completes sepsis and starts the hour, a temperature at -5 min
+        finds it overdue, and the temperature is withdrawn. Rebuilt to the MAP row, the board read «60 min
+        remaining» and the overdue latched — an hour that ran out at -30 min."""
+        audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
+        with _app(audit) as c:
+            _, temperature = _overdue(c, now, ack=False)
+            r = c.post(f"/clinical/{PID}/entries/{temperature}/retract", json={"reason": WHY}, headers=NURSE)
+            assert r.status_code == 200, r.text
+            assert "antibiotic_overdue" in r.json()["alerts"] and "antibiotic_due" not in r.json()["alerts"]
+            live = _card(c)
+            assert "antibiotic_overdue" in _firing(live) and "antibiotic_due" not in _firing(live)
+            assert all(a["resolved_at"] is None for a in live["alerts"]), "nothing latched"
+            assert c.app.state.board_link._engine("h1").state(PID).latest(SignalCode.TEMPERATURE) is None
+        _same_after_a_restart(audit, live)
+
+    @pytest.mark.xfail(strict=True, reason="plan E-6 (F-1): the replay passes over the first sight and the "
+                       "acknowledgement given while the withdrawn reading's evaluation had the overdue firing")
+    def test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_both_after_a_restart(self):
+        """Live, the overdue the temperature found stays one episode across its withdrawal (D3), acknowledged and
+        first seen at the temperature's request. The restart skips the temperature row, so at the `first_seen` and
+        `ack` rows the replay has no overdue firing and passes both over; the `chart_retract` row's rejudge then
+        raises it unstamped and unacknowledged. Kept red on purpose: the owner decides (plan E-6)."""
+        audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
+        with _app(audit) as c:
+            _, temperature = _overdue(c, now)
+            r = c.post(f"/clinical/{PID}/entries/{temperature}/retract", json={"reason": WHY}, headers=NURSE)
+            assert r.status_code == 200, r.text
+            live = _firing(_card(c))["antibiotic_overdue"]
+            assert live["acknowledged"] and live["first_seen_at"] is not None
+        with _app(audit) as again:
+            after = _firing(_card(again))["antibiotic_overdue"]
+        assert (after["acknowledged"], after["first_seen_at"]) == (True, live["first_seen_at"])
+
+    def test_a_withdrawal_after_the_hour_ran_out_uncovers_the_overdue_and_tells_the_nurse(self):
+        """The hour ran out at -30 min with no reading since but a wrong one at -80 min (a respiration rate that
+        should have been 16). Withdrawn now, the patient is judged now: «antibiotic_overdue», a new alert — stamped
+        and told to the nurse like any alert a withdrawal uncovers (G3-01 X3)."""
+        audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
+        with _app(audit) as c:
+            _chart(c, [{"code": "suspected_infection", "value": 1}, {"code": "platelets", "value": 120}],
+                   now - timedelta(minutes=90))
+            _chart(c, [{"code": "map", "value": 60}], now - timedelta(minutes=90))
+            wrong = _chart(c, [{"code": "resp_rate", "value": 61}], now - timedelta(minutes=80))["resp_rate"]
+            assert "antibiotic_due" in _firing(_card(c))
+            seen, told = _count(audit, "first_seen"), _count(audit, "notification")
+            r = c.post(f"/clinical/{PID}/entries/{wrong}/retract", json={"reason": WHY}, headers=NURSE)
+            assert r.status_code == 200, r.text
+            assert "antibiotic_overdue" in r.json()["alerts"]
+            stamped = audit.records(tenant="h1", patient_id=PID, event_type="first_seen", limit=100)[seen:]
+            assert [row.subject for row in stamped] == ["antibiotic_overdue"]
+            notes = audit.records(tenant="h1", patient_id=PID, event_type="notification", limit=100)[told:]
+            assert [(n.subject, n.payload["audience"]) for n in notes] == [("antibiotic_overdue", "nurse")]
+            live = _card(c)
         _same_after_a_restart(audit, live)

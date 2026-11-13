@@ -22,6 +22,11 @@ A call to the rapid-response team (G2-B5) rides its chain live, across a flap in
 delay; so it is bound by the same limitation: a replayed `rrt_call` row stands only while its episode
 is open at that point of the log, and an episode that ended and returned replays without the call.
 
+A `chart_retract` row (G3-01's «hatalı giriş») takes its row out of the replay (`skip`), and since G3-06 (D3) it
+also re-judges its patient at the row's write time and runs the hook there, as the live withdrawal re-judged at
+its own instant (`Engine.rejudge`): a time-based alert the clock reached since the last reading is on the board
+after a restart as it was live.
+
 `alert_snooze` rows (G2-B5b) replay a snooze under the live door's rules, for an alarm firing and unanswered at
 that point of the log. A later `ack` row, the episode's end, a worse reading or a discharge ends it, as live.
 Whether it still runs is judged once, at the end, against the restart's `now`: a spent one ends with the clock
@@ -81,6 +86,13 @@ def rehydrate(engine: Engine, store: AckStore, records: Iterable[AuditRecord], *
                 # G2-A1 (D7): through the hook, as the door ran it. What it clears was audited
                 # live (`alert_cleared`) and is not written again.
                 sync_alerts(engine, store, rec.patient_id, written)
+        elif rec.event_type == RETRACT:
+            # G3-06 (D3): the withdrawal re-judged the patient at its instant, then ran the hook there. A row
+            # whose time cannot be read is passed over (the withdrawal itself still applies, through `skip`).
+            at = _retracted_at(rec)
+            if at is not None and rec.patient_id in engine.patient_ids():
+                engine.rejudge(rec.patient_id, min(at, ceiling))
+                sync_alerts(engine, store, rec.patient_id, at)
         elif rec.event_type == "profile":
             _replay_profile(engine, rec)
         elif rec.event_type == "ack":
@@ -182,6 +194,17 @@ def _written_at(rec: AuditRecord) -> datetime:
         return datetime.fromisoformat(rec.payload["obs_ts"])
 
 
+def _retracted_at(rec: AuditRecord) -> datetime | None:
+    """When a `chart_retract` row was written — the instant the withdrawal re-judged at (G3-06, D3) — or None when
+    it cannot be read, or carries no zone to compare with the clock. Unlike `_written_at` there is no fallback: the
+    row's `obs_ts` is the withdrawn reading's measurement, not the withdrawal's instant."""
+    try:
+        at = datetime.fromisoformat(rec.ts)
+    except (TypeError, ValueError):
+        return None
+    return at if at.utcoffset() is not None else None
+
+
 def _replay_profile(engine: Engine, rec: AuditRecord) -> None:
     """Restore a clinician-charted baseline/comorbidity profile.
 
@@ -275,6 +298,7 @@ def _replay_snooze(store: AckStore, rec: AuditRecord, now: datetime) -> None:
 #: alert the ward saw stays seen, and the lifecycle hook, run once after the rebuild, ends what no longer fires.
 #: The replay retires a patient at the discharge `alert_cleared` row, which the rebuild never reads: the
 #: withdrawal route refuses a discharged number before any rebuild, or the rebuild would bring its readings back.
+#: G3-06 (D3): a `chart_retract` row handed to `rebuild_patient` beside these re-judges the patient there.
 REBUILD_EVENTS = frozenset({"ingest", "chart", "profile"})
 
 
@@ -373,11 +397,19 @@ def rebuild_patient(engine: Engine, patient_id: str, records: Iterable[AuditReco
     judged where the door judged it. Engine only: no store and no lifecycle hook; the caller runs the hook once,
     at its own instant. Rows of another patient or kind are passed over, so the caller may hand it a wider
     read. `now` is the caller's clock (default: the clock): no instant handed to the engine is later than it
-    plus REPLAY_SKEW (G3-06, D6)."""
+    plus REPLAY_SKEW (G3-06, D6). The patient's `chart_retract` rows among them re-judge it at their write time,
+    as `rehydrate` does (G3-06, D3; no hook here); the withdrawal route reads them with the rest."""
     ceiling = (now if now is not None else datetime.now(timezone.utc)) + REPLAY_SKEW
     engine.forget(patient_id)
     for rec in records:
-        if rec.patient_id != patient_id or rec.event_type not in REBUILD_EVENTS:
+        if rec.patient_id != patient_id:
+            continue
+        if rec.event_type == RETRACT:
+            at = _retracted_at(rec)
+            if at is not None:
+                engine.rejudge(patient_id, min(at, ceiling))     # answers [] while it holds no reading
+            continue
+        if rec.event_type not in REBUILD_EVENTS:
             continue
         if rec.event_type == "profile":
             _replay_profile(engine, rec)

@@ -1412,8 +1412,14 @@ def create_app(
         to the real engine, the lifecycle hook once at `now`, the shadow lane, the card, the nurse. Shared by a
         withdrawal and by the repair of one whose row committed while its append raised (review of Task 5).
         `copies` (G3-05, D13): how many `ingest` rows the withdrawal took — one reading written twice is removed
-        from the shadow engine twice, a removal dropping one equal reading."""
+        from the shadow engine twice, a removal dropping one equal reading.
+
+        G3-06 (D3): the adopted patient is re-judged at `now` before the hook — its state as if the value had never
+        arrived, its alerts as of the withdrawal, not of the last remaining reading — with no `await` in between.
+        An alert the clock has reached since that reading (an antibiotic hour run out) is one the withdrawal
+        uncovers: stamped and told below."""
         engine.adopt(scratch, patient_id)
+        engine.rejudge(patient_id, now)
         cleared = sync_alerts(engine, store, patient_id, now)
         # Review of Task 5, unlike X13 on purpose: an episode the withdrawal ended stood on a value that was never
         # real, so its escalation chain is not remembered — a real alert of the kind within `escalate_after` gets
@@ -1462,8 +1468,10 @@ def create_app(
         real engine (`Engine.adopt`). The trail row comes first, then memory, and a read or an append that fails
         changes nothing (X4).
 
-        Then the lifecycle hook runs once, at the request's instant. An alert that no longer fires ends — or,
-        critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers is a new one, so it
+        Then the patient is re-judged at the request's instant (G3-06, D3: the alerts as of the withdrawal, not of
+        the last remaining reading) and the lifecycle hook runs once, at that instant. An alert that no longer
+        fires ends — or, critical and unacknowledged, latches (G2-A1, D3). An alert the withdrawal uncovers — an
+        antibiotic hour that ran out since the last reading among them — is a new one, so it
         is stamped and, if immediate, told to the nurse (X3). The notifier's dedup tells nothing already told.
         An episode the withdrawal ended leaves no escalation chain. The shadow lane drops the reading, guarded
         (X5), and the card is republished — as never measured when the withdrawn value was the patient's only
@@ -1531,8 +1539,11 @@ def create_app(
         own = device_key_of(target) if target.event_type == "ingest" else None
         already = target.id in withdrawn or (own is not None and own in withdrawn_device)
         skip_device = withdrawn_device if own is None else withdrawn_device | {own}
+        # The request's one instant, read before the rebuild (G3-06, D6): no instant the rebuild hands the scratch
+        # engine is later than it plus the replay's skew, and the rejudge, the hook and the rows below use it.
+        now = datetime.now(timezone.utc)
         scratch = Engine()
-        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id}, skip_device=skip_device)
+        rebuild_patient(scratch, patient_id, rows, skip=withdrawn | {target.id}, skip_device=skip_device, now=now)
         observation = observation_of(target)
         # Every row the withdrawal takes (the named one alone, for a hand entry). The shadow engine took one reading
         # per `/ingest` and a removal drops one, so it is removed once per copy; the record's one table row may be
@@ -1540,7 +1551,6 @@ def create_app(
         taken = [target.id] if own is None else [r.id for r in rows if r.event_type == "ingest"
                                                  and device_key_of(r) == own]
         copies = len(taken)
-        now = datetime.now(timezone.utc)
         if already:
             # G3-05 (B7 review): the retry also finishes the record's half — a mark that failed after the row was
             # written left the value unstruck there. Before the repair below, which may raise: the marks never do.

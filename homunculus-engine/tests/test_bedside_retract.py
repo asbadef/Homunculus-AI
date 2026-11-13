@@ -146,6 +146,10 @@ def _equal_to_never_charted(script, withdraw, never):
     with _app() as fresh:
         for entries, minutes in never:
             _chart(fresh, entries, at(minutes))
+        # G3-06 (D3): the live withdrawal re-judged the patient at its own instant. The fresh engine is re-judged at
+        # that instant too, so `got == want` still says «the state as if never charted, the alerts as of the
+        # withdrawal».
+        _engine(fresh).rejudge("bed-3", got[0]["judged"])
         want = (_internals(fresh), _view(_card(fresh)))
     return before, got, want
 
