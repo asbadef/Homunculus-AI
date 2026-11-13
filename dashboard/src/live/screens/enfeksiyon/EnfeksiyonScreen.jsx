@@ -176,7 +176,10 @@ function Tile({ tile, fresh, canOpen }) {
   const words = tileWords(tile, fresh);
   let said;
   if (words.dash) said = <Dash why={t(words.why)} />;
-  else if (words.stateKey) said = t(words.key, { state: t(words.stateKey).toLocaleLowerCase(lang) });
+  else if (words.stateKey) {
+    // Review M5: a conflict from an answer that is not fresh is the last answer's, as an isolated tile is.
+    said = `${words.lastAnswer ? `${t("enfeksiyon.beds.lastAnswer")} · ` : ""}${t(words.key, { state: t(words.stateKey).toLocaleLowerCase(lang) })}`;
+  }
   else if (words.state !== undefined) said = t(words.key, { state: String(words.state) });
   else {
     said = (

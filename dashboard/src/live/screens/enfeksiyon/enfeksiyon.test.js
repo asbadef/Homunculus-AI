@@ -53,6 +53,14 @@ describe("the isolation beds, from the tree (§5 S1, A4)", () => {
     expect(bedTally([])).toEqual({ total: 0, free: 0, occupied: 0 });
   });
 
+  it("names an occupant's isolation word this build does not know, never the bed's own state (review M1)", () => {
+    const odd = answer({ bed_occupants: [{ bed_id: BED(11), patient_id: "S-101", display_name: "Ayşe Sentetik",
+      isolation: { state: "quarantine", types: [] } }] });
+    const izo1 = isolationBeds(tree(), odd).find((tile) => tile.label === "İzo 1");
+    expect(izo1.tile).toBe("unknown");
+    expect(tileWords(izo1, true)).toEqual({ key: "enfeksiyon.unknown", state: "quarantine" });
+  });
+
   it("draws no tile when no room isolates, and none from a tree that is not one", () => {
     expect(isolationBeds(tree({ isolation: false }), answer())).toEqual([]);
     expect(isolationBeds(null, answer())).toEqual([]);
@@ -154,7 +162,8 @@ describe("Decision 18 for the tiles (§5 A4 c)", () => {
     expect(tileWords(tiles.isolated, true)).toEqual({ key: "enfeksiyon.beds.tile.isolated", lastAnswer: false });
     expect(tileWords(tiles.occupant_unseen, true))
       .toEqual({ key: "enfeksiyon.beds.tile.occupant_unseen", why: "enfeksiyon.beds.tile.occupantUnseenWhy" });
-    expect(tileWords(tiles.conflict, true)).toEqual({ key: "enfeksiyon.beds.tile.conflict", stateKey: "kabul.state.AVAILABLE" });
+    expect(tileWords(tiles.conflict, true))
+      .toEqual({ key: "enfeksiyon.beds.tile.conflict", stateKey: "kabul.state.AVAILABLE", lastAnswer: false });
     expect(tileWords(tiles.out_of_service, true)).toEqual({ key: "enfeksiyon.beds.tile.out_of_service" });
     expect(tileWords({ tile: "unknown", state: "NEW_STATE" }, true)).toEqual({ key: "enfeksiyon.unknown", state: "NEW_STATE" });
   });
@@ -165,6 +174,14 @@ describe("Decision 18 for the tiles (§5 A4 c)", () => {
     }
     expect(tileWords(tiles.isolated, false)).toEqual({ key: "enfeksiyon.beds.tile.isolated", lastAnswer: true });
     expect(tileWords(tiles.cleaning, false)).toEqual({ key: "enfeksiyon.beds.tile.cleaning" });     // the tree's own word
+  });
+
+  // Review M5: what a tile says of the board — a patient on a bed the tree calls free, a patient not on this list — is
+  // the last answer's once that answer is not fresh.
+  it("says a conflict is the last answer's, and no «hasta bu listede yok», from an answer that is not fresh", () => {
+    expect(tileWords(tiles.conflict, false))
+      .toEqual({ key: "enfeksiyon.beds.tile.conflict", stateKey: "kabul.state.AVAILABLE", lastAnswer: true });
+    expect(tileWords(tiles.occupant_unseen, false)).toEqual({ dash: true, why: "enfeksiyon.notFresh" });
   });
 });
 

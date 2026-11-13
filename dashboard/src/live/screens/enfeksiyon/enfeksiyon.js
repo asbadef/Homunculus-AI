@@ -78,8 +78,12 @@ export function isolationBeds(tree, answer) {
         for (const bed of listOf(room?.beds)) {
           if (unit.is_active === false || room.is_active === false || bed?.is_active === false || bed?.id == null) continue;
           const on = occupants.get(normId(bed.id)) ?? [];
+          const tile = tileOf(bed.state, on);
+          // Review M1: a tile made `unknown` by an occupant's word names that word, not the bed's own state.
+          const odd = tile === "unknown" ? on.find((o) => !OCCUPANT_STATES.has(o.state)) : undefined;
           out.push({ key: normId(bed.id), id: bed.id, label: String(bed.label ?? ""), roomName: String(room.name ?? ""),
-            unitId: unit.id, unitKey: normId(unit.id), state: bed.state ?? null, tile: tileOf(bed.state, on), occupants: on });
+            unitId: unit.id, unitKey: normId(unit.id), state: bed.state ?? null, tile, occupants: on,
+            ...(odd ? { unknownWord: String(odd.state ?? "—") } : {}) });
         }
       }
     }
@@ -188,16 +192,18 @@ export function freeBedsCell(tally, fresh, treeSource) {
   return { free: tally.free, total: tally.total };
 }
 
-/** A tile's words (spec D10's table, D15, §5 A4): `{key}`; `isolated` says whether its types are the last answer's;
- *  `occupant_unseen` adds the «—» reason; `conflict` names the tree's state (`stateKey`); an unknown tile names the
- *  state. From an answer that is not fresh, the three quiet tiles are «—» «liste güncel değil». */
+/** A tile's words (spec D10's table, D15, §5 A4): `{key}`; `isolated` and `conflict` say whether what they say of the
+ *  board is the last answer's (`lastAnswer`); `occupant_unseen` adds the «—» reason; `conflict` names the tree's state
+ *  (`stateKey`); an unknown tile names the occupant's word it does not know, else the bed's state (review M1). From an
+ *  answer that is not fresh, the three quiet tiles and «dolu — hasta bu listede yok» are «—» «liste güncel değil»
+ *  (§5 A4 c, review M5): «not on this list» is a claim about a list that is not current. */
 export function tileWords(tile, fresh) {
-  if (!fresh && QUIET.has(tile.tile)) return { dash: true, why: "enfeksiyon.notFresh" };
-  if (!TILES.includes(tile.tile)) return { key: "enfeksiyon.unknown", state: tile.state ?? tile.tile };
+  if (!fresh && (QUIET.has(tile.tile) || tile.tile === "occupant_unseen")) return { dash: true, why: "enfeksiyon.notFresh" };
+  if (!TILES.includes(tile.tile)) return { key: "enfeksiyon.unknown", state: tile.unknownWord ?? tile.state ?? tile.tile };
   const key = `enfeksiyon.beds.tile.${tile.tile}`;
   if (tile.tile === "isolated") return { key, lastAnswer: !fresh };
   if (tile.tile === "occupant_unseen") return { key, why: "enfeksiyon.beds.tile.occupantUnseenWhy" };
-  if (tile.tile === "conflict") return { key, stateKey: BED_STATE_KEYS[tile.state] ?? "kabul.bedOther" };
+  if (tile.tile === "conflict") return { key, stateKey: BED_STATE_KEYS[tile.state] ?? "kabul.bedOther", lastAnswer: !fresh };
   return { key };
 }
 
