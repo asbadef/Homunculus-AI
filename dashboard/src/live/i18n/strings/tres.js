@@ -102,6 +102,8 @@ export default {
       previewTitle: "Gönderim önizlemesi · {key}",
       previewNote: "Önizleme hasta verisi içerir; açılması denetim kaydına yazılır.",
       held: "platformda", notHeld: "henüz platformda değil", lastError: "Platformun son mesajı: {words}",
+      yielded: "bu kaydı platformda hastanın daha yeni yatışı tutuyor",
+      wait: "Beklenecek süre: {seconds} sn.",
     },
     departments: {
       title: "Bölüm eşleme",
@@ -248,6 +250,8 @@ export default {
       previewTitle: "Göndərişin ilkin baxışı · {key}",
       previewNote: "İlkin baxış xəstə məlumatlarını ehtiva edir; açılması audit jurnalına yazılır.",
       held: "platformadadır", notHeld: "hələ platformada deyil", lastError: "Platformanın son mesajı: {words}",
+      yielded: "bu qeydi platformada xəstənin daha yeni yatışı saxlayır",
+      wait: "Gözləmə müddəti: {seconds} san.",
     },
     departments: {
       title: "Şöbə uyğunlaşdırması",
@@ -394,6 +398,8 @@ export default {
       previewTitle: "Предпросмотр отправки · {key}",
       previewNote: "Предпросмотр содержит данные пациента; его открытие записывается в журнал аудита.",
       held: "на платформе", notHeld: "ещё не на платформе", lastError: "Последнее сообщение платформы: {words}",
+      yielded: "эту запись на платформе держит более новая госпитализация пациента",
+      wait: "Нужно подождать: {seconds} с.",
     },
     departments: {
       title: "Сопоставление отделений",
@@ -540,6 +546,8 @@ export default {
       previewTitle: "Send preview · {key}",
       previewNote: "The preview holds patient data; opening it is written to the audit trail.",
       held: "on the platform", notHeld: "not yet on the platform", lastError: "The platform's last message: {words}",
+      yielded: "held on the platform by the patient's newer stay",
+      wait: "Time to wait: {seconds} s.",
     },
     departments: {
       title: "Department map",
