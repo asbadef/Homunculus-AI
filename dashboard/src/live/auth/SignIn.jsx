@@ -51,11 +51,21 @@ export function SignIn() {
   const loginRef = useRef(null);
   const passwordRef = useRef(null);
   const mounted = useRef(false);
+  const formRef = useRef(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+
+  // The prototype's .lg2.shake: a refused attempt shakes the form once (restarted on each refusal).
+  useEffect(() => {
+    const el = formRef.current;
+    if (!failure || !el) return;
+    el.classList.remove("hom-shake");
+    void el.offsetWidth;
+    el.classList.add("hom-shake");
+  }, [failure]);
 
   useEffect(() => {
     (remembered ? passwordRef : loginRef).current?.focus();
@@ -111,7 +121,7 @@ export function SignIn() {
         <Alert tone={NOTICE_TONE[notice.code] ?? "crit"} className="mb-3">{t(`auth.notice.${notice.code}`)}</Alert>
       ) : null}
       {failure ? <Alert className="mb-3">{failure}</Alert> : null}
-      <form noValidate onSubmit={submit}>
+      <form ref={formRef} noValidate onSubmit={submit} onAnimationEnd={(e) => e.currentTarget.classList.remove("hom-shake")}>
         <Field layout="col" required label={t("auth.username")} error={errors.login}>
           <Input
             ref={loginRef}
@@ -184,7 +194,7 @@ export function SignIn() {
           size="lg"
           busy={busy}
           disabled={holding}
-          className="h-12 w-full justify-center rounded-xl font-bold"
+          className="hom-go h-12 w-full justify-center rounded-xl font-bold"
         >
           {busy ? t("auth.busy") : t("auth.submit")}
           {busy ? null : <Icon name="chevR" size={16} />}

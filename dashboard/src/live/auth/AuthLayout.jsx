@@ -73,12 +73,26 @@ const CSS = `
 [data-theme="gun"] .hom-st.done .ic{background:#16a34a}[data-theme="gun"] .hom-st.on .ic{background:#ef4444}
 [data-theme="gun"] .hom-cap{color:var(--ink)}[data-theme="gun"] .hom-cap.c{color:#b91c1c}[data-theme="gun"] .hom-cap.g{color:#15803d}[data-theme="gun"] .hom-ln{background:#e1e6ee}
 [data-theme="gun"] .hom-trust{border-color:#e1e6ee}
+@keyframes homUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes homShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(3px)}30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
+@keyframes homSweep{to{transform:translateX(100%)}}
+.hom-form>*{animation:homUp .45s ease-out both}
+.hom-form>*:nth-child(2){animation-delay:.06s}.hom-form>*:nth-child(3){animation-delay:.1s}.hom-form>*:nth-child(n+4){animation-delay:.16s}
+.hom-hero>*{animation:homUp .6s ease-out both}.hom-hero>*:nth-child(3){animation-delay:.12s}.hom-hero>*:nth-child(4){animation-delay:.24s}
+.hom-shake{animation:homShake .42s cubic-bezier(.36,.07,.19,.97)}
+.hom-go{position:relative;overflow:hidden;transition:transform .12s,box-shadow .2s,filter .2s}
+.hom-go:hover{box-shadow:0 10px 24px color-mix(in srgb,var(--pri) 35%,transparent);filter:brightness(1.05)}
+.hom-go:active{transform:scale(.985)}
+.hom-go svg{transition:transform .2s}.hom-go:hover svg{transform:translateX(3px)}
+.hom-go::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.28) 50%,transparent 65%);transform:translateX(-100%);pointer-events:none}
+.hom-go:hover::after{animation:homSweep .8s ease-out}
+.hom-form input:not([type=checkbox]){transition:border-color .15s,box-shadow .15s,background .15s}
 .hom-form label[for]{text-transform:uppercase;letter-spacing:.06em;font-size:11.5px;font-weight:700}
 .hom-form label[for] [aria-hidden]{display:none}
 .hom-form input:not([type=checkbox]){border-radius:12px}
 @media (max-height:820px){.hom-bed svg{display:none}.hom-chain{margin-top:8px}}
 @media (max-width:1250px){.hom-st small{display:none}}
-@media (prefers-reduced-motion:reduce){.hom-bg i,.hom-dot,.hom-bed.crit,.hom-rot.in,.hom-cap.in{animation:none}}
+@media (prefers-reduced-motion:reduce){.hom-bg i,.hom-dot,.hom-bed.crit,.hom-rot.in,.hom-cap.in,.hom-form>*,.hom-hero>*,.hom-shake,.hom-go:hover::after{animation:none}.hom-go,.hom-go svg{transition:none}}
 `;
 
 // Eight sample beds (no names) with a 12-point wave each — the prototype's SC_BEDS.
