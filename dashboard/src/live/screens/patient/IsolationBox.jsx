@@ -19,7 +19,7 @@
 // dropped (`null`: the session changed) or a superseded one says nothing; a discharged number is a warn; a refusal names
 // the bed (never the patient's name, Decision 14) and the reason; no answer (`mayHaveLanded`) may have written some of
 // the four rows — the box says so and has the board read again (`onRefresh`). The draft stays on every failure; a
-// success re-seeds it, for the patient still shown only. The save button names what it saves: the patient screen has
+// success re-seeds it — in the patient's own box (keyed, review M2). The save button names what it saves: the patient screen has
 // other «Kaydet» buttons (plan note N15).
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
@@ -35,8 +35,17 @@ export const seedOf = (isolation) => Object.fromEntries(TYPES.map((type) => [typ
 
 /** `isolation`: the card's block (api/board.py `_isolation`), or null — read as «unrecorded». `bed`: the toast's subject
  *  (the bed label, else the key). `known`: the board is LIVE. `onChart(entries)` saves for this patient and resolves to
- *  the store's answer; `onRefresh()` reads the board again. */
-export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs, onChart, onRefresh }) {
+ *  the store's answer; `onRefresh()` reads the board again.
+ *
+ *  Keyed by the patient (review M2), as the screen keys PatientAdmission: the shell keeps the patient screen mounted
+ *  across a move to another patient, and the draft, the busy state and a save's answer are the patient's, not the
+ *  box's. A move starts a new box — no draft of the last patient is painted, even for one frame — and a save still out
+ *  for a patient left and come back to lands in the box it left from, never on a newer save's busy state or draft. */
+export function IsolationBox(props) {
+  return <PatientIsolationBox key={props.patientId} {...props} />;
+}
+
+function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, onRefresh }) {
   const { t } = useI18n();
   const toast = useToast();
   const chartedAt = isolation?.charted_at ?? null;
@@ -46,7 +55,6 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
   const [held, setHeld] = useState(false);            // the save was pressed over a newer record (§5 A1)
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
-  const shown = useRef(patientId);
   // Review I1: a held save, «Yine de kaydet» and «Seçimden vazgeç» each swap the buttons under the keyboard; the focus
   // goes where the next step is (`focusTo`, read once the new buttons are in place), never to <body>.
   const saveRef = useRef(null);
@@ -57,15 +65,6 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
     focusTo.current = null;
     target?.focus();
   });
-  // The shell keeps the patient screen mounted across a move to another patient: the draft and the busy state are the
-  // patient's, not the box's.
-  useEffect(() => {
-    shown.current = patientId;
-    sending.current = false;
-    setDraft(null);
-    setHeld(false);
-    setBusy(false);
-  }, [patientId]);
   const boxes = draft ?? seedOf(isolation);
   const stamp = (iso) => {
     const ms = msOf(iso);
@@ -89,7 +88,6 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
     sending.current = true;
     setBusy(true);
     setHeld(false);
-    const asked = patientId;
     const subject = bed;
     let say = null;
     try {
@@ -100,7 +98,7 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
         return;
       }
       say = [t("patient.isolation.saved")];
-      if (shown.current === asked) setDraft(null);       // the boxes follow the reloaded card again
+      setDraft(null);                                    // the boxes follow the reloaded card again
     } catch (err) {
       if (err?.superseded) return;
       if (mayHaveLanded(err)) {
@@ -110,10 +108,8 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
         say = [t("patient.isolation.refused", { subject, reason: apiErrorText(t, err) }), "error"];
       }
     } finally {
-      if (shown.current === asked) {
-        sending.current = false;
-        setBusy(false);
-      }
+      sending.current = false;                           // this patient's box: a box left behind is unmounted
+      setBusy(false);
       if (say) toast(...say);
     }
   }
