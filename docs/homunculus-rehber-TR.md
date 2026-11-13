@@ -2973,10 +2973,11 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     sürümün imajıyla `alembic downgrade` sunucunun sürümden önceki başına (birleşik bir çıkışta o başa), sonra eski
     imaj.
 - **Kurulum notu:** api ve web birlikte çıkar, `alembic upgrade head` ile (0023 yalnız satır yazar). Web api'den önce
-  çıkmaz: eski api yeni kodları «bilinmeyen klinik alan» diye reddeder ve `/infection`'ı tanımaz. Köprü imajı da
-  güncellenir (varsayılan tablosu dört kodu artık taşımaz); eski bir köprü bunları gönderse bile yeni api 200 ile
-  geçer, sıra takılmaz. Yetkiler oturum açılışında alınır: dağıtımdan önce açılmış bir oturum sayfayı token
-  yenilenince görür.
+  çıkmaz: eski api yeni kodları «bilinmeyen klinik alan» diye reddeder ve `/infection`'ı tanımaz. Köprü imajı
+  (`homunculus-bridge`: HL7 ve NCE köprüleri) bu sürümde yeniden kurulur, çünkü varsayılan HL7 tablosu ve eşleme
+  dosyası okuyucuları değişti; api ile sırası önemli değildir: eski bir köprü bu dört kodu hiç üretemez (kodu onları
+  tanımaz). `/ingest`'in 200 cevabı, bu kodları gönderebilecek başka her göndericiye karşı sırayı korur. Yetkiler oturum
+  açılışında alınır: dağıtımdan önce açılmış bir oturum sayfayı token yenilenince görür.
 - **Bu dilimde olmayanlar:** cihaz günleri, cihaz kullanım oranı, enfeksiyon oranları, antibiyotik günü, kültürler ve
   formülleri; izolasyon önerisi, eşik ya da kültür veya tanı ile izolasyon türü arasında bağ; yatak kartlarında, alarm
   satırlarında ya da Doluluk'ta izolasyon etiketi; izolasyon nedeni ya da serbest metin; izolasyon geçmişi ekranı;

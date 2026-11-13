@@ -413,14 +413,18 @@ reaches main first takes `0023`; the second is renumbered onto the head at that 
 "0023"`) — one line in the migration and the tuple in its test, because the tests check the head by ancestry
 (`ScriptDirectory.iterate_revisions(head, "base")` contains the revision), never by the names' order.
 
-### D22 — deploy (§5 A2 ile değişti)
+### D22 — deploy (§5 A2, A7 ile değişti)
 
 api + web together, and `alembic upgrade head` (0023: rows only), on the owner's «main'e al» and «onay» — as its own
 release or folded into the combined one. **Not web before api:** an older api refuses the new codes with 400
 «bilinmeyen klinik alan» and has no `/infection`. The web image carries `nginx.conf`. Rollback: downgrade `0023` from
 this release's image, then the previous tags. The isolation `chart` rows stay in the trail: an older api's replay
 skips their unknown slug (`rehydrate.observation_of`), so the flags vanish from that api's board and come back,
-replayed, with the next deploy of this one. Hub, bridge, nce untouched. Rights travel in the token: a session opened
+replayed, with the next deploy of this one. **A7:** the bridge image (`homunculus-bridge`, which runs the HL7 and the
+NCE bridge) IS rebuilt in this release: the default HL7 table and the site loaders changed. Its order against the api
+does not matter: an older bridge cannot produce the four slugs at all (its `SignalCode` has no such member, so its
+default table cannot map them and its loaders refuse an unknown slug), and `/ingest`'s 200 protects against any other
+sender. The hub is untouched. Rights travel in the token: a session opened
 before the deploy sees the page once its token is renewed. Rooms already in the structure carry `is_isolation` only if
 they were created with it (O1).
 
@@ -700,7 +704,8 @@ Test: `enfeksiyon.strings.test.js` pins the TR note.
 - The box goes under the Sepsis box, in the left cell of the patient screen's two-column grid
   (`PatientScreen.jsx:503-507`): that cell becomes a column of Sepsis then İzolasyon, Meds stays on the right; on a
   narrow screen the order is Sepsis, İzolasyon, Meds.
-- Tests: `/ingest` with each code → 400, no `ingest` row, no readings row, the board unchanged; the box's place.
+- Tests: `/ingest` with each code → 200 `{"dropped": "isolation"}` (A7), nothing written — no `ingest` row, no
+  readings row, no unmatched row, the board unchanged; the box's place.
 
 **M9 — no shared hook (D14).** `usePharmacy` and its test stay as they are, except that `skewAtReceipt` and
 `SKEW_NOISE_MS` move to `screens/common/skewAtReceipt.js` and `usePharmacy.js` imports them. `useInfection.js` is its
