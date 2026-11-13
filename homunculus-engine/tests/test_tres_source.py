@@ -32,7 +32,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from homunculus.admission.models import AdmissionState, Patient
@@ -41,7 +41,7 @@ from homunculus.tres import ids, source
 from homunculus.tres.client import TresClient
 from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, payload_digest
 from homunculus.tres.mapping.patient import patient as map_patient
-from homunculus.tres.models import RESOURCE_TYPES, TresDelivery, TresSettings
+from homunculus.tres.models import RESOURCE_TYPES, TresDelivery, TresDepartmentMap, TresSettings
 from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, retry_stays, window, zone_of
 from homunculus.tres.worker import Sender, run_round
 from tests.conftest import requires_db
@@ -967,4 +967,33 @@ async def test_a_person_whose_fin_is_cleared_never_relabels_the_encounter_the_pl
     row = await _encounter_row(db_session)
     assert (row.status, row.reason, row.remote_id) == ("sent", None, held_id)
     assert len(fake.stored("Encounter")) == 1
+    assert admission_id not in await retry_stays(db_session, settings, NOW + timedelta(minutes=5))
+
+
+# ---------------------------------------------------------------- the final review (Postgres)
+@requires_db
+async def test_an_encounter_the_platform_holds_keeps_its_row_when_its_unit_is_unmapped_since(db_session):
+    """Final review (2026-11-13): the Encounter's own skips (`unit_unmapped`, `organization_missing`,
+    `timezone_unknown`, `discharge_missing`) are written with `keep_held`, as `patient_unheld` is
+    (amendment 27). A stay sent whole whose unit's mapping is then cleared, within its week: the next round
+    stops at the Encounter and leaves the row the platform holds as it is — `sent`, its id — and the night
+    does not take the stay for it."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    admission_id = admission.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)
+    row = await _encounter_row(db_session)
+    held_id = row.remote_id
+    assert row.status == "sent" and held_id
+    await db_session.execute(delete(TresDepartmentMap))
+    await db_session.commit()
+    asked = len(fake.requests)
+    await _round(db_session, fake, audit, now=NOW + timedelta(minutes=5))
+    row = await _encounter_row(db_session)
+    assert (row.status, row.reason, row.remote_id) == ("sent", None, held_id)
+    assert len(fake.stored("Encounter")) == 1 and len(fake.requests) == asked     # D7: nothing changed was asked
     assert admission_id not in await retry_stays(db_session, settings, NOW + timedelta(minutes=5))

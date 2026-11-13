@@ -184,6 +184,22 @@ async def test_a_skipped_encounter_stops_the_package_before_the_vitals():
     assert not any(call[1] == "vital" for call in sender.calls) and outcome.first_complete is False
 
 
+@pytest.mark.parametrize("over, organization, reason", [
+    ({"department": None}, "ORG-0001", "unit_unmapped"),
+    ({}, None, "organization_missing"),
+    ({"zone": None}, "ORG-0001", "timezone_unknown"),
+    ({"discharged_at": None}, "ORG-0001", "discharge_missing"),
+])
+async def test_an_encounters_own_skip_never_relabels_an_encounter_the_platform_holds(over, organization, reason):
+    """Final review (2026-11-13): the Encounter's own skips are written with `keep_held`, as `patient_unheld`
+    is (amendment 27) — an Encounter the platform holds keeps its row as it is (`sent`, its id); one it does
+    not hold gets `skipped`/<reason> as before."""
+    sender = Recorder()
+    await run(stay(**over), sender, organization_id=organization)
+    assert sender.calls[-1] == ("skip", "encounter", ENCOUNTER_ID, reason)
+    assert sender.kept == {("encounter", ENCOUNTER_ID)}
+
+
 async def test_validate_with_nothing_sent_before_checks_the_people_and_records_no_reference_for_the_rest():
     """O14: nothing the Encounter could point at exists on the platform."""
     sender = Recorder(mode="validate")

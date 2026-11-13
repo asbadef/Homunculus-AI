@@ -15,7 +15,10 @@ Encounter, then Procedures, the Composition, the laboratory results — before t
   (source.retry_stays: an Encounter not `sent`) sends it once its person can be sent. It is written
   with `keep_held` (re-review of 2026-11-13): an Encounter the platform already holds — a stay sent
   whole, its person's FİN removed since — keeps its row as it is (`sent`, its id), and the night
-  does not take the stay for it.
+  does not take the stay for it. So do the Encounter's OWN skips (`unit_unmapped`,
+  `organization_missing`, `timezone_unknown`, `discharge_missing`; final review, 2026-11-13): a
+  unit's mapping cleared after its stay was sent leaves the held Encounter `sent`; one the platform
+  does not hold gets `skipped` with the reason, as before.
 * A Practitioner that cannot be sent is left out of the Encounter's `participant` (D8).
 * Once a FİN keys the person — the Patient's local id is not the stay's placeholder
   (ids.patient_placeholder) — the placeholder's skip is removed, whether the Patient is then sent
@@ -171,7 +174,9 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
     built = map_encounter(stay, patient_id=patient_id, practitioner_ids=practitioner_ids,
                           organization_id=organization_id)
     if isinstance(built, Skip):
-        await skip(built.resource_type, built.local_id, built.reason)
+        # Its own skip (`unit_unmapped`, `organization_missing`, `timezone_unknown`, `discharge_missing`)
+        # never relabels an Encounter the platform holds (`keep_held`, final review — as `patient_unheld`).
+        await skip(built.resource_type, built.local_id, built.reason, keep_held=True)
         return outcome
     encounter = await send(built)
     encounter_id = encounter.remote_id
