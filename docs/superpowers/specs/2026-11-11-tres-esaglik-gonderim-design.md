@@ -601,6 +601,11 @@ For whoever merges the branch to main — on the owner's word only («main'e al�
   name an `ingest` row, G3-05), `api/rehydrate.py` and `api/app.py`. TRƏS's stay reader leans on `iter_records_of`,
   `RETRACT`, `retracted_entries` and the device token's literal, and its drift tests read those files: they must pass
   after the merge.
+- **Main moved again (Lane A, 2026-11-13: `1b33d399`, no migration, head still `0021`).** G3-07 «Kabul zamanı» and
+  G3-06 «Saat geri gitmez» touched `api/pipeline.py`, `api/rehydrate.py` and `api/app.py`. If G3-07 changes how
+  `admissions.admission_datetime` is set or corrected, the Encounter's `period.start` and the stay's reading of the
+  chain follow it — check the Encounter mapper's golden tests and the source's tests against main's admission rules
+  after the merge. `app.py` carries TRƏS's two lines (`app.state.tres_source`, the tenants' pacers).
 
 ### 14.5 Native reading (owner item)
 
