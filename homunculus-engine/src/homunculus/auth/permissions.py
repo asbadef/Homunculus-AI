@@ -93,6 +93,13 @@ PERMISSIONS: dict[str, str] = {
     "workload.view": "Open the İş yükü page and read each unit's workload for the current shift — patients, "
                      "nurses, unassigned patients, late and remaining tasks, alarms waiting — as counts, and "
                      "the shift's nurse–bed assignment (GET /shift-schedule)",
+
+    # G4-05 — Enfeksiyon kontrol (spec D2, D9): the infection-control page, read-only. The default groups of the ward's
+    # clinicians hold it — attending, unit physician, physician, charge nurse, nurse (migration 0023 for the tenants
+    # seeded before it); the system group holds it by rule. Charting a flag is `clinical.chart`'s, not this key's.
+    "infection.view": "Open the Enfeksiyon kontrol page: per patient in one's own units — isolation, suspected "
+                      "infection, the antibiotic clock and open sepsis alarms — and the isolation beds, "
+                      "read-only (GET /infection)",
 }
 
 ALL_PERMISSIONS: frozenset[str] = frozenset(PERMISSIONS)
@@ -136,6 +143,7 @@ _ATTENDING = (
     "admissions.move.initiate", "care_team.claim", "care_team.assign", "handover.sign",
     "break_glass.use", "clinical.chart", "scores.sign", "tasks.view", "tasks.manage",
     "pharmacy.view",
+    "infection.view",       # G4-05 (spec D2): «Enfeksiyon kontrol»; migration 0023 for the tenants seeded before
 )
 
 
@@ -182,7 +190,8 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                      "handover.sign", "break_glass.use", "clinical.chart", "scores.sign",
-                     "tasks.view", "tasks.manage", "pharmacy.view")},
+                     "tasks.view", "tasks.manage", "pharmacy.view",
+                     "infection.view")},                 # G4-05 (spec D2)
     # G2-B1c (D7): no `care_team.claim`. The care team is physicians' (T1), and a charge nurse's
     # claim could only be refused. Migration 0018 takes the key, and «bakım ekibi» from the default
     # description, from the tenants seeded before it.
@@ -195,13 +204,15 @@ DEFAULT_GROUPS: tuple[GroupSpec, ...] = (
                      "admissions.discharge.confirm", "handover.sign",
                      "shifts.manage", "break_glass.use", "clinical.chart", "beds.release",
                      "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage",
-                     "workload.view")},
+                     "workload.view",
+                     "infection.view")},                 # G4-05 (spec D2)
     {"slug": "nurse", "kind": "role", "name": "Hemşire",
      "description": "Pano, alarm onayı, hasta kabul, devir imzası.",
      "mfa_required": False, "is_system": False,
      "permissions": ("board.view", "alerts.ack", "admissions.view", "admissions.admit",
                      "admissions.transfer.confirm", "handover.sign", "clinical.chart",
-                     "beds.release", "tasks.view", "tasks.manage")},
+                     "beds.release", "tasks.view", "tasks.manage",
+                     "infection.view")},                 # G4-05 (spec D2)
     {"slug": "rapid_response", "kind": "extra", "name": "Hızlı Yanıt Ekibi",
      "description": "Pano, alarm onayı ve eskalasyon, break-glass.",
      "mfa_required": False, "is_system": False,

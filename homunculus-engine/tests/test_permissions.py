@@ -32,11 +32,12 @@ SPEC_KEYS = {
     "pharmacy.view",      # G3-04 Eczane (spec D2): the page, GET /pharmacy
     "quality.view",       # G4-03 Kalite göstergeleri (spec D2, D3): the page, GET /quality
     "workload.view",      # G4-04 İş yükü (spec D2): the page, GET /shift-schedule
+    "infection.view",     # G4-05 Enfeksiyon kontrol (spec D2, D9): the page, GET /infection
 }
 
 
-def test_the_catalogue_is_exactly_the_specified_thirty_keys():
-    assert len(SPEC_KEYS) == 30
+def test_the_catalogue_is_exactly_the_specified_thirty_one_keys():
+    assert len(SPEC_KEYS) == 31
     assert set(PERMISSIONS) == SPEC_KEYS
     assert ALL_PERMISSIONS == frozenset(SPEC_KEYS)
 
@@ -118,29 +119,33 @@ def test_a_bare_string_is_refused_not_split_into_characters():
 # The whole §3 table, so a stray key added to any group fails here, not in a ward.
 SPEC_GROUPS = {
     "hospital_admin": (True, True, SPEC_KEYS),
+    # G4-05 (spec D2): + `infection.view` for the five groups of the ward's clinicians (migration 0023).
     "attending": (True, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                 "admissions.sign_off", "admissions.move.initiate",
                                 "care_team.claim", "care_team.assign", "handover.sign",
                                 "break_glass.use", "clinical.chart", "scores.sign",
-                                "tasks.view", "tasks.manage", "pharmacy.view"}),
+                                "tasks.view", "tasks.manage", "pharmacy.view", "infection.view"}),
     "unit_physician": (True, False, {"board.view", "alerts.ack", "alerts.escalate",
                                      "admissions.view", "admissions.sign_off",
                                      "admissions.move.initiate", "handover.sign",
                                      "break_glass.use", "clinical.chart", "scores.sign",
-                                     "tasks.view", "tasks.manage", "pharmacy.view"}),
+                                     "tasks.view", "tasks.manage", "pharmacy.view", "infection.view"}),
     "physician": (False, False, {"board.view", "alerts.ack", "alerts.escalate", "admissions.view",
                                  "handover.sign", "break_glass.use", "clinical.chart",
-                                 "scores.sign", "tasks.view", "tasks.manage", "pharmacy.view"}),
+                                 "scores.sign", "tasks.view", "tasks.manage", "pharmacy.view",
+                                 "infection.view"}),
     "charge_nurse": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                     "admissions.view", "admissions.admit",
                                     "admissions.transfer.confirm", "admissions.discharge.confirm",
                                     "handover.sign", "shifts.manage",
                                     "break_glass.use", "clinical.chart", "beds.release",
                                     "devices.map_beds", "beds.manage_state", "tasks.view", "tasks.manage",
-                                    "workload.view"}),                       # + G4-04 (spec D2)
+                                    "workload.view",                         # + G4-04 (spec D2)
+                                    "infection.view"}),
     "nurse": (False, False, {"board.view", "alerts.ack", "admissions.view", "admissions.admit",
                              "admissions.transfer.confirm", "handover.sign",
-                             "clinical.chart", "beds.release", "tasks.view", "tasks.manage"}),
+                             "clinical.chart", "beds.release", "tasks.view", "tasks.manage",
+                             "infection.view"}),
     "rapid_response": (False, False, {"board.view", "alerts.ack", "alerts.escalate",
                                       "admissions.view", "break_glass.use", "clinical.chart",
                                       "tasks.view", "tasks.manage"}),
@@ -279,4 +284,18 @@ def test_the_workload_page_is_the_charge_nurses_and_the_system_administrators_by
     assert holders == {"hospital_admin", "charge_nurse"}
     assert PERMISSIONS["workload.view"].startswith("Open the İş yükü page")
     assert PERMISSIONS["shifts.manage"].startswith("Assign nurses to beds")
-    assert list(PERMISSIONS)[-1] == "workload.view"          # appended after quality.view: the mirrors' order
+    keys = list(PERMISSIONS)                                 # G4-05: infection.view is the last key now
+    assert keys[keys.index("quality.view") + 1] == "workload.view"   # appended after quality.view: the mirrors' order
+
+
+def test_the_infection_page_is_the_wards_clinicians_by_default():
+    """G4-05 (spec D2, D9): `infection.view` is in the default groups of the ward's clinicians — the attending
+    («Sorumlu Hekim»), the unit physician, the physician, the charge nurse and the nurse — migration 0023 gives it to
+    the tenants seeded before it, `DEFAULT_GROUPS` to the ones made after — and the system group holds it by rule. Not
+    the pharmacist's, the rapid-response team's, the auditor's, vendor support's or biomedical's. The page writes
+    nothing: charting a flag needs `clinical.chart`, the chart door's own key."""
+    holders = {g["slug"] for g in DEFAULT_GROUPS if "infection.view" in g["permissions"]}
+    assert holders == {"hospital_admin", "attending", "unit_physician", "physician", "charge_nurse", "nurse"}
+    assert PERMISSIONS["infection.view"].startswith("Open the Enfeksiyon kontrol page")
+    assert PERMISSIONS["infection.view"].endswith("read-only (GET /infection)")
+    assert list(PERMISSIONS)[-1] == "infection.view"         # appended after workload.view: the mirrors' order
