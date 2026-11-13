@@ -13,7 +13,7 @@ import { FOCUS_RING } from "../ui/focus.js";
 import { MenuButton, TOOL_BUTTON } from "./Menu.jsx";
 
 const LANG_BUTTON =
-  `inline-flex h-9 shrink-0 items-center gap-1.5 rounded-ctl border border-line bg-card2 px-2.5 font-text text-12.5 font-bold text-ink hover:border-pri ${FOCUS_RING}`;
+  `inline-flex h-[38px] shrink-0 items-center gap-[7px] rounded-[11px] border border-line bg-card2 pl-2 pr-2.5 font-text text-12.5 font-bold text-ink hover:border-pri ${FOCUS_RING}`;
 
 export function LanguageMenu() {
   const { t, lang, setLang, langs } = useI18n();

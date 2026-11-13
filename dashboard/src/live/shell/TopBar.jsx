@@ -71,7 +71,7 @@ function UnitChip() {
   return (
     <MenuButton
       label={stale ? `${choice} · ${t("shell.unitsStale")}` : choice}
-      buttonClassName={`relative hidden h-9 shrink-0 items-center gap-2 rounded-ctl border border-line bg-card2 px-2.5 text-12.5 font-semibold text-ink min-[641px]:inline-flex ${FOCUS_RING}`}
+      buttonClassName={`relative hidden h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] border border-line bg-card2 px-2.5 text-12.5 font-semibold text-ink min-[641px]:inline-flex ${FOCUS_RING}`}
       button={(
         <>
           <Icon name="building" size={16} />
@@ -193,7 +193,7 @@ function Bell() {
         <>
           <Icon name="bell" size={19} />
           {waiting.length ? (
-            <span aria-hidden="true" data-bell="count" className="absolute -right-1 -top-1 min-w-[16px] rounded-full border-2 border-rail bg-crit px-1 font-text text-10 font-bold leading-[14px] text-oncrit">{waiting.length}</span>
+            <span aria-hidden="true" data-bell="count" className="absolute -right-1 -top-1 min-w-[20px] rounded-full border-2 border-rail bg-crit px-1 font-text text-[9.5px] font-bold leading-4 text-oncrit">{waiting.length}</span>
           ) : null}
           {stale ? (
             <>
@@ -260,7 +260,7 @@ function AccountMenu() {
   return (
     <MenuButton
       label={t("shell.account")}
-      buttonClassName={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full bg-pri font-text text-12 font-bold text-onpri ${FOCUS_RING}`}
+      buttonClassName={`ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#1f6f94,#22b8d6)] font-text text-12 font-bold text-white shadow-[0_0_0_2px_var(--rail),0_0_0_3px_var(--line2)] ${FOCUS_RING}`}
       button={<span aria-hidden="true">{initials}</span>}
       header={(
         <div className="px-2.5 pb-2 pt-1.5">
@@ -302,7 +302,7 @@ function NewMenu() {
   return (
     <MenuButton
       label={t("shell.new")}
-      buttonClassName={`hidden h-9 shrink-0 items-center gap-1.5 rounded-ctl border border-line bg-card px-3 text-13 font-bold text-ink hover:border-pri min-[641px]:inline-flex ${FOCUS_RING}`}
+      buttonClassName={`hidden h-[30px] shrink-0 items-center gap-2 rounded-[10px] border border-line bg-card2 px-2.5 text-12.5 font-semibold text-ink hover:border-pri min-[641px]:inline-flex ${FOCUS_RING}`}
       button={(<><Icon name="plus" size={16} />{t("shell.new")}<Icon name="chevD" size={14} className="text-mute" /></>)}
       header={(
         <div className="px-2.5 pb-2 pt-1.5">
@@ -320,11 +320,11 @@ export function TopBar({ title }) {
   const { user } = useSession();
   const seesBoard = user?.perms?.includes("board.view") ?? false;
   return (
-    <header className="flex h-[58px] min-w-0 items-center gap-2.5 border-b border-line bg-rail px-4 max-[640px]:gap-1.5 max-[640px]:px-2">
-      <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap font-display text-17 font-bold">
-        <span className="truncate text-mute max-[860px]:hidden">{user.tenantName || user.tenant}</span>
-        <Icon name="chevR" size={16} className="shrink-0 text-mute max-[860px]:hidden" />
-        <span className="truncate">{title}</span>
+    <header className="flex h-[58px] min-w-0 items-center gap-2.5 border-b border-line bg-rail pl-[18px] pr-3.5 max-[640px]:gap-1.5 max-[640px]:px-2">
+      <p className="m-0 flex min-w-0 shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+        <span className="max-w-[190px] truncate font-text text-14 font-semibold text-mute max-[1300px]:hidden">{user.tenantName || user.tenant}</span>
+        <Icon name="chevR" size={14} className="shrink-0 text-mute opacity-60 max-[1300px]:hidden" />
+        <span className="truncate font-display text-16 font-bold text-ink">{title}</span>
       </p>
       <UnitChip />
       {seesBoard ? <GlobalSearch /> : null}
@@ -332,7 +332,7 @@ export function TopBar({ title }) {
       <Clock />
       <ShiftChip />
       <NewMenu />
-      <div className="flex shrink-0 items-center gap-0.5 border-l border-line pl-2 max-[640px]:border-l-0 max-[640px]:pl-0">
+      <div className="flex shrink-0 items-center gap-1">
         <LanguageMenu />
         <ThemeToggle />
         <FullscreenButton />

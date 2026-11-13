@@ -47,7 +47,7 @@ export function ShiftChip() {
   return (
     <p title={t("shell.shiftWindow", { start: hhmm(shift.start), end: hhmm(shift.end) })}
       className="m-0 hidden h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-card2 px-2.5 text-11.5 font-semibold text-mute min-[1100px]:flex">
-      <i aria-hidden="true" className="h-2 w-2 rounded-full bg-[color:var(--ok)]" />
+      <i aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-[#16a34a]" />
       {t("shell.shiftLeft")}
       <b className="font-data text-ink">{leftText(shift.end, now)}</b>
     </p>

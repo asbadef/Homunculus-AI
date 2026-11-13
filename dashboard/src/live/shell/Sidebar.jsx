@@ -67,7 +67,7 @@ function Badge({ badge }) {
   if (known && count > 0) {
     return (
       <>
-        <span aria-hidden="true" data-rail-badge="count" className="absolute right-1 top-1 min-w-[16px] rounded-full bg-crit px-1 font-text text-10 font-bold leading-[14px] text-oncrit">{count}</span>
+        <span aria-hidden="true" data-rail-badge="count" className="absolute right-[14px] top-[5px] h-[18px] min-w-[18px] rounded-full bg-crit px-1 font-text text-10.5 font-bold leading-[18px] text-oncrit shadow-[0_0_0_2px_var(--rail)] max-[640px]:right-1">{count}</span>
         <span className="sr-only">{` · ${t(badge.countKey, { count })}`}</span>
       </>
     );
@@ -104,9 +104,13 @@ function RailLink({ route, current }) {
       <a
         href={`#${route.path}`}
         aria-current={on ? "page" : undefined}
-        className={`relative flex flex-col items-center gap-1 rounded-box px-0.5 pb-2 pt-[9px] text-center font-text text-10.5 font-semibold leading-[1.15] ${on ? "bg-pri text-onpri" : "text-mute hover:bg-card2 hover:text-ink"} ${FOCUS_RING}`}
+        // The prototype's .ri (ek.css): 14 px corners, a 25 px icon that lifts on hover, the entry
+        // pressed in on click; the current one wears a shadow and a 3 px bar at the rail's edge.
+        className={`group relative flex flex-col items-center gap-[5px] rounded-[14px] px-0.5 pb-[9px] pt-[11px] text-center font-text text-11.5 font-semibold leading-[1.15] transition-[background-color,color,transform] duration-150 active:scale-[.96] motion-reduce:transition-none ${on
+          ? "bg-pri text-onpri shadow-[0_6px_16px_color-mix(in_srgb,var(--pri)_30%,transparent)] before:absolute before:-left-2 before:bottom-3 before:top-3 before:w-[3px] before:rounded-r-[3px] before:bg-pri max-[640px]:before:hidden"
+          : "text-mute hover:bg-card2 hover:text-ink"} ${FOCUS_RING}`}
       >
-        <Icon name={route.icon} size={21} />
+        <Icon name={route.icon} size={25} className="transition-transform duration-200 group-hover:-translate-y-px group-hover:scale-[1.06] motion-reduce:transition-none max-[640px]:h-[22px] max-[640px]:w-[22px]" />
         <span className="max-[640px]:hidden">{t(route.labelKey)}</span>
         <span className="hidden text-10 max-[640px]:block">{t(route.shortKey)}</span>
         <RailBadge routeId={route.id} />
@@ -121,19 +125,21 @@ export function Sidebar({ perms, current }) {
   const { t } = useI18n();
   const { main, bottom } = navRoutes(perms);
   return (
-    <nav aria-label={t("shell.rail")} className="z-30 flex min-h-0 flex-col gap-[3px] overflow-y-auto border-r border-line bg-rail px-2 py-2.5 max-[640px]:px-1">
+    <nav aria-label={t("shell.rail")} className="hom-rail z-30 flex min-h-0 flex-col gap-1 overflow-y-auto border-r border-line bg-rail px-2 pb-2.5 pt-3 max-[640px]:px-1">
+      {/* The prototype's rail scrollbar: invisible until the rail is hovered. */}
+      <style>{".hom-rail{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color .25s}.hom-rail:hover{scrollbar-color:color-mix(in srgb,var(--mute) 45%,transparent) transparent}"}</style>
       <div className="mb-1.5 border-b border-line pb-3 pt-1">
-        <a href={`#${homePath(perms)}`} className={`flex flex-col items-center gap-[5px] rounded-box ${FOCUS_RING}`}>
-          <Mark />
-          <small className="font-display text-10 font-bold text-mute max-[640px]:hidden">homunculus</small>
+        <a href={`#${homePath(perms)}`} className={`group flex flex-col items-center gap-[5px] rounded-box ${FOCUS_RING}`}>
+          <Mark className="h-11 w-11 transition-transform duration-200 group-hover:-rotate-6 group-hover:scale-105 motion-reduce:transition-none" />
+          <small className="font-display text-[9.5px] font-bold text-mute max-[640px]:hidden">homunculus</small>
           <span className="sr-only">{t("shell.home")}</span>
         </a>
       </div>
-      <ul className="m-0 flex list-none flex-col gap-[3px] p-0">
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
         {main.map((route) => <RailLink key={route.id} route={route} current={current} />)}
       </ul>
       <div className="flex-1" />
-      <ul className="m-0 flex list-none flex-col gap-[3px] p-0">
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
         {bottom.map((route) => <RailLink key={route.id} route={route} current={current} />)}
       </ul>
     </nav>

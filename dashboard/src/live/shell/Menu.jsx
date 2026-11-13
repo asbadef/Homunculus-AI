@@ -10,7 +10,7 @@ import { Icon } from "../ui/Icon.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
 
 export const TOOL_BUTTON =
-  `relative grid h-9 w-9 shrink-0 place-items-center rounded-ctl text-mute hover:bg-card2 hover:text-ink ${FOCUS_RING}`;
+  `relative grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] text-mute hover:bg-card2 hover:text-ink ${FOCUS_RING}`;
 const PANEL = "absolute right-0 top-full z-[90] mt-1.5 min-w-[220px] rounded-box border border-line2 bg-card p-2 font-text text-ink shadow-pop outline-none";
 
 function useDisclosure() {

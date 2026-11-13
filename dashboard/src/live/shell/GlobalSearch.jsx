@@ -55,8 +55,8 @@ export function GlobalSearch() {
   const shown = open && query.trim() !== "";
 
   return (
-    <div className="relative hidden w-full max-w-[520px] min-w-0 flex-1 min-[861px]:block">
-      <label className="flex h-10 items-center gap-2 rounded-ctl border border-line bg-card2 px-3 text-mute focus-within:border-pri">
+    <div className="relative hidden w-full min-w-[160px] max-w-[440px] flex-1 min-[861px]:block">
+      <label className="flex h-10 items-center gap-2 rounded-xl border border-line bg-card2 pl-[11px] pr-1.5 text-mute focus-within:border-pri">
         <Icon name="search" size={16} />
         <span className="sr-only">{t("shell.search")}</span>
         <input
@@ -72,9 +72,9 @@ export function GlobalSearch() {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={onKeyDown}
-          className="min-w-0 flex-1 border-0 bg-transparent font-text text-13.5 text-ink outline-none placeholder:text-mute"
+          className="min-w-0 flex-1 border-0 bg-transparent font-text text-13 font-medium text-ink outline-none placeholder:text-mute"
         />
-        <kbd className="rounded-md border border-b-2 border-line2 bg-card px-1.5 font-data text-10.5 font-semibold text-mute">Ctrl K</kbd>
+        <kbd className="rounded-md border border-line2 bg-card px-1.5 py-1 font-data text-10.5 font-semibold leading-none text-mute">Ctrl K</kbd>
       </label>
       {shown ? (
         <ul id={list} role="listbox" aria-label={t("shell.search")}

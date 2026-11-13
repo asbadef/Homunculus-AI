@@ -41,7 +41,9 @@ export function tailwindColors() {
 // resets it) set leading-[normal] themselves.
 // 15/20/28/40 came with the shell (G1-07/G1-08): the lock card, the brand and step headings, the
 // sign-in title (the prototype's .lg2 h2) and the hero headline.
-export const TYPE_SIZES = ["10", "10.5", "11", "11.5", "12", "12.5", "13", "13.5", "14", "14.5", "15", "17", "20", "23", "28", "40"];
+// 9.5/16/19/22/26 came with the prototype's shell and bed board measured as drawn (2026-11-14): the
+// rail's brand, the breadcrumb, the bed card's numbers and the attention tiles' counts.
+export const TYPE_SIZES = ["9.5", "10", "10.5", "11", "11.5", "12", "12.5", "13", "13.5", "14", "14.5", "15", "16", "17", "19", "20", "22", "23", "26", "28", "40"];
 
 export function tailwindFontSizes() {
   return Object.fromEntries(TYPE_SIZES.map((px) => [px, `calc(${px}px * var(--fs))`]));

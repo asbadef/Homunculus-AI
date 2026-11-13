@@ -459,7 +459,8 @@ describe("the bed card — the shadow tag", () => {
     expect(link().textContent).toBe(without);
     expect(document.querySelector("[data-rail]").getAttribute("data-rail")).toBe(rail);
     expect(without).toContain("Kritik");
-    expect(within(link()).getByText("Septik şok ölçütləri qarşılandı")).toHaveAttribute("lang", "en");
+    // the alarm's own words are in the card's details since the prototype's layout (2026-11-14)
+    expect(screen.getByText("Septik şok ölçütləri qarşılandı")).toHaveAttribute("lang", "en");
     // The shadow's own finding is not a row among the alarms, nor a pill.
     expect(screen.queryByText("NEWS2 6 on the monitor's inputs")).toBeNull();
     expect(tag().closest("a")).toBeNull();

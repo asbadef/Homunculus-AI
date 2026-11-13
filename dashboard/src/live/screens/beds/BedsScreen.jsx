@@ -35,7 +35,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { readPref, writePref } from "../../prefs.js";
 import { Empty, Icon, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
-import { hhmm } from "../../i18n/dates.js";
+import { ddmm, hhmm } from "../../i18n/dates.js";
 import {
   BoardStrip, FeedHealth, News2, ScopeNote, boardKnown, boardStale, nameOf, summaryOf, useBoardNow,
 } from "../common/BoardState.jsx";
@@ -44,9 +44,10 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
-import { AttentionTiles } from "./AttentionTiles.jsx";
+import { AttentionTiles, lateByPatient, useTaskQueue } from "./AttentionTiles.jsx";
+import { ageText } from "../patient/ageText.js";
 import { useStructure, useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
-import { UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
+import { BED_STATE_KEYS, UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
 import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
 import { boardKeyOf } from "../kabul/boardKey.js";                  // G2-B1d: the card key
 import { useShadow } from "../../data/ShadowProvider.jsx";
@@ -111,21 +112,39 @@ export function unitBeds(index, unitId) {
     .sort((a, b) => String(a.label).localeCompare(String(b.label), "en", { numeric: true, sensitivity: "base" }));
 }
 
-/** The prototype's empty-bed card (.bed.empty): the bed, its room, and «Hasta ata» for whoever may
- *  admit. Only a bed the structure says is AVAILABLE and open gets one. */
-function EmptyBed({ bed, kabulHref }) {
+/** How a bed that holds no patient looks, by its state in the structure: the word's colour (the
+ *  prototype's .bed.empty — green «Boş», amber «Temizlikte», blue «Rezerve»), and whether a patient
+ *  may be placed. A state this build does not know is drawn in the attention ink, not a quiet one. */
+const FREE_LOOK = Object.freeze({
+  AVAILABLE: "text-ok", HOUSEKEEPING: "text-mid-ink", RESERVED: "text-low-ink",
+  MAINTENANCE: "text-mute", BLOCKED: "text-mute", PENDING_TRANSFER_OUT: "text-att-ink", PENDING_DISCHARGE: "text-att-ink",
+});
+
+/** The prototype's bed card with no patient on it (.bed.empty): the bed and its state, its room and
+ *  since when, and «Hasta ata» on a free bed for whoever may admit. Every word is the structure's. */
+function FreeBed({ bed, kabulHref }) {
   const { t } = useI18n();
+  const free = bed.open && bed.state === "AVAILABLE";
+  const since = Date.parse(bed.stateSince);
+  const note = free ? t("beds.emptyAssignable")
+    : !bed.open ? t("kabul.bedClosed")
+      : Number.isFinite(since) ? t("beds.stateSince", { date: ddmm(since), time: hhmm(since) }) : null;
   return (
-    <li className="flex flex-col rounded-box border border-line bg-card/60 px-3.5 pb-3 pt-3">
-      <p className="m-0 flex items-baseline gap-2">
-        <b className="font-data text-15 font-bold text-ok-ink">{bed.label}</b>
-        <span className="font-display text-15 font-bold text-ok-ink">{t("beds.emptyBed")}</span>
-      </p>
-      <span className="mt-0.5 block text-12.5 text-mute">{[bed.roomName, t("beds.emptyAssignable")].filter(Boolean).join(" · ")}</span>
-      {kabulHref ? (
-        <a href={kabulHref} className={`mx-auto mt-3 inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line2 bg-card px-3 text-12.5 font-semibold text-ink hover:border-pri ${FOCUS_RING}`}>
-          <Icon name="plus" size={14} />{t("beds.assign")}
-        </a>
+    <li className="relative overflow-hidden rounded-[14px] border border-line bg-card pb-[11px] pl-[18px] pr-3.5 pt-3 opacity-60">
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-line2" />
+      <div className="inline-block max-w-full">
+        <p className="m-0 text-center leading-[normal]">
+          <b className={`mr-1.5 font-data text-15 font-bold ${FREE_LOOK[bed.state] ?? "text-att-ink"}`}>{bed.label}</b>
+          <span className="font-display text-15 font-bold text-mute">{t(BED_STATE_KEYS[bed.state] ?? "kabul.bedOther")}</span>
+        </p>
+        <span className="block text-12 leading-[18px] text-mute">{[bed.roomName, note].filter(Boolean).join(" · ")}</span>
+      </div>
+      {free && kabulHref ? (
+        <div className="mt-2.5 text-center">
+          <a href={kabulHref} className={`inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-line2 bg-card px-[9px] text-12 font-semibold leading-[normal] text-ink hover:border-pri ${FOCUS_RING}`}>
+            <Icon name="plus" size={16} />{t("beds.assign")}
+          </a>
+        </div>
       ) : null}
     </li>
   );
@@ -273,49 +292,65 @@ export function BedsScreen() {
     return map;
   }, [board.alerts]);
   const alertsOf = (id) => byPatient.get(id) ?? [];
+  const tasks = useTaskQueue();
+  const lateBy = useMemo(() => lateByPatient(tasks, nowMs), [tasks, nowMs]);
+  // The prototype's «son veri 2 sn önce»: the newest reading on the board, aged on the board's clock.
+  const newest = all.map((p) => lastMeasuredAt(p.measuredAt)).filter((ms) => ms !== null).sort((a, b) => b - a)[0];
+  const newestAge = Number.isFinite(newest) ? ageText(t, new Date(newest).toISOString(), nowMs) : null;
   const { user } = useSession();
   const kabulRoute = ROUTES.find((r) => r.id === "kabul");
   const kabulHref = kabulRoute && screenOf(kabulRoute) && canReach(kabulRoute, user?.perms) ? `#${kabulRoute.path}` : null;
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="flex min-h-0 flex-col">
+      {/* The prototype's .ph: the title 23 px, its line 13 px under it, the tools at the right. */}
+      <div className="mb-3.5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 font-display text-23 font-bold">{t("nav.beds")}</h1>
+          <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("nav.beds")}</h1>
           {/* A count only of cards a read put on screen (live, or kept and marked out of date):
               while connecting, or after a load that failed, there are none to count, and "0 beds"
               would read as an empty ward. The unit alone is still true. */}
           {boardKnown(board.connection) || boardStale(board.connection) ? (
-            <p className="m-0 text-13 text-mute">
-              {unit ? t("beds.subUnit", { unit: unitName(unit), count: shown.length }) : t("beds.sub", { count: shown.length })}
-              {/* The prototype's «15 birim · 24 / 94 dolu»: from the hospital's own structure, when known. */}
-              {wardBeds.length ? ` · ${t("beds.subUnits", { count: wardUnits })} · ${t("beds.unitFill", { occupied: wardBeds.filter((b) => b.state === "OCCUPIED").length, total: wardBeds.length })}` : null}
+            <p className="m-0 mt-1 text-13 text-mute">
+              {/* «15 birim · 24 / 94 dolu · son veri 2 sn önce»: from the hospital's own structure when
+                  it is known; the cards' count until then. */}
+              {wardBeds.length ? (
+                <span>{`${unit ? `${unitName(unit)} · ` : ""}${t("beds.subUnits", { count: wardUnits })} · ${t("beds.unitFill", { occupied: wardBeds.filter((b) => b.state === "OCCUPIED").length, total: wardBeds.length })}`}</span>
+              ) : (
+                <span>{unit ? t("beds.subUnit", { unit: unitName(unit), count: shown.length }) : t("beds.sub", { count: shown.length })}</span>
+              )}
+              {newestAge ? <span>{` · ${t("beds.lastData", { age: newestAge })}`}</span> : null}
             </p>
-          ) : unit ? <p className="m-0 text-13 text-mute">{unitName(unit)}</p> : null}
+          ) : unit ? <p className="m-0 mt-1 text-13 text-mute">{unitName(unit)}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* The order switch (G1-09) keeps its two named buttons here for the keyboard and a screen
+              reader — drawn once it has the focus; the pointer's copy is the words in each unit's line,
+              as the prototype writes them («risk sırasına göre»). */}
+          <Seg className="sr-only focus-within:not-sr-only" label={t("beds.order")} value={order} onChange={setOrder} options={[
+            { value: "yatak", label: t("beds.orderBed") },
+            { value: "risk", label: t("beds.orderRisk") },
+          ]} />
           <Seg label={t("beds.view")} value={view} onChange={setView} options={[
-            { value: "kart", label: t("beds.viewCards"), icon: "grid" },
-            { value: "liste", label: t("beds.viewList"), icon: "list" },
+            { value: "kart", label: t("beds.viewCards") },
+            { value: "liste", label: t("beds.viewList") },
           ]} />
-          <Seg label={t("beds.order")} value={order} onChange={setOrder} options={[
-            { value: "yatak", label: t("beds.orderBed"), icon: "bed" },
-            { value: "risk", label: t("beds.orderRisk"), icon: "alert" },
-          ]} />
-          {/* The prototype's primary action on this screen, for whoever may admit. */}
+          {/* The prototype's primary action on this screen (.btn.p), for whoever may admit. */}
           {kabulHref ? (
-            <a href={kabulHref} className={`inline-flex h-9 items-center gap-1.5 rounded-ctl bg-pri px-3.5 text-13 font-bold text-onpri hover:brightness-105 ${FOCUS_RING}`}>
-              <Icon name="plus" size={16} />{t("kabul.nav")}
+            <a href={kabulHref} className={`inline-flex h-[34px] items-center gap-1.5 rounded-[10px] bg-pri px-[13px] text-13 font-semibold leading-[normal] text-onpri hover:brightness-105 ${FOCUS_RING}`}>
+              <Icon name="plus" size={16} />{t("beds.admit")}
             </a>
           ) : null}
         </div>
       </div>
 
-      <BoardStrip connection={board.connection} />
-      <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
+      <div className="mb-3 flex flex-col gap-3 empty:hidden">
+        <BoardStrip connection={board.connection} />
+        <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
+      </div>
 
-      <AttentionTiles nowMs={nowMs} />
-      <div data-feed-row="" className="flex min-w-0 flex-wrap items-center gap-2">
+      <AttentionTiles nowMs={nowMs} tasks={tasks} />
+      <div data-feed-row="" className="mt-2.5 flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
         <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
         {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
             unvalidated strip only. */}
@@ -323,8 +358,8 @@ export function BedsScreen() {
           fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
       </div>
 
-      <div>
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+      <div className="empty:hidden">
+        <div className="mt-2.5 flex flex-wrap items-end gap-x-3 gap-y-1 empty:hidden">
           {/* The screen's own unit selector: the top bar's chip is hidden at 640 px and below, so
               on a phone this is the only way to choose a unit. Both write the same choice. */}
           {units.length >= 2 ? (
@@ -350,7 +385,7 @@ export function BedsScreen() {
       </div>
 
       {shown.length === 0 ? (
-        <Empty icon="bed">
+        <Empty icon="bed" className="mt-4">
           {/* UNAVAILABLE is not CONNECTING. The last branch said "the board is loading" for
               both, directly under a crit strip saying there is no connection to the server and
               the list is not shown — one of the two had to be wrong, and the reassuring one was.
@@ -361,41 +396,46 @@ export function BedsScreen() {
                   : t("board.connecting")}
         </Empty>
       ) : view === "liste" ? (
-        <BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} />
+        <div className="mt-4"><BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} /></div>
       ) : (
         byUnit(shown).map((group, _i, groups) => {
           const beds = unitBeds(structure.index, group.unitId);
           const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
-          // A search narrows to what matched: an empty bed matches no patient's name.
-          const empty = beds.filter((b) => b.open && b.state === "AVAILABLE");
+          // Every bed of the unit that holds no patient: free ones first, then the others by label.
+          const free = beds.filter((b) => b.state !== "OCCUPIED")
+            .sort((x, y) => Number(y.open && y.state === "AVAILABLE") - Number(x.open && x.state === "AVAILABLE"));
           const type = structure.index.units.get(normId(group.unitId))?.unitType;
           return (
-            <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")} className="flex flex-col gap-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="m-0 font-display text-15 font-bold">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
-                  {UNIT_TYPE_KEYS[type] ? <span className="rounded-md bg-card2 px-2 py-0.5 text-11.5 font-semibold text-mute">{t(UNIT_TYPE_KEYS[type])}</span> : null}
-                </div>
-                <span className="text-12 text-mute">
-                  {beds.length
-                    ? `${t("beds.unitFill", { occupied, total: beds.length })} · ${t(order === "risk" ? "beds.byRisk" : "beds.byBed")}`
-                    : groups.length > 1 ? t("beds.sub", { count: group.items.length }) : null}
-                </span>
+            <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}>
+              {/* The prototype's .sec: the unit 14 px, its pills, and at the right how full it is and
+                  the order — which is the order switch itself (bed order / risk order, G1-09). */}
+              <div className="mb-2.5 mt-[18px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <h2 className="m-0 font-display text-14 font-bold leading-[normal]">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
+                {UNIT_TYPE_KEYS[type] ? <span className="rounded-full bg-card2 px-2 py-[3px] text-11.5 font-semibold leading-[normal] text-mute">{t(UNIT_TYPE_KEYS[type])}</span> : null}
+                <small className="ml-auto text-12 font-medium leading-[normal] text-mute">
+                  {beds.length ? `${t("beds.unitFill", { occupied, total: beds.length })} · `
+                    : groups.length > 1 ? `${t("beds.sub", { count: group.items.length })} · ` : null}
+                  <button type="button" aria-hidden="true" tabIndex={-1} title={t("beds.order")}
+                    onClick={() => setOrder(order === "risk" ? "yatak" : "risk")}
+                    className={`rounded font-medium text-mute underline decoration-dotted underline-offset-2 hover:text-ink ${FOCUS_RING}`}>
+                    {t(order === "risk" ? "beds.byRisk" : "beds.byBed")}
+                  </button>
+                </small>
               </div>
-              <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
+              <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3 p-0 max-[640px]:grid-cols-1">
                 {group.items.map((p) => (
                   <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
                     monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-                    draft={draftNumbers.has(p.patient_id)} spark />
+                    draft={draftNumbers.has(p.patient_id)} spark lateTasks={lateBy.get(p.patient_id) ?? 0} />
                 ))}
-                {empty.map((b) => <EmptyBed key={b.id} bed={b} kabulHref={kabulHref} />)}
+                {free.map((b) => <FreeBed key={b.id} bed={b} kabulHref={kabulHref} />)}
               </ul>
             </section>
           );
         })
       )}
-      {order === "yatak" ? <p className="m-0 text-11.5 text-mute">{t("beds.orderNote")}</p> : null}
-      {strip ? <MonitorSection beds={looseFound} devices={straysFound} view={stripView} /> : null}
+      {order === "yatak" ? <p className="m-0 mt-3 text-11.5 text-mute">{t("beds.orderNote")}</p> : null}
+      {strip ? <div className="mt-4 empty:hidden"><MonitorSection beds={looseFound} devices={straysFound} view={stripView} /></div> : null}
     </div>
   );
 }
