@@ -1172,14 +1172,19 @@ numaralar ve yerler uydurmadır.
 ekranı, bkz. 3.14):
 - **Kabul:** yeni hastayı yatırma formu. *Kimlik:* soyad ad\* (koğuşun yazdığı sırayla), baba adı, cinsiyet\*, doğum
   tarihi\* (yaş kendiliğinden yazılır), uyruk, FİN (7 harf ya da rakam), pasaport, telefon.
-  *Kabul:* kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan grubu, bilinen alerji ya da
+  *Kabul:* kabul zamanı (değiştirilmezse kaydın anı yazılır; hasta daha önce geldiyse geldiği dakikaya
+  çekilir — en çok 6 saat geriye; yatağın boşaldığı andan ve hastanın son taburcusundan önce olamaz;
+  kaydedildikten sonra değiştirilemez, bkz. 3.27), kabul türü\*, kaynak, kabul tanısı\*, kilo, boy, kan
+  grubu, bilinen alerji ya da
   "Bilinen alerjisi yok"\* (ikisinden biri), eşlik eden hastalıklar, HBYS protokol no. *İletişim ve
   onam:* yakını, refakatçi, onam\* ("Kişisel veri onayı imzalandı" ya da "Bilinci kapalı — onam
   sonra alınacak"), SMS izni. *Yatak\*:* önce birim, sonra oda ve yatak; yalnız boş ve açık yatak
   seçilir, dolu, temizlikteki ve kapalı yataklar soluk ve nedeniyle görünür. Sağdaki "Eksik
   alanlar" paneli eksik her zorunlu alanı adıyla söyler; panel boşalmadan kabul gönderilmez.
   Form yarıda bırakılıp başka bir sekmeye ya da ekrana geçilse de kaybolmaz; onu "Yeni kabul" ya
-  da oturumun kapanması temizler.
+  da oturumun kapanması temizler. Kabul zamanı yatağın boşaldığı andan — "Temizlik bitti · boş"a
+  basıldığı andan — önce olamadığı için o düğmeye temizlik bittiği anda basılır: geç basılırsa o yatağa
+  yapılan kabul, düğmeye basıldığı andan geriye çekilemez.
 - **Nakil / Taburcu** (B1b'den önce yalnız «Taburcu»): iki liste — "Taburcusu başlatılan"
   (sorumlu hemşirenin onayını bekleyenler) ve "Yatan hastalar". İmzalı her yatan hastanın satırında
   «Nakil» ve «Taburcuyu başlat» düğmeleri durur (3.20).
@@ -1908,7 +1913,8 @@ sunucusunda çalışıyor (göç 0017). Örneklerdeki değerler uydurmadır.
 - **Vital ölçüm görevi hesaplanır, kaydedilmez.** Dayanak, hastanın son **ölçülen** NEWS2 girdisidir: elle girilen
   (3.12'deki form) ya da — G3-05'ten beri — cihazdan gelen (3.27); geri alınan değer sayılmaz. Monitör şeridinin
   doğrulanmamış değerleri (Aşama A/B) gerçek motora girmediği için dayanak değildir. Cihaz solunum sayısını ve bilinci
-  göndermediği için cihaz turundan sonra NEWS2 «eksik» kalır. Son 48 saatte ölçüm yoksa dayanak kabul zamanıdır; o da
+  göndermediği için cihaz turundan sonra NEWS2 «eksik» kalır. Son 48 saatte ölçüm yoksa dayanak kabul zamanıdır
+  (formda girilen kabul zamanı, 3.8); o da
   yoksa ekran «ölçüm kaydı yok» der. Vade = dayanak + hastanın NEWS2
   bandının aralığı. Ölçüm kaydedilince görev kendiliğinden ilerler.
 - **Aralığı hastane belirler, sistem değil.** Yönetim › Görevler sekmesinde (`structure.manage`) beş bant var:
@@ -2823,10 +2829,16 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     yatışı başlamadan önce (2 dakikalık saat payıyla; nakil olduysa yatışın ilk kabulünden) ölçülmüş bir set **o
     yatışa bağlanamaz** («Ölçüm, hastanın bu yatışı başlamadan önce alınmış: bu yatışa bağlanamaz.»). Böyle bir set,
     numarası bilinmeyen bir set gibi herkese görünür: ölçüldüğü servis onu kendi hastasına bağlayabilir ya da
-    reddedebilir. Ölçüm gerçekten o hastanınsa (örneğin hasta ölçüldükten sonra kabul edildiyse) yine bağlanamaz:
-    kabul formunda kabul saati girilecek bir alan yoktur, yatış kabulün kaydedildiği an başlar. Değerler istenirse
-    hasta ekranındaki «Ölçüm gir» ile ölçüm saatine elle girilir (en çok 24 saat geriye; kaynağı «elle» olur) ve set
-    gerekçesiyle reddedilir.
+    reddedebilir. Ölçüm gerçekten o hastanınsa — hasta ölçüldükten sonra kabul edildiyse — kabul formunda «Kabul
+    zamanı» hastanın geldiği dakikaya çekilir (G3-07). Alan değiştirilmezse kaydın anı yazılır, eskisi gibi. Seçilen
+    zaman en çok 6 saat geriye gider; yatağın boşaldığı andan («Temizlik bitti · boş»a basıldığı an — bu yüzden düğmeye
+    temizlik bittiği anda basılır) ve aynı hastanın son taburcusundan önce olamaz. Yatış o andan başlar: seçilen
+    zamandan 2 dakika öncesinden itibaren ölçülmüş bir set bağlanabilir. Bu pencerede hastanın kendi numarasıyla
+    ölçülmüş bir seti yalnız o hastayı görenler görür. Bedeli: başka bir servisin bir sonraki numarayla yanlış girdiği
+    ve bu pencerede ölçülmüş bir tur da bu hastaya bağlanabilir hâle gelir; bağlamadan önceki kimlik sorusu ve cihazın
+    gösterdiği ad buna karşı korumadır. Kabul kaydedildikten sonra kabul zamanı değiştirilemez; o durumda ya da 6
+    saatten eski bir ölçümde değerler hasta ekranındaki «Ölçüm gir» ile ölçüm saatine elle girilir (en çok 24 saat
+    geriye; kaynağı «elle» olur) ve set gerekçesiyle reddedilir.
   - **«Reddet»:** gerekçe (10–200 karakter) yazılır; ölçüm hiçbir hastaya bağlanmaz, değerleri ve gerekçe kayıtta
     kalır.
   - Bir ölçüm hastanın kaydında zaten varsa (cihaz aynı ölçümü doğru numarayla da göndermişse) ikinci kez girilmez;

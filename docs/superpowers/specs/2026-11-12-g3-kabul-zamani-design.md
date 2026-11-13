@@ -257,7 +257,9 @@ it (G3-05 D11: «Soyad ad ve doğum yılı hastayla eşleşiyor mu?»), the name
   - `f.admittedAt`: «Kabul zamanı».
   - `admittedAtHint`: «Değiştirilmezse kaydın anı yazılır. En çok 6 saat geriye.»
   - `admittedAtBedSince`: «Yatak {time}'den beri boş: kabul zamanı bundan önce olamaz.»
-  - `miss.admittedAt`: «Kabul zamanı: en çok 6 saat geriye, yatağın boşaldığı andan önce ve ileri bir saat olamaz.»
+  - `miss.admittedAt`: «Kabul zamanı: en çok 6 saat geriye, yatağın boşaldığı andan önce ve gelecekte olamaz.»
+    (As built: «gelecekte olamaz» in place of the first draft's «ileri bir saat olamaz», and likewise in az and en;
+    §11.)
   - `invalid.admissionDatetime`, widened from «… (gelecekte olamaz).» (tr `:204`, az `:392`, ru `:580`, en `:768`):
     «Kabul zamanı geçerli değil (gelecekte ya da 6 saatten eski olamaz).»
   - `err.admittedBeforeBedFree`: «Kabul zamanı, yatağın boşaldığı andan önce olamaz.»
@@ -407,3 +409,90 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
   readmitted between those two moments passes the bound. The open-identity index still refuses two open stays.
 - **O5.** The az/ru/en strings wait for a native reader (as G3-05 O4).
 - **O6.** The stale comment `admission/models.py:342–345` is fixed in this slice, comment-only (§3.4).
+
+## 11. As built
+
+Plan: `docs/superpowers/plans/2026-11-12-g3-kabul-zamani.md`. Built on `feat/g3-kabul-zamani`; code head `3fa46665`
+(the docs commit follows it); gates run 2026-11-13 (the lines are in the plan's «As run» block). No migration (alembic
+head `0021`), no environment variable, no route, no permission, no event type.
+
+**Commits by task** (after the plan, `0993360c`):
+
+| Task | Commit(s) |
+|---|---|
+| E1 — `BACKDATE_MAX`, `check_admission_time` | `6eef4d7e` |
+| E2 — the two codes, mapped and worded | `e9758e73` |
+| W1 — `stateSince` in the structure index | `30897311` |
+| W2 — the form's rules | `c2229143`; review `1494480d` (the free minute inclusive; «gelecekte olamaz») |
+| E3 — the route's bounds and the audit row | `4a167831`; review minors `3fa46665` |
+| E4 — the stay-start readers, end to end | `f687dadd` |
+| W3 — the field on the Kabul tab | `02f096b1`; review `0391536a` (M-1, M-2, M-3) |
+| D1 — the guide, the roadmap row, this section | the docs commit after `3fa46665` |
+
+What differs from the design above (the plan's departures, E-1 … E-7, and the reviews):
+
+- **§3.3.** The audit row's `admission_datetime` is written in UTC (`astimezone(timezone.utc).isoformat()`): the row's
+  own instant, one spelling, whatever offset the form sent (E-1). Pinned by a test that sends `+04:00` and reads
+  `…+00:00` (`3fa46665`); the reserved-bed test now names its refusal, `admitted_before_bed_free`, not only the 409.
+- **D3.** A bed whose `state_updated_at` is NULL (the column is nullable since 0001) binds nothing (E-2).
+- **§6.** The end-to-end test builds `vital_readings` from migration 0021's own `upgrade()` on the models' schema,
+  without the `audit` index; `kabul_world.ward_app`/`ward_client` pass `**extra` to `create_app` (E-3). The new test
+  file's beds are free since a day unless a test sets their time (E-4).
+- **§5, the hint.** The hint's time is `dayStamp` (`11:30`, or `11.11 23:00` on another day) (E-5). `admitForm.js`
+  imports `DischargeDialog`'s `fromLocalInput`; the bedside picker imports `admitForm.js`, so the bedside page loads
+  that 4 kB chunk and `PrintLabelButton` became its own: precache 73 → 74 (E-6). A resend near the six-hour edge is
+  handled by the form's existing look-up (E-7).
+- **§5, the wording.** `miss.admittedAt` reads «… ve gelecekte olamaz» in place of §5's first draft «… ve ileri bir saat
+  olamaz»; az «… və gələcəkdə ola bilməz» (was «irəli vaxt»), en «… and not in the future» (was «not ahead»); ru
+  already said «не в будущем». One word for the future side across the form, as `invalid.admissionDatetime` says
+  «gelecekte» (W2 review, `1494480d`). §5 above and the plan carry the new wording.
+- **§5, the field after review** (`0391536a`). Cleared and left (blur with an empty value), the field is untouched
+  again: it shows the current minute and sends nothing (M-1; on blur, never on a change, since Chrome reports a
+  half-typed time as an empty value while she types). A server refusal of the time — `admitted_before_discharge`, or
+  a six-hour refusal only the server saw — keeps the refused text in the form (`admittedAtRefused`, in `emptyForm`,
+  never sent) and the field says the server's sentence under it (`aria-invalid`) until the nurse changes the time; a
+  time she chose while the refused send was out is not marked (M-2). Tests pin a bed with a later free time and a
+  clock tick past a typed time (the panel names it, «Kabul et» is held) and the draft across a tab remount (M-3).
+
+The open item of §5 is settled: the Kabul screen is under the shell's `BoardProvider` (`LiveApp.jsx` wraps every phase
+in it), so the field's clock is `useBoardNow`, the server-corrected one.
+
+**Pins.** `errors.CODES` 34 → **36** (engine, `test_admission_form.py`, `apiErrors.test.js`), `ADMISSION_CODE_KEYS` 36;
+`EXPECTED`, `BOARD_EXPECTED`, `SPEC_KEYS`, `UNSCOPED_BY_DESIGN`, nginx `API_PATHS`, `EVENT_TYPES` unchanged; alembic
+head `0021`; precache 73 → **74** entries (1646.16 KiB; `KabulScreen-*.js` 37.25 kB).
+
+**Gates** (2026-11-13, code head `3fa46665`):
+
+- Engine, no database, three chunks: `test_[a-d]*` 1373 passed / 848 skipped; `test_[e-l]*` 1720 / 114;
+  `test_[m-z]*` + `rules`, `scoring`, `tenant` 1382 / 586 — **4475 passed, 1548 skipped**, no failure. Against the
+  plan's 4488 / 1547: the 13 fewer passed are the 13 tests of `test_infinity_vm_pilot.py`, which the plan's
+  `--ignore` did not exclude (its glob names the file) and which this run left out of the file list; the one more
+  skipped is the new database test of `test_admission_time.py`.
+- Postgres (`kabulz-pg`): `test_admission_time.py` 21 passed; `test_admission_api.py` + `test_admission_form.py` 202
+  passed, 1 skipped; `test_protocol_admission.py` + `test_reserved_admission.py` + `test_admission_trail.py` +
+  `test_care_team_sign_off.py` 31; `test_discharge_api.py` + `test_transfer_api.py` + `test_transfer_model.py` 105;
+  `test_readings_api.py` 111; `test_readings_postgres.py` + `test_tasks_postgres.py` 66;
+  `test_migration_0021_vital_readings.py` 5 — **541 passed, 1 skipped**.
+- `alembic heads`: `0021 (head)`. Python 3.14, the slice's no-database files: 157 passed, 21 skipped.
+- Dashboard: **178 files, 4789 tests** passed (the plan's 4780, +1 of the W2 review, +8 of the W3 review).
+- `vite build`: `precache 74 entries (1646.16 KiB)`; no «larger than 500 kB» line.
+
+**Open, for the owner:**
+
+1. **The bed bound is when the bed's current state began** (`state_updated_at`). A reservation made and lifted, or a
+   reservation made after the patient arrived, moves it later, and the patient cannot be back-dated to her real
+   arrival: the bed's earlier free time is not stored.
+2. **A late «Temizlik bitti · boş» caps the back-dating** at the press (O2). The guide and the ward note say to press
+   it when the cleaning ends.
+3. **For a RESERVED bed the bound is the reservation's start** (O3).
+4. **The person bound reads `discharge_at`**, not the moment the charge nurse confirmed the departure (O4).
+5. **A transfer's arrival time is not back-datable** (§9, D7); Doluluk's tile and the bed card show the save, not the
+   stay's start (O1).
+6. **The az/ru/en strings await a native reader** (O5).
+
+**Deploy, for the controller lane** (full notes at the end of the plan): api + web only, **api first**; no migration,
+no environment variable; rollback web first. The ward is told beforehand of the field, its six hours, that it is set at
+the kabul or never, and that «Temizlik bitti · boş» is pressed when the cleaning ends.
+
+**Local walk (§6):** not run with these gates; the controller dispatches Task G2 separately, and its outcome is added
+here and to the plan's «As run».

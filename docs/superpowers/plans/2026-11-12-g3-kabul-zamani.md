@@ -1787,7 +1787,7 @@ Replace with:
 
 ```js
       allergy: "Alerji ya da «bilinen alerjisi yok» — ikisinden biri", consent: "Onam", bed: "Yatak",
-      admittedAt: "Kabul zamanı: en çok 6 saat geriye, yatağın boşaldığı andan önce ve ileri bir saat olamaz.",
+      admittedAt: "Kabul zamanı: en çok 6 saat geriye, yatağın boşaldığı andan önce ve gelecekte olamaz.",
     },
 ```
 
@@ -1802,7 +1802,7 @@ Replace with:
 
 ```js
       allergy: "Allergiya və ya «məlum allergiyası yoxdur» — ikisindən biri", consent: "Razılıq", bed: "Çarpayı",
-      admittedAt: "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və irəli vaxt ola bilməz.",
+      admittedAt: "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və gələcəkdə ola bilməz.",
     },
 ```
 
@@ -1832,7 +1832,7 @@ Replace with:
 
 ```js
       allergy: "An allergy, or «no known allergy» — one of the two", consent: "Consent", bed: "Bed",
-      admittedAt: "Admission time: at most 6 hours back, not before the bed became free, and not ahead.",
+      admittedAt: "Admission time: at most 6 hours back, not before the bed became free, and not in the future.",
     },
 ```
 
@@ -1905,7 +1905,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   const field = () => screen.getByLabelText(/^Qəbul vaxtı/);
   const choose = (text) => fireEvent.change(field(), { target: { value: text } });
   const sentAt = (api, call = 0) => api.admit.mock.calls[call][0].note.admission_datetime;
-  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və irəli vaxt ola bilməz.";
+  const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və gələcəkdə ola bilməz.";
 
   async function open(setup) {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -2700,14 +2700,26 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
 
 ## As run (filled by the controller in Tasks G1, G2 and D1)
 
-- Head: … · date: …
-- G1 Step 1 (engine, no database): … / … / …
-- G1 Step 2 (Postgres): … ; … ; … ; … ; … ; …
-- G1 Step 3 (`alembic heads`): …
-- G1 Step 4 (dashboard): …
-- G1 Step 5 (build): …
-- G1 Step 6 (Python 3.14): …
-- G2 (the walk): … — notes at `/c/tmp/homunculus-plans/g3-kabulz/walk/notes.md`
+- Head: `3fa46665` (code; the D1 docs commit follows it) · date: 2026-11-13. Before the gates, the review polish:
+  `0391536a` (dashboard M-1, M-2, M-3: +8 tests) and `3fa46665` (engine: the `+04:00` audit test, the reserved
+  bed's refusal code: +1 test).
+- G1 Step 1 (engine, no database): `1373 passed, 848 skipped` / `1720 passed, 114 skipped` / `1382 passed, 586
+  skipped` — 4475 passed, 1548 skipped, no failure. The second chunk's file list was built with
+  `$(ls tests/test_[e-l]*.py | grep -v test_infinity_vm_pilot.py)`: `--ignore` does not exclude a file the glob names,
+  so the plan's 1733 counted that file's 13 tests (1720 + 13). The one more skipped is the new DB test.
+- G1 Step 2 (Postgres, `kabulz-pg`): `test_admission_time.py` `21 passed`; `test_admission_api.py
+  test_admission_form.py` `202 passed, 1 skipped`; protocol, reserved, trail, care team `31 passed`;
+  `test_discharge_api.py test_transfer_api.py test_transfer_model.py` `105 passed` (206 s); `test_readings_api.py`
+  `111 passed`; `test_readings_postgres.py test_tasks_postgres.py` `66 passed`; `test_migration_0021_vital_readings.py`
+  `5 passed`. The container stopped after.
+- G1 Step 3 (`alembic heads`): `0021 (head)`.
+- G1 Step 4 (dashboard): `Test Files  178 passed (178)`, `Tests  4789 passed (4789)` (78 s) — 4780 + 1 (W2 review) + 8
+  (W3 review).
+- G1 Step 5 (build): `✓ built in 4.55s`, `precache  74 entries (1646.16 KiB)`, no `larger than 500 kB` line;
+  `KabulScreen-*.js` 37.25 kB.
+- G1 Step 6 (Python 3.14): `157 passed, 21 skipped`.
+- G2 (the walk): not run with the gates — the controller dispatches it separately — notes at
+  `/c/tmp/homunculus-plans/g3-kabulz/walk/notes.md`
 
 ---
 
