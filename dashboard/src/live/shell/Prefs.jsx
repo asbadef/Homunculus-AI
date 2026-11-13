@@ -8,6 +8,7 @@ import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useTheme } from "../theme/ThemeProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";
 import { Flag } from "../ui/Flag.jsx";
+import markUrl from "../assets/homunculus-mark.png";
 import { FOCUS_RING } from "../ui/focus.js";
 import { MenuButton, TOOL_BUTTON } from "./Menu.jsx";
 
@@ -62,11 +63,16 @@ export function ThemeToggle({ className = "" }) {
   );
 }
 
+/** The Homunculus mark: the logo's symbol on a transparent ground (assets/homunculus-mark.png). */
+export function Mark({ className = "h-10 w-10" }) {
+  return <img src={markUrl} alt="" aria-hidden="true" className={`shrink-0 object-contain ${className}`} />;
+}
+
 /** The prototype's mark (.mk) and name. */
 export function Brand({ subtitle, className = "" }) {
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-ctl bg-ink font-display text-20 font-bold text-app">h</span>
+      <Mark />
       <div className="min-w-0">
         <b className="block font-display text-20 font-bold leading-tight">homunculus</b>
         {subtitle ? <small className="block truncate text-12 text-mute">{subtitle}</small> : null}

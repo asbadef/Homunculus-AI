@@ -28,6 +28,7 @@ import { rrtQueue } from "../screens/rrt/rrt.js";
 import { Icon } from "../ui/Icon.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
 import { homePath, navRoutes } from "./routes.js";
+import { Mark } from "./Prefs.jsx";
 
 /** The entries that carry a count, by route id: what each counts — `{known, stale, items}`, items null
  *  when the board cannot know — and the words its accessible name says it in. Every other entry has
@@ -123,7 +124,7 @@ export function Sidebar({ perms, current }) {
     <nav aria-label={t("shell.rail")} className="z-30 flex min-h-0 flex-col gap-[3px] overflow-y-auto border-r border-line bg-rail px-2 py-2.5 max-[640px]:px-1">
       <div className="mb-1.5 border-b border-line pb-3 pt-1">
         <a href={`#${homePath(perms)}`} className={`flex flex-col items-center gap-[5px] rounded-box ${FOCUS_RING}`}>
-          <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-ctl bg-ink font-display text-20 font-bold text-app">h</span>
+          <Mark />
           <small className="font-display text-10 font-bold text-mute max-[640px]:hidden">homunculus</small>
           <span className="sr-only">{t("shell.home")}</span>
         </a>

@@ -11,8 +11,7 @@ import React, { useEffect, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { Icon } from "../ui/Icon.jsx";
 import { FOCUS_RING } from "../ui/focus.js";
-import { LanguageMenu, ThemeToggle } from "../shell/Prefs.jsx";
-import logoUrl from "../assets/homunculus-logo.png";
+import { LanguageMenu, Mark, ThemeToggle } from "../shell/Prefs.jsx";
 import { openLegal } from "./legalPages.js";
 
 // The prototype's social icons (sosyal.js): no accounts yet, so every one is faded and inert.
@@ -34,7 +33,6 @@ const CSS = `
 .hom-bg i:nth-child(2){width:360px;height:360px;right:-140px;top:30%;background:#1d4ed8;opacity:.35;animation-duration:23s}
 .hom-bg i:nth-child(3){width:300px;height:300px;left:20%;bottom:-160px;background:#22b8d6;opacity:.25;animation-duration:27s}
 @keyframes homFloat{to{transform:translate(40px,30px) scale(1.08)}}
-.hom-mk{width:44px;height:44px;border-radius:13px;flex:none;background:#fff no-repeat 20% center;background-size:auto 150%;box-shadow:0 8px 18px rgba(14,116,144,.25)}
 .hom-brand b{font:700 20px "Space Grotesk",system-ui,sans-serif;display:block;line-height:1.2}
 .hom-brand small{font-size:12px;color:#8fa1ba}
 .hom-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid rgba(125,211,230,.35);background:rgba(34,184,214,.08);color:#7dd3e6;font-weight:700;font-size:12px;margin-bottom:18px}
@@ -177,7 +175,7 @@ function Brand({ className = "" }) {
   const { t } = useI18n();
   return (
     <div className={`hom-brand flex items-center gap-3 ${className}`}>
-      <span className="hom-mk" style={{ backgroundImage: `url(${logoUrl})` }} />
+      <Mark className="h-11 w-11" />
       <div><b>homunculus</b><small>{t("auth.brandSub")}</small></div>
     </div>
   );

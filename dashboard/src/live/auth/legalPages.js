@@ -8,7 +8,7 @@
 // legal.js, whose addT never overwrites a key) by a line that says to call IT.
 import { ICONS } from "../ui/icons.js";
 import { flagSvg } from "../ui/Flag.jsx";
-import logoUrl from "../assets/homunculus-logo.png";
+import markUrl from "../assets/homunculus-mark.png";
 
 const SCRIPT = "/legal/legal.js";
 const LANGS = [["AZ", "Azərbaycan"], ["TR", "Türkçe"], ["RU", "Русский"], ["EN", "English"]];
@@ -77,7 +77,7 @@ export async function openLegal(key, { lang, hospital, setLang }) {
   if (!document.getElementById("lgl-live-mk")) {
     const s = document.createElement("style");
     s.id = "lgl-live-mk";
-    s.textContent = `.lgl-root .lgl-mk{background:#fff url("${logoUrl}") no-repeat 20% center!important;background-size:auto 150%!important;color:transparent!important;font-size:0!important}`;
+    s.textContent = `.lgl-root .lgl-mk{background:transparent url("${markUrl}") no-repeat center/contain!important;box-shadow:none!important;color:transparent!important;font-size:0!important}`;
     document.head.appendChild(s);
   }
   H.state.lang = String(lang).toUpperCase();
