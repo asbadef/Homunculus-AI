@@ -6,10 +6,10 @@ import { describe, it, expect } from "vitest";
 import { indexStructure } from "../../data/structure.js";
 import {
   ALL, TILES, alarmItems, bedTally, countCell, freeBedsCell, isolationBeds, roomCell, selectionOf, sortRows, tileOf,
-  tileWords, unitChoices, unitOf,
+  tileWords, unitChoices, unitInScope, unitOf,
 } from "./enfeksiyon.js";
 import {
-  ALI, AYSE, BED, ELIF, KAMRAN, LEYLA, MURAD, NEO, NIGAR, REA, REA_COUNTS, UNNAMED, answer, at, row, tree,
+  ALI, AYSE, BED, ELIF, KAMRAN, LEYLA, MURAD, NEO, NIGAR, REA, REA_COUNTS, SCOPE, UNNAMED, answer, at, row, tree,
 } from "./enfeksiyon.testutil.js";
 
 const ids = (rows) => rows.map((r) => r.patient_id);
@@ -95,6 +95,37 @@ describe("the unit selection (spec D13 item 1, §5 S1, M4)", () => {
     for (const counts of [undefined, null, [], "x"]) {
       expect(selectionOf(answer({ units: [{ unit_id: REA, counts }] }), REA).counts, String(counts)).toBeNull();
     }
+  });
+});
+
+// The review's spec-level finding: a unit outside a restricted board scope is not offered — picking it would print a
+// fresh 0 for a unit whose patients the reader cannot see. The answer's `scope` is /patients' own block.
+describe("the units inside the answer's scope", () => {
+  const bothOpen = () => {
+    const ward = tree();
+    ward.sites[0].units[1].is_active = true;                           // Neonatal open
+    return ward;
+  };
+
+  it("offers no tree unit a restricted scope leaves out, and every unit when the answer cannot tell", () => {
+    const ward = bothOpen();
+    const index = indexStructure(ward);
+    expect(unitChoices(ward, answer(), index)).toEqual([REA]);
+    expect(unitChoices(ward, answer({ scope: { ...SCOPE, unrestricted: true } }), index)).toEqual([REA, NEO]);
+    expect(unitChoices(ward, answer({ scope: null }), index)).toEqual([REA, NEO]);
+    expect(unitChoices(ward, null, index)).toEqual([REA, NEO]);
+  });
+
+  it("reads a unit as in scope by its grant, a granted bed in it or a scoped card on it, and says when it cannot tell", () => {
+    const index = indexStructure(bothOpen());
+    const byBed = answer({ scope: { ...SCOPE, unit_ids: [], bed_ids: [BED(6)] } });
+    expect(unitInScope(byBed, NEO, index)).toBe(true);                // its bed N1 is granted
+    expect(unitInScope(byBed, REA, index)).toBe(true);                // the answer's cards are on it
+    expect(unitInScope(byBed, NEO, null)).toBeNull();                 // a granted bed, and no tree to place it
+    expect(unitInScope(answer(), NEO, index)).toBe(false);
+    expect(unitInScope(answer(), REA.toUpperCase(), index)).toBe(true);
+    expect(unitInScope(null, NEO, index)).toBeNull();
+    expect(unitInScope(answer({ scope: { ...SCOPE, unrestricted: undefined } }), NEO, index)).toBeNull();
   });
 });
 

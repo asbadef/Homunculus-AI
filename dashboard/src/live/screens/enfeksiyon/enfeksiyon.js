@@ -99,9 +99,34 @@ export function bedTally(tiles) {
     occupied: tiles.filter((tile) => WITH_PATIENT.has(tile.state)).length };
 }
 
-/** The unit filter's choices (§5 S1): the tree's open units, then any other unit the answer names (its `units`, its
- *  rows) — ids, each once by `normId`, for `useUnitNames` to name and sort. */
-export function unitChoices(tree, answer) {
+/** Whether a unit lies inside the answer's board scope (its `scope`, /patients' own block): true when the scope is
+ *  unrestricted, its grant names the unit, a scoped card is on it (the answer's `units`, its rows — an own patient off
+ *  the grant included), or a granted bed is in it (placed by the tree's `index`); false when a restricted scope reaches
+ *  it by none of these; null when the answer cannot tell — no answer, no scope block, or a granted bed the index does
+ *  not place. Review (spec level): a unit outside the scope is not offered, so it never prints a fresh 0. */
+export function unitInScope(answer, unitId, index = null) {
+  const scope = answer?.scope;
+  const key = normId(unitId);
+  if (!isObject(scope) || !key) return null;
+  if (scope.unrestricted === true) return true;
+  if (scope.unrestricted !== false) return null;
+  const on = (id) => normId(id) === key;
+  if (listOf(scope.unit_ids).some(on)) return true;
+  if (listOf(answer.units).some((unit) => on(unit?.unit_id))) return true;
+  if ([...listOf(answer.isolated), ...listOf(answer.suspected)].some((r) => on(r?.unit_id))) return true;
+  let unplaced = false;
+  for (const bedId of listOf(scope.bed_ids)) {
+    const bed = index?.beds?.get(normId(bedId));
+    if (!bed) unplaced = true;
+    else if (on(bed.unitId)) return true;
+  }
+  return unplaced ? null : false;
+}
+
+/** The unit filter's choices (§5 S1): the tree's open units inside the answer's scope (`unitInScope` not false), then
+ *  any other unit the answer names (its `units`, its rows) — ids, each once by `normId`, for `useUnitNames` to name and
+ *  sort. `index` (the tree's) places a scope's granted beds. */
+export function unitChoices(tree, answer, index = null) {
   const out = [];
   const seen = new Set();
   const add = (id) => {
@@ -112,7 +137,9 @@ export function unitChoices(tree, answer) {
     }
   };
   for (const site of listOf(tree?.sites)) {
-    for (const unit of listOf(site?.units)) if (unit?.is_active !== false) add(unit?.id);
+    for (const unit of listOf(site?.units)) {
+      if (unit?.is_active !== false && unitInScope(answer, unit?.id, index) !== false) add(unit?.id);
+    }
   }
   for (const unit of listOf(answer?.units)) add(unit?.unit_id);
   for (const r of [...listOf(answer?.isolated), ...listOf(answer?.suspected)]) add(r?.unit_id);

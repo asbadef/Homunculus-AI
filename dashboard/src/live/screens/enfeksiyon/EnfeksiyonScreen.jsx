@@ -31,7 +31,7 @@ import { antibioticCell, clockSkewOf, isFresh, msOf } from "../eczane/pharmacyMo
 import { WHY, structureSource } from "../ozet/ozet.js";
 import {
   ALL, TYPES, alarmItems, bedTally, countCell, freeBedsCell, isolationBeds, roomCell, selectionOf, sortRows, tileWords,
-  unitChoices, unitOf,
+  unitChoices, unitInScope, unitOf,
 } from "./enfeksiyon.js";
 import { useInfection } from "./useInfection.js";
 
@@ -338,9 +338,26 @@ export function EnfeksiyonScreen() {
     : source.why === WHY.failed ? t("enfeksiyon.structure.failed", { reason: readErrorText(t, tree.error) })
       : source.why === WHY.loading ? t("enfeksiyon.structure.loading") : t("enfeksiyon.structure.noRight");
 
-  // The filter offers the tree's units and the answer's (§5 S1), named and ordered as every screen names them; a unit
-  // a new read no longer lists falls back to «Tüm birimler», and the page says so (spec D13 item 1).
-  const choiceIds = useMemo(() => unitChoices(tree.known ? tree.structure : null, data), [tree.known, tree.structure, data]);
+  // The filter offers the tree's units inside the answer's scope and the answer's own (§5 S1), named and ordered as
+  // every screen names them; a unit a new read no longer lists falls back to «Tüm birimler», and the page says so (spec
+  // D13 item 1). Review M4: that claim is made only when it is known. While the tree does not count (no structure key,
+  // or not read yet) a unit offered once in this session stays — its patients leaving the list is no news about the
+  // unit — unless the answer's scope leaves it out; once the tree counts, the tree and the answer are the list.
+  const current = useMemo(() => unitChoices(tree.known ? tree.structure : null, data, tree.index),
+    [tree.known, tree.structure, data, tree.index]);
+  const [offered, setOffered] = useState([]);
+  useEffect(() => {
+    setOffered((prev) => {
+      const have = new Set(prev.map(normId));
+      const added = current.filter((id) => !have.has(normId(id)));
+      return added.length > 0 ? [...prev, ...added] : prev;
+    });
+  }, [current]);
+  const choiceIds = useMemo(() => {
+    if (source.ok) return current;
+    const have = new Set(current.map(normId));
+    return [...current, ...offered.filter((id) => !have.has(normId(id)) && unitInScope(data, id, tree.index) !== false)];
+  }, [source.ok, current, offered, data, tree.index]);
   const names = useUnitNames(choiceIds);
   const [picked, setPicked] = useState(ALL);
   const [gone, setGone] = useState(false);
@@ -380,7 +397,8 @@ export function EnfeksiyonScreen() {
         </Field>
         <Button size="sm" icon="clock" onClick={() => { refresh(); }}>{t("enfeksiyon.refresh")}</Button>
       </div>
-      {gone ? <Note tone="info" icon="alert">{t("enfeksiyon.unit.gone")}</Note> : null}
+      {/* An info Alert, not a Note: the fallback happens without the reader's doing, so it is said (review M4). */}
+      {gone ? <Alert tone="info" icon="alert">{t("enfeksiyon.unit.gone")}</Alert> : null}
       {!data && !error ? <Note tone="info" icon="clock">{t("enfeksiyon.loading")}</Note> : null}
       {!data && error ? <Alert tone="crit"><p className="m-0">{t("enfeksiyon.readFailed", { reason })}</p></Alert> : null}
       {data && !fresh ? (

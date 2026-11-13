@@ -13,7 +13,7 @@ import { profile, token } from "../../session/testTokens.testutil.js";
 import { StructureProvider } from "../../data/StructureProvider.jsx";
 import { UUID_TEXT } from "../kabul/kabul.testutil.js";
 import { EnfeksiyonScreen } from "./EnfeksiyonScreen.jsx";
-import { COUNTS, NOW, REA, answer, iso, row, tree } from "./enfeksiyon.testutil.js";
+import { COUNTS, NEO, NOW, REA, SCOPE, answer, iso, row, tree } from "./enfeksiyon.testutil.js";
 
 /** The default nurse group, as the engine seeds it since G4-05 (auth/permissions.py). */
 const NURSE = ["board.view", "alerts.ack", "admissions.view", "admissions.admit", "admissions.transfer.confirm",
@@ -54,6 +54,14 @@ const tile = (label) => tiles().find((li) => li.querySelector("b").textContent =
 const tally = () => document.querySelector("[data-tally]")?.textContent ?? null;
 /** The page's own alert (ui/Alert, tone crit): the shell keeps other `role="alert"` regions mounted empty. */
 const alertBox = () => document.querySelector('[role="alert"][data-tone="crit"]');
+/** The unit fallback's note (review M4): an info Alert — its box is shown and hidden from the reader, and the same text
+ *  is said by a polite live region a moment later. */
+const GONE = "Seçilmiş şöbə artıq əhatənizdə deyil.";
+const shownNote = () => document.querySelector('[aria-hidden="true"][data-tone="info"]')?.textContent ?? null;
+const spoken = () => [...document.querySelectorAll('[role="status"]')].map((node) => node.textContent);
+/** A read after every patient of the ward has left it. */
+const EMPTIED = answer({ units: [], isolated: [], suspected: [], bed_occupants: [],
+  counts: { ...COUNTS, patients: 0, isolated: 0, suspected: 0 } });
 const ISOLATED = "İzolyasiyadakı xəstələr: 4";
 const SUSPECTED = "Şübhəli infeksiya və ya sepsis siqnalı: 4 xəstə";
 
@@ -168,11 +176,55 @@ describe("the unit filter (spec D13 item 1, §5 S1)", () => {
     const { api } = await open();
     await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: REA } }); await settle(); });
     api.structure.mockResolvedValue({ tenant_id: null, sites: [] });
-    api.infection.mockResolvedValue(answer({ units: [], isolated: [], suspected: [], bed_occupants: [],
-      counts: { ...COUNTS, patients: 0, isolated: 0, suspected: 0 } }));
+    api.infection.mockResolvedValue(EMPTIED);
     await pass(30_000);
     expect(screen.getByLabelText("Şöbə").value).toBe("*");
-    expect(screen.getByText("Seçilmiş şöbə artıq əhatənizdə deyil.")).toBeInTheDocument();
+    expect(shownNote()).toBe(GONE);
+    await pass(200);
+    expect(spoken()).toContain(GONE);                                     // said, not only shown (review M4)
+  });
+
+  // Review M4: «artıq əhatənizdə deyil» is said only when it is known — the tree counts, or the answer's scope leaves the
+  // unit out. Without the tree, a unit offered once stays while its patients leave the list.
+  it("keeps a unit chosen without a structure key when its patients leave the list, and claims nothing", async () => {
+    const { api } = await open({ perms: KEY_ONLY });
+    await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: REA } }); await settle(); });
+    api.infection.mockResolvedValue(EMPTIED);
+    await pass(30_000);
+    await pass(200);
+    expect(screen.getByLabelText("Şöbə").value).toBe(REA);
+    expect(document.body.textContent).not.toContain(GONE);
+    expect(card("isolated")).toBe("0");                                   // in scope (the grant names it), and nobody there
+  });
+
+  it("does not fall back before the tree is first read", async () => {
+    const { api } = await open({ setup: (a) => a.structure.mockReturnValue(new Promise(() => {})) });
+    await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: REA } }); await settle(); });
+    api.infection.mockResolvedValue(EMPTIED);
+    await pass(30_000);
+    await pass(200);
+    expect(screen.getByLabelText("Şöbə").value).toBe(REA);
+    expect(document.body.textContent).not.toContain(GONE);
+  });
+
+  // The review's spec-level finding: a unit outside a restricted board scope is not offered; a chosen unit the scope
+  // leaves falls back, and the page says so.
+  it("offers no unit outside the answer's scope, and falls back with the note when the chosen one leaves it", async () => {
+    const ward = tree();
+    ward.sites[0].units[1].is_active = true;                              // Neonatal open
+    const { api } = await open({ setup: (a) => {
+      a.structure.mockResolvedValue(ward);
+      a.infection.mockResolvedValue(answer({ scope: { ...SCOPE, unrestricted: true } }));
+    } });
+    const options = () => [...screen.getByLabelText("Şöbə").options].map((o) => o.textContent);
+    expect(options()).toEqual(["Bütün şöbələr", "Neonatal", "Reanimasiya"]);
+    await act(async () => { fireEvent.change(screen.getByLabelText("Şöbə"), { target: { value: NEO } }); await settle(); });
+    api.infection.mockResolvedValue(answer());                           // scoped to Reanimasiya
+    await pass(30_000);
+    expect(options()).toEqual(["Bütün şöbələr", "Reanimasiya"]);
+    expect(screen.getByLabelText("Şöbə").value).toBe("*");
+    await pass(200);
+    expect(spoken()).toContain(GONE);
   });
 });
 
