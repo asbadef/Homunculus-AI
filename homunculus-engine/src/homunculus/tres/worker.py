@@ -129,11 +129,14 @@ class Sender:
                              lock_timeout_ms=self.lock_timeout_ms, shared=shared)
 
     async def skip(self, *, resource_type: str, local_id: str, reason: str,
-                   admission_id: uuid.UUID | None = None, shared: bool = False) -> TresDelivery:
+                   admission_id: uuid.UUID | None = None, shared: bool = False,
+                   keep_held: bool = False) -> TresDelivery:
+        """Why one resource was not built. `keep_held` (the stay's Encounter when the package stops at
+        its Patient, `patient_unheld`): a row the platform holds is left as it is (`ledger.record_skip`)."""
         return await record_skip(self._db, tenant_id=self.tenant_id, environment=self.environment,
                                  resource_type=resource_type, local_id=local_id, reason=reason,
-                                 admission_id=admission_id, lock_timeout_ms=self.lock_timeout_ms,
-                                 shared=shared)
+                                 admission_id=admission_id, keep_held=keep_held,
+                                 lock_timeout_ms=self.lock_timeout_ms, shared=shared)
 
     async def held(self, *, resource_type: str, local_id: str) -> str | None:
         return await held(self._db, tenant_id=self.tenant_id, environment=self.environment,
@@ -204,6 +207,16 @@ class Pacer:
             if self._started:
                 await self._sleep(PACE_S)
             self._started = True
+
+
+def pacers_on(state) -> dict[uuid.UUID, Pacer]:
+    """The process's one pacer per tenant on an app's state (`app.state.tres_pacers`, which
+    `create_app` makes), made there on first use for an app that has none: the hand routes and the
+    connection test (router.py) take their tenant's pacer from it, as the rounds do (re-review)."""
+    pacers = getattr(state, "tres_pacers", None)
+    if pacers is None:
+        pacers = state.tres_pacers = {}
+    return pacers
 
 
 def pacer_of(pacers: dict[uuid.UUID, Pacer] | None, tenant_id: uuid.UUID,

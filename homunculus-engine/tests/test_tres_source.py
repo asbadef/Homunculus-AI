@@ -10,8 +10,12 @@
 * a round with the app's source puts the stay on the stand-in — every time in +04:00 — and writes
   the one `tres.package` audit row; the next round asks nothing and writes none;
 * the nightly retry: at the first round after 04:00 in the tenant's zone, a `stuck` row's stay is
-  rebuilt and forced, however old; once a night — never before 04:00 on a tenant's first night, never
-  twice by two processes (the mark is a compare-and-set), and a stuck stay that is due goes once;
+  rebuilt and forced, within the night's 90 days; once a night — never before 04:00 on a tenant's
+  first night, never twice by two processes (the mark is a compare-and-set), and a stuck stay that
+  is due goes once;
+* the re-review of the fixes: the night takes each row to its stay's LAST admission before it
+  judges the cut-off or counts the stay; it reaches back 90 days (NIGHT_REACH); a person's FİN
+  cleared never relabels an Encounter the platform holds; «Yeniden dene» is not held by the cut-off;
 * batch-3 review: the person's newest stay is the authority for their one national Patient (A1); a
   round and a hand on one stay write one `tres.package` (A5); the rounds' reach goes back to the last
   round that ran to its end, never past the cut-off, and closes to the week again (A3); tenant
@@ -31,7 +35,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from homunculus.admission.models import AdmissionState
+from homunculus.admission.models import AdmissionState, Patient
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.tres import ids, source
 from homunculus.tres.client import TresClient
@@ -229,8 +233,9 @@ async def test_a_stay_whose_unit_is_unmapped_is_skipped_and_goes_once_it_is_mapp
 
 @requires_db
 async def test_the_nightly_retry_forces_a_stuck_stay_once_a_night_however_old(db_session):
-    """O21: a stay discharged two weeks ago, past the rounds' week, has a `stuck` Patient row whose
-    payload is unchanged — no round would try it. The first round after 04:00 in Baku does."""
+    """O21: a stay discharged two weeks ago, past the rounds' week (within the night's 90 days), has a
+    `stuck` Patient row whose payload is unchanged — no round would try it. The first round after
+    04:00 in Baku does."""
     ward, fake = await _world(db_session)
     old = DISCHARGED - timedelta(days=14)
     admission = await add_stay(db_session, ward, admitted_at=old - timedelta(days=2), discharged_at=old)
@@ -538,7 +543,7 @@ async def test_another_tenants_stay_is_never_due_stuck_or_loaded(db_session):
                                 local_id="hmn-p-bizim.", status="stuck", attempts=5, admission_id=ours.id))
     await db_session.commit()
     assert await due_stays(db_session, settings, NOW) == [ours.id]
-    assert await retry_stays(db_session, settings) == [ours.id]
+    assert await retry_stays(db_session, settings, NOW) == [ours.id]
     assert await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, theirs.id) is None
     assert (await _source(InMemoryAuditLog()).load(db_session, ward.tenant.id, ours.id)).last_id == ours.id
 
@@ -680,12 +685,12 @@ async def test_the_nightly_retry_takes_the_unfinished_stays_since_the_cut_off_an
     await db_session.commit()
     expected = sorted((stays[n].id for n in ("stuck", "failed", "pending", "unmapped", "no_reference", "admitted")),
                       key=str)
-    assert sorted(await retry_stays(db_session, settings), key=str) == expected
+    assert sorted(await retry_stays(db_session, settings, NOW), key=str) == expected
     settings.mode = "validate"
-    assert sorted(await retry_stays(db_session, settings), key=str) == sorted(
+    assert sorted(await retry_stays(db_session, settings, NOW), key=str) == sorted(
         (stays[n].id for n in ("stuck", "failed", "pending")), key=str)
     settings.send_from = None                                    # no cut-off: the old stay too
-    assert stays["before_cut"].id in await retry_stays(db_session, settings)
+    assert stays["before_cut"].id in await retry_stays(db_session, settings, NOW)
 
 
 @requires_db
@@ -820,3 +825,146 @@ async def test_the_window_is_keyed_on_the_discharge_or_the_rows_last_change_and_
     assert await due_stays(db_session, settings, NOW) == [confirmed_late.id]
     settings.send_from = long_ago + timedelta(minutes=1)                     # the cut-off: on the discharge
     assert await due_stays(db_session, settings, NOW) == []
+
+
+# ---------------------------------------------------------------- the re-review of the fixes (Postgres)
+#: source.NIGHT_REACH, as the re-review set it (the tests use the value; one asserts the constant).
+NINETY = timedelta(days=90)
+#: 04:05 in Baku on 9 Nov: a night whose retry has not run (the tenants below last ran it on 7 Nov).
+NIGHT = datetime(2026, 11, 9, 0, 5, tzinfo=timezone.utc)
+RAN = datetime(2026, 11, 7, 1, 0, tzinfo=timezone.utc)
+
+
+async def _transfer_chain(db_session, ward, **last):
+    """A stay of two admissions: the first TRANSFERRED (no protocol number, no discharge), the last
+    the arriving row of the same person — DISCHARGED at DISCHARGED unless `last` says otherwise."""
+    first = await add_stay(db_session, ward, protocol_no=None, state=AdmissionState.TRANSFERRED, discharged_at=None)
+    person = await db_session.get(Patient, first.patient_id)
+    arrived = await add_stay(db_session, ward, source=first, patient=person, bed="2",
+                             **{"admitted_at": DISCHARGED - timedelta(days=1), **last})
+    return first, arrived
+
+
+@requires_db
+async def test_the_night_judges_the_cut_off_on_the_stays_last_admission_and_a_hand_is_exempt(db_session):
+    """Re-review (the reviewer's repro, inverted): a hand ran the stay while its first admission was the
+    last, so its rows are keyed to it; the patient was then transferred and discharged before `send_from`.
+    The night resolves the row to its stay's LAST admission and judges the cut-off there — it sends
+    nothing. The nightly package judges it again once it has read the stay; «Yeniden dene» (the same
+    forced package, from a person's hand) is not held by the cut-off."""
+    ward, fake = await _world(db_session)
+    first, _last = await _transfer_chain(db_session, ward)
+    first_id = first.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake, send_from=DISCHARGED + timedelta(days=2), retried_at=RAN)
+    # What a validate-mode «Şimdi gönder» on the open first admission left (O14: no platform id → no_reference).
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="encounter",
+                                local_id=ids.encounter(first_id), status="skipped", reason="no_reference",
+                                admission_id=first_id))
+    await db_session.commit()
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit, now=NIGHT)
+    assert fake.stored("Patient") == [] and fake.stored("Encounter") == []
+    assert await retry_stays(db_session, settings, NIGHT) == []
+    hand, client = _hand(db_session, fake, ward)
+    outcome = await _source(audit, NIGHT).package(db_session, settings, first_id, force=True, nightly=True)(hand)
+    assert outcome.rows == [] and fake.requests == []                         # read, judged, nothing asked
+    await _source(audit, NIGHT).package(db_session, settings, first_id, force=True)(hand)   # «Yeniden dene»
+    assert len(fake.stored("Encounter")) == 1
+    await client.aclose()
+
+
+@requires_db
+async def test_a_stay_whose_rows_sit_on_two_of_its_admissions_is_one_stay_to_the_night(db_session):
+    """Re-review: the night's candidates are resolved to their stay's last admission BEFORE they are
+    deduplicated — the key the due set uses — so a chain with an unfinished row on each of two of its
+    admissions is rebuilt once, and once only though it is also due (A8)."""
+    ward, fake = await _world(db_session)
+    first, last = await _transfer_chain(db_session, ward, discharged_at=DISCHARGED)      # due at NOW
+    first_id, last_id = first.id, last.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)                  # never retried: NOW is 16:00 in Baku
+    db_session.add_all([
+        TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="practitioner",
+                     local_id="hmn-pr-takili.", status="stuck", attempts=5, admission_id=first_id),
+        TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="vital",
+                     local_id="hmn-v-takili.", status="failed", attempts=1, admission_id=last_id)])
+    await db_session.commit()
+    report = await _round(db_session, fake, InMemoryAuditLog())
+    assert (report.packages, report.failed) == (1, 0) and len(fake.stored("Encounter")) == 1
+    assert await retry_stays(db_session, settings, NOW) == [last_id]
+
+
+@requires_db
+async def test_the_night_reaches_back_ninety_days_and_an_older_stay_goes_by_hand(db_session):
+    """Re-review: the night takes a stay only while its window key — `greatest(discharge_at, updated_at)`
+    of its last admission, which for a stay still admitted is that row's last change — is within
+    NIGHT_REACH (90 days) of now. A stay that can never be sent (a newborn or a foreign national with no
+    FİN, common in a NICU) would otherwise be rebuilt every night for ever. An older stay keeps its rows
+    in the ledger and goes by «Yeniden dene»."""
+    ward, fake = await _world(db_session)
+    long_ago = NIGHT - NINETY
+    inside = await add_stay(db_session, ward, protocol_no="202600000301", number="H2600301", fin="CD34E5F",
+                            admitted_at=long_ago - timedelta(days=2), discharged_at=long_ago + timedelta(hours=1))
+    outside = await add_stay(db_session, ward, protocol_no="202600000302", number="H2600302", fin="EF56G7H", bed="2",
+                             admitted_at=long_ago - timedelta(days=2), discharged_at=long_ago - timedelta(hours=1))
+    still_in = await add_stay(db_session, ward, protocol_no="202600000303", number="H2600303", fin="GH78J9K", bed="3",
+                              state=AdmissionState.ACTIVE, admitted_at=NIGHT - timedelta(days=10))
+    long_in = await add_stay(db_session, ward, protocol_no="202600000304", number="H2600304", fin="JK90L1M",
+                             bed="10", state=AdmissionState.ACTIVE, admitted_at=long_ago - timedelta(days=10))
+    ids_ = {name: stay_.id for name, stay_ in
+            (("inside", inside), ("outside", outside), ("still_in", still_in), ("long_in", long_in))}
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake, retried_at=RAN)
+    for admission_id in ids_.values():                                   # each skipped while its unit was unmapped
+        db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="encounter",
+                                    local_id=ids.encounter(admission_id), status="skipped", reason="unit_unmapped",
+                                    admission_id=admission_id))
+    await db_session.commit()
+    await map_unit(db_session, ward)                                      # mapped since
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit, now=NIGHT)
+    encounters = {name: (await _rows_of(db_session, admission_id))["encounter"] for name, admission_id in ids_.items()}
+    assert encounters == {"inside": ("sent", None), "still_in": ("sent", None),
+                          "outside": ("skipped", "unit_unmapped"), "long_in": ("skipped", "unit_unmapped")}
+    assert await retry_stays(db_session, settings, NIGHT) == []           # the two left are past the night's reach
+    assert ids_["outside"] in await retry_stays(db_session, settings, NIGHT - timedelta(days=1))
+    hand, client = _hand(db_session, fake, ward)
+    await _source(audit, NIGHT).package(db_session, settings, ids_["outside"], force=True)(hand)   # «Yeniden dene»
+    assert (await _rows_of(db_session, ids_["outside"]))["encounter"] == ("sent", None)
+    await client.aclose()
+    assert source.NIGHT_REACH == NINETY
+
+
+async def _encounter_row(db_session) -> TresDelivery:
+    return (await db_session.execute(select(TresDelivery).where(TresDelivery.resource_type == "encounter")
+                                     .execution_options(populate_existing=True))).scalar_one()
+
+
+@requires_db
+async def test_a_person_whose_fin_is_cleared_never_relabels_the_encounter_the_platform_holds(db_session):
+    """Re-review (the reviewer's repro, inverted): a stay sent whole; its person's FİN is then removed (a
+    correction) while the stay is within reach. The next round stops at the Patient's placeholder and
+    leaves the Encounter row the platform holds as it is — `sent`, its id: `patient_unheld` is written only
+    where the platform holds nothing (`keep_held`). The night does not take the stay for it."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    admission_id = admission.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)
+    row = await _encounter_row(db_session)
+    held_id = row.remote_id
+    assert row.status == "sent" and held_id
+    person = await db_session.get(Patient, admission.patient_id)
+    person.national_id = None
+    await db_session.commit()
+    await _round(db_session, fake, audit, now=NOW + timedelta(minutes=5))
+    row = await _encounter_row(db_session)
+    assert (row.status, row.reason, row.remote_id) == ("sent", None, held_id)
+    assert len(fake.stored("Encounter")) == 1
+    assert admission_id not in await retry_stays(db_session, settings, NOW + timedelta(minutes=5))

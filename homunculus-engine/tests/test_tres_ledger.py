@@ -321,8 +321,8 @@ async def test_a_skip_is_a_row_with_its_reason_and_ends_when_the_resource_is_sen
     assert (sent.id, sent.status, sent.reason) == (row.id, "sent", None)
 
 
-async def _admission(db_session, tenant: Tenant, label: str) -> uuid.UUID:
-    """One synthetic stay on its own bed; only its id matters here."""
+async def _admission(db_session, tenant: Tenant, label: str, at: datetime = T0) -> uuid.UUID:
+    """One synthetic stay on its own bed, admitted `at`; only its id (and that time) matter here."""
     site = Site(tenant_id=tenant.id, name=f"Bina {label}")
     db_session.add(site)
     await db_session.flush()
@@ -337,7 +337,7 @@ async def _admission(db_session, tenant: Tenant, label: str) -> uuid.UUID:
                      sex="female", patient_number=f"H260000{label}")
     db_session.add_all([bed, person])
     await db_session.flush()
-    admission = Admission(patient_id=person.id, tenant_id=tenant.id, admission_datetime=T0,
+    admission = Admission(patient_id=person.id, tenant_id=tenant.id, admission_datetime=at,
                           admitting_unit_id=unit.id, bed_id=bed.id,
                           admission_diagnosis_free_text="Sentetik tanı")
     db_session.add(admission)
@@ -358,6 +358,42 @@ async def test_the_row_carries_the_admission_it_was_last_sent_for(world, db_sess
     db_session.expire_all()
     (saved,) = (await db_session.execute(select(TresDelivery))).scalars()
     assert saved.admission_id == second
+
+
+@requires_db
+async def test_an_older_stays_skip_never_takes_a_newer_stays_row_though_its_send_may(world, db_session):
+    """Re-review: the person's shared row is held for their newer stay, whose Patient the platform refused
+    (no platform id). The older stay's SKIP (its own patient row lacks a field) leaves the row exactly as
+    it is — the older stay's stop is on its own Encounter (`patient_unheld`) — so the newer stay's
+    refusals count on towards `stuck` instead of starting again every night; a SEND by the older stay
+    still takes the unheld row (amendment 26, 2)."""
+    fake, send, tenant = world
+    older = await _admission(db_session, tenant, "1")
+    newer = await _admission(db_session, tenant, "2", at=T0 + timedelta(days=3))
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/token":
+            return httpx.Response(200, json={"payload": {"sessionId": "S-1"}})
+        return httpx.Response(400, json={"issue": [{"severity": "error", "diagnostics": "Sentetik ret"}]})
+
+    refusing = TresClient(fake.account, transport=httpx.MockTransport(refuse))
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "patient", "local_id": LOCAL}
+    newer_send = {**key, "mode": "send", "fhir_type": "Patient", "resource": patient(), "now": T0,
+                  "admission_id": newer, "shared": True, "force": True}
+
+    async def stored() -> TresDelivery:
+        return (await db_session.execute(select(TresDelivery).execution_options(populate_existing=True))).scalar_one()
+
+    await deliver(db_session, refusing, **newer_send)
+    skipped = await record_skip(db_session, **key, reason="father_name_missing", admission_id=older, shared=True)
+    assert skipped.yielded
+    row = await stored()
+    assert (row.status, row.reason, row.attempts, row.remote_id, row.admission_id) == ("failed", None, 1, None, newer)
+    await deliver(db_session, refusing, **newer_send)
+    assert ((await stored()).status, (await stored()).attempts) == ("failed", 2)     # counted on, not started again
+    row = await send(patient("Leyla"), admission_id=older, shared=True)     # the older stay's own version, SENT
+    assert (row.yielded, row.status, row.admission_id) == (False, "sent", older)    # takes the unheld row
+    await refusing.aclose()
 
 
 @requires_db

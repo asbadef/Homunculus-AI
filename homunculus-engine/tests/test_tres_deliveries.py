@@ -18,7 +18,7 @@ import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from homunculus.admission.models import AdmissionState
+from homunculus.admission.models import AdmissionState, Patient
 from homunculus.tenant.models import Tenant
 from homunculus.tres import ids
 from homunculus.tres.client import TresClient
@@ -312,11 +312,15 @@ async def test_a_429_during_a_hand_is_its_own_refusal_with_the_platforms_wait(de
     r = await client.post(_send(stay), headers=ward.auth["admin"])
     assert r.status_code == 429, r.text
     assert r.json()["detail"] == {"code": "tres_throttled", "retry_after": 600, "message": WORDS["tres_throttled"]}
+    assert r.headers["Retry-After"] == "600"                    # re-review: the header the dashboard's 429 reads
+    fake.throttle(1, retry_after=1.5)
+    r = await client.post(_send(stay), headers=ward.auth["admin"])
+    assert (r.json()["detail"]["retry_after"], r.headers["Retry-After"]) == (1.5, "2")   # whole seconds, rounded up
     fake.throttle(1)
     r = await client.post(_send(stay), headers=ward.auth["admin"])
     assert (r.status_code, r.json()["detail"]["code"]) == (429, "tres_throttled")
-    assert "retry_after" not in r.json()["detail"]
-    assert [a.payload["result"] for a in _audit(app, "tres.send")] == ["tres_throttled", "tres_throttled"]
+    assert "retry_after" not in r.json()["detail"] and "Retry-After" not in r.headers
+    assert [a.payload["result"] for a in _audit(app, "tres.send")] == ["tres_throttled"] * 3
 
 
 @requires_db
@@ -482,3 +486,28 @@ async def test_a_stay_still_admitted_is_sent_by_hand_in_progress(desk, db_sessio
     assert r.status_code == 200, r.text
     (encounter,) = fake.stored("Encounter")
     assert encounter["status"] == "in-progress" and "end" not in encounter["period"]
+
+
+# ---------------------------------------------------------------- the re-review of the fixes
+@requires_db
+async def test_the_lists_admission_filter_takes_every_admission_of_the_stays_chain(desk, db_session):
+    """Re-review: a stay's rows may sit on any of its admissions (a hand ran it before a transfer, and no
+    run has moved them since) — the list's `admission` filter, given any admission of the chain, lists
+    every row of the stay."""
+    ward, fake, stay, client, app = desk
+    first = await add_stay(db_session, ward, protocol_no=None, number="H2600201", fin="CD34E5F", bed="2",
+                           state=AdmissionState.TRANSFERRED, discharged_at=None)
+    person = await db_session.get(Patient, first.patient_id)
+    last = await add_stay(db_session, ward, protocol_no="202600000201", source=first, patient=person, bed="3",
+                          admitted_at=ADMITTED + timedelta(days=1))
+    chain = [first.id, last.id]
+    db_session.add_all([
+        TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="encounter",
+                     local_id=ids.encounter(chain[0]), status="skipped", reason="no_reference", admission_id=chain[0]),
+        TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="patient",
+                     local_id="hmn-p-zincir.", status="stuck", attempts=5, admission_id=chain[1])])
+    await db_session.commit()
+    for admission_id in chain:
+        r = await client.get(LIST, params={"admission": str(admission_id)}, headers=ward.auth["admin"])
+        assert r.status_code == 200, r.text
+        assert sorted(i["admission_id"] for i in r.json()["items"]) == sorted(map(str, chain)), admission_id

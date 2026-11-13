@@ -36,7 +36,9 @@ bound in), so the refusals hold even for a caller that forgot to ask. This route
 applies to every other caller by default, does not hold the test. It is allowed in the mode
 `off`: an administrator tests before turning the feed on. Not audited; it writes one thing only: a
 success clears `session_refused_at` (the account opens a session again: the rounds go on). A
-failed test parks nothing. It ends its database transaction before it asks the platform.
+failed test parks nothing. It ends its database transaction before it asks the platform. Its login
+is PACED by the tenant's one pacer, the rounds' and the hand routes' (worker.Pacer,
+`app.state.tres_pacers`; D21, re-review of 2026-11-13): a login is a request to the platform too.
 
 No patient data anywhere in this file."""
 from __future__ import annotations
@@ -64,6 +66,7 @@ from homunculus.tres.models import (
 from homunculus.tres.schemas import (
     TresAccountOut, TresSettingsIn, TresSettingsOut, TresTestOut, refusal_of,
 )
+from homunculus.tres.worker import pacer_of, pacers_on
 
 router = APIRouter(prefix="/admin/tres", tags=["tres"])
 
@@ -233,6 +236,9 @@ async def test_connection(
         # Only from a factory that builds a TresClient itself (the app's, open_client, refuses
         # first): its constructor refused the stored base URL (not https, not a URL).
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
+    # The login is a request to the platform too: the tenant's one pacer, the rounds' and the hand's
+    # (worker.Pacer, `app.state.tres_pacers`; D21, re-review).
+    client.pace = pacer_of(pacers_on(request.app.state), caller_tenant).wait
     try:
         await client.token()
     except TresError as exc:

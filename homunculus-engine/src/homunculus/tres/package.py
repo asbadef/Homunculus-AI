@@ -12,7 +12,10 @@ Encounter, then Procedures, the Composition, the laboratory results — before t
   reference is the platform's id (`remote_id`), never a local id. In `send`, a package that stops at
   the Patient writes the stay's own Encounter row, `skipped` with PATIENT_UNHELD (batch-4 review): so
   every stay that reached the Encounter point has a row of its own, and the nightly retry
-  (source.retry_stays: an Encounter not `sent`) sends it once its person can be sent.
+  (source.retry_stays: an Encounter not `sent`) sends it once its person can be sent. It is written
+  with `keep_held` (re-review of 2026-11-13): an Encounter the platform already holds — a stay sent
+  whole, its person's FİN removed since — keeps its row as it is (`sent`, its id), and the night
+  does not take the stay for it.
 * A Practitioner that cannot be sent is left out of the Encounter's `participant` (D8).
 * Once a FİN keys the person — the Patient's local id is not the stay's placeholder
   (ids.patient_placeholder) — the placeholder's skip is removed, whether the Patient is then sent
@@ -24,7 +27,10 @@ Encounter, then Procedures, the Composition, the laboratory results — before t
   person for (the row's `remote_id`; batch-4 review). An older stay then sends, validates and
   records nothing for it, and refers to the platform's id on that row — even when its own patient
   row would have been skipped: the newer stay's record stands for the person. A newer stay the
-  platform holds nothing for does not hold an older one back: the older sends its own version.
+  platform holds nothing for does not hold an older one's send back: the older sends its own
+  version. An older stay's SKIP is left to any newer stay, held or not (re-review; ledger.yields):
+  with no platform id on that row there is no Patient to refer to, and the stay stops there as for
+  its own skip (`patient_unheld` on its Encounter, in `send`).
 
 VALIDATE MODE AND REFERENCES (spec O14, decided by plan F1). `$validate` stores nothing, so a
 round in `validate` has no platform id for what a resource refers to unless an earlier `send` in
@@ -106,9 +112,10 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
         outcome.add(built.resource_type, built.local_id, row.status, row.reason)
         return row
 
-    async def skip(resource_type: str, local_id: str, reason: str, *, shared: bool = False):
+    async def skip(resource_type: str, local_id: str, reason: str, *, shared: bool = False,
+                   keep_held: bool = False):
         row = await sender.skip(resource_type=resource_type, local_id=local_id, reason=reason,
-                                admission_id=stay.last_id, shared=shared)
+                                admission_id=stay.last_id, shared=shared, keep_held=keep_held)
         outcome.add(resource_type, local_id, row.status, row.reason)
         return row
 
@@ -124,9 +131,10 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
     async def patient_unheld() -> None:
         # Batch-4 review: in send mode a package that stops at the Patient writes the stay's own
         # Encounter row, so every stay that reached the Encounter point has one — the nightly retry
-        # takes it (source.retry_stays) once the person can be sent.
+        # takes it (source.retry_stays) once the person can be sent. Never over an Encounter the
+        # platform holds (`keep_held`, re-review): that row keeps its status and its id.
         if not validating:
-            await skip("encounter", ids.encounter(stay.root_id), PATIENT_UNHELD)
+            await skip("encounter", ids.encounter(stay.root_id), PATIENT_UNHELD, keep_held=True)
 
     placeholder = ids.patient_placeholder(stay.root_id)
     built = map_patient(stay.person, stay.root_id)
@@ -136,7 +144,9 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
         await sender.forget_skip(resource_type="patient", local_id=placeholder)          # A4
     if isinstance(built, Skip):
         row = await skip(built.resource_type, built.local_id, built.reason, shared=personal)
-        if not row.yielded:
+        if not (row.yielded and row.remote_id):
+            # Its own skip — or a newer stay's row the platform holds nothing for (a skip yields to
+            # any newer stay, re-review): no Patient to refer to; the package stops here.
             await patient_unheld()
             return outcome
         # A newer stay the platform holds the person for is their authority (A1): it stands for this stay.
@@ -201,7 +211,11 @@ class PreviewSender:
     * the person's newest stay (amendment 25, A1, as `ledger.yields` judges it): a Patient the
       person's newer stay holds on the platform is shown as THAT stay's — `yielded`, `held`, no body
       (this stay would send nothing for it) — and the preview goes on to the Encounter and the
-      vitals, referring to it, as a send would."""
+      vitals, referring to it, as a send would; a Patient this stay would SKIP is left to any newer
+      stay (re-review) — `yielded`, `held` as the platform holds it, and with none held the preview
+      stops at the Encounter (`patient_unheld`);
+    * `keep_held` (`patient_unheld`): an Encounter the platform holds is shown `held` — a send leaves
+      its row as it is."""
 
     mode = "send"
 
@@ -223,13 +237,14 @@ class PreviewSender:
         return (row.remote_id, row.admission_id) if row is not None else (None, None)
 
     async def _yielded(self, resource_type: str, local_id: str, admission_id: uuid.UUID | None,
-                       shared: bool) -> PreviewRow | None:
+                       shared: bool, *, skip: bool = False) -> PreviewRow | None:
         if not shared:
             return None
         remote, owner = await self._owner(resource_type, local_id)
-        if not await ledger_yields(self._db, owner_id=owner, remote_id=remote, admission_id=admission_id):
+        if not await ledger_yields(self._db, owner_id=owner, remote_id=remote, admission_id=admission_id,
+                                   skip=skip):
             return None
-        self.items.append({"resource_type": resource_type, "local_id": local_id, "held": True,
+        self.items.append({"resource_type": resource_type, "local_id": local_id, "held": remote is not None,
                            "resource": None, "reason": None, "yielded": True})
         return PreviewRow("preview", remote, None, yielded=True)
 
@@ -249,11 +264,14 @@ class PreviewSender:
         return PreviewRow("preview", remote or local_id, None)
 
     async def skip(self, *, resource_type: str, local_id: str, reason: str,
-                   admission_id: uuid.UUID | None = None, shared: bool = False) -> PreviewRow:
-        yielded = await self._yielded(resource_type, local_id, admission_id, shared)
+                   admission_id: uuid.UUID | None = None, shared: bool = False,
+                   keep_held: bool = False) -> PreviewRow:
+        yielded = await self._yielded(resource_type, local_id, admission_id, shared, skip=True)
         if yielded is not None:
             return yielded
-        self.items.append({"resource_type": resource_type, "local_id": local_id, "held": False,
+        # With `keep_held` a send leaves a row the platform holds as it is: the item says it is held.
+        held = keep_held and await self.held(resource_type=resource_type, local_id=local_id) is not None
+        self.items.append({"resource_type": resource_type, "local_id": local_id, "held": held,
                            "resource": None, "reason": reason, "yielded": False})
         return PreviewRow("skipped", None, reason)
 

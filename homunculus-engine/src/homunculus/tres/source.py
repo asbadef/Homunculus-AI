@@ -24,7 +24,7 @@ WHICH STAYS A ROUND SENDS (D9, amended by plan F1; `window`):
   maintenance, an outage or 429s for more than a week) is not dropped: the first round that
   completes afterwards reaches back to the last one that did, and the window then closes to the
   week again. A stay older than all of that goes by hand («Şimdi gönder») or the nightly retry
-  (when a row of it is unfinished);
+  (when a row of it is unfinished, within the night's reach — below);
 * O15 (PROPOSED, AWAITING THE OWNER'S WORD): not discharged before the tenant's `send_from` — the
   moment `send` was first chosen, by default — so opening `send` where another system has reported
   the stays already (O11) does not send its whole recent past again. The cut-off is never crossed,
@@ -39,9 +39,9 @@ to the nightly retry (batch-4 review: a gap stay the watermark has passed includ
 writes `reached_to` = its upper bound, by its own statement (never `updated_at`), as a
 compare-and-set: only while the settings are still the version the round began on and `reached_to`
 is still what it read — a save during the last package, or another process's round, moves nothing.
-THE NIGHTLY RETRY (D21, O21; batch-4 review): at the first round after 04:00 in the tenant's zone —
-on a tenant's first night too: never before 04:00 (A6) — every UNFINISHED stay is rebuilt and sent
-with `force`, whatever its age (`retry_stays`):
+THE NIGHTLY RETRY (D21, O21; batch-4 review, re-review of 2026-11-13): at the first round after
+04:00 in the tenant's zone — on a tenant's first night too: never before 04:00 (A6) — every
+UNFINISHED stay within the night's reach is rebuilt and sent with `force` (`retry_stays`):
 * a stay with a row `stuck`, `failed` or `pending` in the selected environment (a gap stay whose
   catch-up met one outage or one refusal, a refusal in the last hours of a stay's week…);
 * in `send` only, a stay whose Encounter row is not `sent` — skipped for any reason
@@ -49,15 +49,27 @@ with `force`, whatever its age (`retry_stays`):
   `type_off`…): a FİN added, a unit mapped or a zone set later sends the old stay with no hand. In
   `validate` an Encounter `no_reference` is what every stay of a tenant that never sent has: the
   night would rebuild them all, so it takes only the three statuses above;
-* NEVER a stay discharged before the cut-off (`send_from`; a stay not discharged is not before it):
-  O15 exists to keep the stays another system reported from going again.
-THE NIGHT'S COST is bounded by the unfinished stays since the cut-off, each rebuilt once a night
-(its unchanged resources ask nothing, D7; a skip that still stands writes nothing new) — a stay
-that can never be sent (a person with no FİN) is read every night until it can, or a hand sends it.
-A stuck stay that is also due goes once, forced (A8). The night is marked first (`retried_at`, by
-its own statement): a round that ends early leaves the rest to the next night or «Yeniden dene». A
-zone this server's zone database does not hold is said in a warning — once per tenant in this
-process, its id and nothing else — and the night is read in UTC.
+* each row is taken to its STAY — its admission walked down the transfer chain to the last one, as
+  `chain_of` walks it — before anything is judged or counted: a row may sit on an earlier admission
+  of its stay (a hand ran it before a transfer), and the due set is keyed by the last admission too,
+  so a stay is taken once, and once only when it is also due (A8);
+* NEVER a stay whose LAST admission was discharged before the cut-off (`send_from`; a stay not
+  discharged — still admitted, or mid-transfer — is not before it): O15 exists to keep the stays
+  another system reported from going again. The night's package judges it once more after it has
+  read the stay (`StaySource.package(…, nightly=True)`: a chain may have grown since the query);
+  «Yeniden dene», the same forced package from a person's hand, is not held by it;
+* only while the stay's window key — `window_key` of its last admission, `greatest(discharge_at,
+  updated_at)`; for a stay still admitted (no `discharge_at`) its last admission's `updated_at` —
+  is within NIGHT_REACH (90 days) of now. A stay that can never be sent — a newborn or a foreign
+  national with no FİN, common in a NICU, whose Encounter stays `patient_unheld` — would otherwise
+  be rebuilt every night for ever, a cost that only grows. An older stay keeps its rows in the
+  ledger and goes by «Yeniden dene»; an edit of its last admission brings it back within reach.
+THE NIGHT'S COST is bounded by the unfinished stays of the last 90 days since the cut-off, each
+rebuilt once a night (its unchanged resources ask nothing, D7; a skip that still stands writes
+nothing new). A stuck stay that is also due goes once, forced (A8). The night is marked first
+(`retried_at`, by its own statement): a round that ends early leaves the rest to the next night or
+«Yeniden dene». A zone this server's zone database does not hold is said in a warning — once per
+tenant in this process, its id and nothing else — and the night is read in UTC.
 ONE API PROCESS: `Dockerfile.api` runs uvicorn with one worker (state that must be one per server
 lives in its memory), so one round runs at a time. The night's mark and the watermark are
 compare-and-sets all the same (`WHERE … IS NOT DISTINCT FROM <what the round read>`, by rowcount):
@@ -85,8 +97,9 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from homunculus.admission.boardkey import board_key
 from homunculus.admission.models import Admission, AdmissionState, Patient
@@ -100,8 +113,13 @@ log = logging.getLogger(__name__)
 
 #: How long after it became due a stay is still rebuilt by the rounds (plan F1, D9 amended).
 REACH = timedelta(days=7)
+#: How far back the nightly retry reaches, on the stay's window key (re-review of 2026-11-13): a
+#: stay that can never be sent (no FİN: a newborn, a foreign national) is not rebuilt for ever.
+NIGHT_REACH = timedelta(days=90)
 #: The hour, in the tenant's zone, after which a night's retry of `stuck` rows runs (D21).
 NIGHTLY_HOUR = 4
+#: The most admissions a stay's chain is walked through (`chain_of`, `retry_stays`).
+CHAIN_MAX = 64
 #: The trail is read this many rows at a time (iter_records_of).
 PAGE = 500
 
@@ -178,28 +196,55 @@ async def due_stays(db: AsyncSession, settings: TresSettings, now: datetime) -> 
 #: The statuses whose stays the nightly retry takes in either mode: a refusal still waiting
 #: (`failed`), five in a row (`stuck`), a row an outage left (`pending`) — batch-4 review.
 RETRIED = ("stuck", "failed", "pending")
-#: An Encounter in one of these is not taken by the night's «not sent» rule: `deleted` is F6's (a
-#: record removed on purpose is not brought back by a night).
+#: An Encounter in one of these does not make the night take its stay by the «not sent» rule. Only
+#: that: `deleted` (F6's) alone brings no stay back, but a stay the night takes for another
+#: unfinished row is rebuilt whole, and `ledger.deliver` would send a `deleted` Encounter of it
+#: again — what a delete does to a later rebuild (by the night, a round or a hand) is F6's to decide.
 NOT_RETRIED_ENCOUNTER = ("sent", "deleted")
 
 
-async def retry_stays(db: AsyncSession, settings: TresSettings) -> list[uuid.UUID]:
-    """The stays (their last admissions) the nightly retry takes (the module's docstring): a row
-    `stuck`, `failed` or `pending` in the selected environment; in `send`, also an Encounter row that
-    is not `sent` (skipped for any reason: `patient_unheld`, `unit_unmapped`, `timezone_unknown`…).
-    Never a stay discharged before the cut-off (`send_from`; one not discharged is not before it).
-    The caller's tenant only."""
+async def retry_stays(db: AsyncSession, settings: TresSettings, now: datetime) -> list[uuid.UUID]:
+    """The stays (their LAST admissions, each once) the nightly retry takes at `now` (the module's
+    docstring): a row `stuck`, `failed` or `pending` in the selected environment; in `send`, also an
+    Encounter row that is not `sent` (skipped for any reason: `patient_unheld`, `unit_unmapped`,
+    `timezone_unknown`…). Each row's admission is walked down its chain to the stay's last
+    admission (as `chain_of`: the first arriving row by `created_at`, then id) BEFORE anything is
+    judged: the cut-off (`send_from`: never a stay whose last admission was discharged before it;
+    one not discharged is not before it) and the night's reach (`window_key` of the last admission
+    within NIGHT_REACH before `now`, the edge excluded as the window's lower one is). The caller's
+    tenant only."""
+    tenant_id = settings.tenant_id
     unfinished = TresDelivery.status.in_(RETRIED)
     if settings.mode == "send":
         unfinished = or_(unfinished, and_(TresDelivery.resource_type == "encounter",
                                           TresDelivery.status.not_in(NOT_RETRIED_ENCOUNTER)))
-    query = (select(TresDelivery.admission_id)
-             .join(Admission, Admission.id == TresDelivery.admission_id)
-             .where(TresDelivery.tenant_id == settings.tenant_id, Admission.tenant_id == settings.tenant_id,
-                    TresDelivery.environment == settings.environment, unfinished))
+    # Each unfinished row's admission (`origin`), then one arriving row at a time down its chain.
+    rows = (select(TresDelivery.admission_id.label("origin"), TresDelivery.admission_id.label("node"),
+                   literal_column("0").label("depth"))
+            .where(TresDelivery.tenant_id == tenant_id, TresDelivery.environment == settings.environment,
+                   TresDelivery.admission_id.is_not(None), unfinished)
+            .distinct())
+    down = rows.cte("down", recursive=True)
+    step, arriving = down.alias("step"), aliased(Admission)
+    after = (select(arriving.id).where(arriving.source_admission_id == step.c.node, arriving.tenant_id == tenant_id)
+             .order_by(arriving.created_at, arriving.id).limit(1).scalar_subquery())
+    down = down.union_all(select(step.c.origin, after, step.c.depth + 1)
+                          .where(step.c.node.is_not(None), step.c.depth < CHAIN_MAX))
+    # The deepest admission each origin reached: its stay's last.
+    last = (select(down.c.node).where(down.c.node.is_not(None)).distinct(down.c.origin)
+            .order_by(down.c.origin, down.c.depth.desc()).subquery("last"))
+    query = (select(Admission.id).join(last, last.c.node == Admission.id)
+             .where(Admission.tenant_id == tenant_id, window_key() > now - NIGHT_REACH))
     if settings.send_from is not None:
         query = query.where(or_(Admission.discharge_at.is_(None), Admission.discharge_at >= settings.send_from))
-    return list((await db.execute(query.distinct().order_by(TresDelivery.admission_id))).scalars())
+    return list((await db.execute(query.distinct().order_by(Admission.id))).scalars())
+
+
+def before_cut_off(stay: Stay, send_from: datetime | None) -> bool:
+    """Was the stay discharged before the cut-off (O15)? Judged on its LAST admission: a finished stay
+    with a discharge before `send_from`. A stay still admitted is judged by nothing."""
+    return (send_from is not None and stay.finished and stay.discharged_at is not None
+            and stay.discharged_at < send_from)
 
 
 async def chain_of(db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID) -> list[Admission]:
@@ -213,13 +258,13 @@ async def chain_of(db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UU
     if row is None:
         return []
     chain = [row]
-    while chain[0].source_admission_id is not None and len(chain) < 64:
+    while chain[0].source_admission_id is not None and len(chain) < CHAIN_MAX:
         parent = await one(select(Admission).where(Admission.id == chain[0].source_admission_id,
                                                    Admission.tenant_id == tenant_id))
         if parent is None:
             break
         chain.insert(0, parent)
-    while len(chain) < 64:
+    while len(chain) < CHAIN_MAX:
         child = await one(select(Admission).where(Admission.source_admission_id == chain[-1].id,
                                                   Admission.tenant_id == tenant_id)
                           .order_by(Admission.created_at, Admission.id))
@@ -251,9 +296,9 @@ class StaySource:
         zone = self.night_zone(await db.get(Tenant, tenant_id))
         forced: set[uuid.UUID] = set()
         if nightly_due(seen_night, now, zone) and await self._mark_night(db, tenant_id, seen_night, now):
-            for admission_id in await retry_stays(db, settings):
+            for admission_id in await retry_stays(db, settings, now):
                 forced.add(admission_id)
-                yield self.package(db, settings, admission_id, force=True)
+                yield self.package(db, settings, admission_id, force=True, nightly=True)
         for admission_id in await due_stays(db, settings, now):
             if admission_id not in forced:          # A8: a stuck stay that is due went once, forced
                 yield self.package(db, settings, admission_id)
@@ -303,15 +348,22 @@ class StaySource:
                      "another round moved it", tenant_id)
 
     def package(self, db: AsyncSession, settings: TresSettings, admission_id: uuid.UUID, *,
-                force: bool = False):
+                force: bool = False, nightly: bool = False):
         """The package of the stay `admission_id` belongs to. It reads the stay when it runs (never
-        before), and answers what it did (`package.Outcome`), or None when the stay is gone."""
+        before), and answers what it did (`package.Outcome`), or None when the stay is gone.
+
+        `nightly` (the night's retry, never a person's hand): a stay whose last admission was
+        discharged before the cut-off — judged on the stay as read now (`before_cut_off`) — is
+        left: nothing asked, nothing written, an empty Outcome. «Yeniden dene» forces the same
+        package without it: a person's deliberate hand is not held by the cut-off."""
         tenant_id = settings.tenant_id
 
         async def package(sender) -> Outcome | None:
             stay = await self.load(db, tenant_id, admission_id)
             if stay is None:
                 return None
+            if nightly and before_cut_off(stay, settings.send_from):
+                return Outcome()
             organization = getattr(settings, f"{sender.environment}_organization_id", None)
             outcome = await run(stay, sender, organization_id=organization, force=force)
             if outcome.first_complete:

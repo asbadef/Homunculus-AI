@@ -26,6 +26,7 @@ from homunculus.tres.egress import DEFAULT_HOSTS, open_client
 from homunculus.tres.errors import CODES, WORDS
 from homunculus.tres.models import RESOURCE_TYPES, TresSettings
 from homunculus.tres.schemas import TresSettingsIn, base_url_ok, settings_refusal
+from homunculus.tres.worker import PACE_S, Pacer
 from tests.conftest import requires_db
 from tests.fake_tres import FakeTres
 from tests.kabul_world import SLUG, build_ward, ward_client
@@ -441,6 +442,26 @@ async def test_the_test_ends_its_database_transaction_before_it_asks_the_platfor
     r = await client.post(TEST_URL, headers=w.auth["admin"])
     assert (r.status_code, r.json()) == (200, {"ok": True, "message": None}), r.text
     assert held == [False]
+
+
+@requires_db
+async def test_the_connection_test_is_paced_by_the_tenants_one_pacer(ward):
+    """Re-review: the login is a request to the platform too — the test takes the tenant's one pacer, the
+    rounds' and the hand's (worker.Pacer, `app.state.tres_pacers`; spec D21, §13.1)."""
+    w, client, app = ward
+    app.state.tres_egress = True
+    fake = await _stand_in(app, client, w)
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    pacer = Pacer(sleep)
+    await pacer.wait()                                  # the tenant has asked the platform before, in this process
+    app.state.tres_pacers = {w.tenant.id: pacer}
+    r = await client.post(TEST_URL, headers=w.auth["admin"])
+    assert (r.status_code, r.json()) == (200, {"ok": True, "message": None}), r.text
+    assert slept == [PACE_S] and fake.requests == [("POST", "/auth/token")]
 
 
 @requires_db

@@ -9,11 +9,13 @@ attempts, operation, whether the platform holds it, when it is tried next. NO `l
 platform's words may echo a value — they are shown by the audited preview only (D25). The answer
 also says which environment it lists and whether the platform refused the tenant's login
 (`session_refused_at`, N15: the tab shows it at the top of the panel). `environment` defaults to
-the selected one; `admission` is any admission of a stay — a person's Patient row is listed under
-their NEWEST stay that has run (amendment 25, A1: the row's `admission_id`); a filter the ledger
-cannot hold — an `admission` that is not an id included, read here so that FastAPI's own 422 never
-echoes it (Task-12 review M7) — is 422 `tres_filter`, a cursor that does not read as one 422
-`tres_cursor` (the cursor is not signed: it is a time and a row id, read within the caller's tenant).
+the selected one; `admission` is any admission of a stay, and lists the rows keyed to ANY admission
+of its chain (re-review: a hand before a transfer leaves rows on an earlier one) — a person's
+Patient row is listed under their NEWEST stay that has run (amendment 25, A1: the row's
+`admission_id`); a filter the ledger cannot hold — an `admission` that is not an id included, read
+here so that FastAPI's own 422 never echoes it (Task-12 review M7) — is 422 `tres_filter`, a cursor
+that does not read as one 422 `tres_cursor` (the cursor is not signed: it is a time and a row id,
+read within the caller's tenant).
 
 GET /admin/tres/admissions?key= — the stay a board key (protocol number, or an older admission's
 H-number) belongs to: its last admission's id, the key, the state, the discharge. 404
@@ -55,9 +57,11 @@ its 30-minute wait) is tried now — a person's Patient row belongs to their new
   for HAND_LOCK_TIMEOUT_MS at most, then 409 `tres_busy` — try again — never a request that hangs;
 * a login the platform refuses parks the tenant as a round would (worker.park, N15: only while
   the settings are the ones the request began on) — 409 `tres_login_refused`; a 429 is 429
-  `tres_throttled`, with the platform's `retry_after` seconds beside it when it said one (M1); an
-  outage or a server error is 503 `tres_platform_unavailable`; any other failure is rolled back,
-  audited with the result `error` (no message, no value) and raised again — a 500 (M6);
+  `tres_throttled`, with the platform's `retry_after` seconds beside it when it said one (M1) — and
+  then the HTTP `Retry-After` header too, in whole seconds rounded up (re-review: the dashboard's
+  429 handling reads the header); an outage or a server error is 503 `tres_platform_unavailable`;
+  any other failure is rolled back, audited with the result `error` (no message, no value) and
+  raised again — a 500 (M6);
 * answer the rows the package touched (type, local id, status, reason — no value);
 * are audited AFTER the attempt (`tres.send`, `tres.retry`): the actor, the admission (and the
   delivery for a retry), the result's code and, when it ran to its end, the counts by type and
@@ -66,6 +70,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -92,7 +97,7 @@ from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, LedgerBusy
 from homunculus.tres.models import ENVIRONMENTS, RESOURCE_TYPES, STATUSES, TresDelivery, TresSettings, account_of
 from homunculus.tres.package import PreviewSender, run
 from homunculus.tres.source import chain_of
-from homunculus.tres.worker import Pacer, Sender, pacer_of, park
+from homunculus.tres.worker import Sender, pacer_of, pacers_on, park
 
 router = APIRouter(prefix="/admin/tres", tags=["tres"])
 
@@ -230,7 +235,10 @@ async def list_deliveries(
     if type is not None:
         query = query.where(TresDelivery.resource_type == type)
     if admission_id is not None:
-        query = query.where(TresDelivery.admission_id == (await _stay(db, caller_tenant, admission_id))[-1].id)
+        # Any admission of the stay's chain (re-review): a row may sit on an earlier one (a hand ran
+        # the stay before a transfer, and no run has moved it since).
+        chain = [row.id for row in await _stay(db, caller_tenant, admission_id)]
+        query = query.where(TresDelivery.admission_id.in_(chain))
     if cursor is not None:
         at, row_id = _uncursor(cursor)
         query = query.where(or_(TresDelivery.updated_at < at,
@@ -313,22 +321,15 @@ RESULT_ERROR = "error"
 class _Attempt:
     """What a person's run of one stay's package came to: the answer (None unless it ran), the
     result's code (`sent` or a refusal's), the board key, the stay's last admission, the refusal's
-    `extra` (a 429's `retry_after`), and an exception none of the refusals names (re-raised after the
-    audit row, M6)."""
+    `extra` (a 429's `retry_after`) and HTTP `headers` (a 429's `Retry-After`), and an exception none
+    of the refusals names (re-raised after the audit row, M6)."""
     answer: HandOut | None
     result: str
     key: str
     last_id: uuid.UUID
     extra: dict | None = None
     error: Exception | None = None
-
-
-def _pacers(request: Request) -> dict[uuid.UUID, Pacer]:
-    """The process's one pacer per tenant, the rounds' (app.py `tres_pacers`; I1)."""
-    pacers = getattr(request.app.state, "tres_pacers", None)
-    if pacers is None:
-        pacers = request.app.state.tres_pacers = {}
-    return pacers
+    headers: dict[str, str] | None = None
 
 
 def _seconds(value: float) -> int | float:
@@ -371,7 +372,7 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
         raise refusal(409, exc.code).http() from None
     except ValueError:
         raise refusal(409, TRES_ACCOUNT_INCOMPLETE).http() from None
-    client.pace = pacer_of(_pacers(request), tenant_id).wait
+    client.pace = pacer_of(pacers_on(request.app.state), tenant_id).wait
     version, now = settings.updated_at, datetime.now(timezone.utc)
     sender = Sender(db, client, tenant_id=tenant_id, environment=settings.environment, mode=settings.mode,
                     now=now, enabled_types=settings.enabled_types or (), lock_timeout_ms=HAND_LOCK_TIMEOUT_MS)
@@ -388,9 +389,12 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
     except TresError as exc:
         await db.rollback()
         if exc.status == 429:
-            # M1: the platform's own wait, said to the person — not an outage's 503.
-            wait = {"retry_after": _seconds(exc.retry_after)} if exc.retry_after is not None else None
-            return _Attempt(None, TRES_THROTTLED, key, last_id, extra=wait)
+            # M1: the platform's own wait, said to the person — not an outage's 503; in the body and,
+            # in whole seconds rounded up, in the header the dashboard's 429 handling reads (re-review).
+            if exc.retry_after is None:
+                return _Attempt(None, TRES_THROTTLED, key, last_id)
+            return _Attempt(None, TRES_THROTTLED, key, last_id, extra={"retry_after": _seconds(exc.retry_after)},
+                            headers={"Retry-After": str(math.ceil(exc.retry_after))})
         return _Attempt(None, TRES_PLATFORM_UNAVAILABLE, key, last_id)
     except Exception as exc:  # noqa: BLE001 — M6: rolled back, audited `error`, then raised again (500)
         await db.rollback()
@@ -421,7 +425,9 @@ async def _answer(request: Request, db: AsyncSession, tenant_id: uuid.UUID, even
     if attempt.error is not None:
         raise attempt.error
     if answer is None:
-        raise refusal(_RESULT_STATUS[attempt.result], attempt.result, attempt.extra).http()
+        error = refusal(_RESULT_STATUS[attempt.result], attempt.result, attempt.extra).http()
+        error.headers = attempt.headers
+        raise error
     return answer
 
 
