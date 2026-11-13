@@ -197,7 +197,10 @@ class TestAWithdrawal:
             assert c.app.state.board_link._engine("h1").state(PID).latest(SignalCode.TEMPERATURE) is None
         _same_after_a_restart(audit, live)
 
-    @pytest.mark.xfail(strict=True, reason="plan E-6 (F-1): the replay passes over the first sight and the "
+    # `raises=AssertionError`: only E-6's own failure is expected — the overdue back unacknowledged, or stamped
+    # anew, after the restart. One MISSING after the restart (a KeyError: a silenced alert) is a real failure.
+    @pytest.mark.xfail(strict=True, raises=AssertionError,
+                       reason="plan E-6 (F-1): the replay passes over the first sight and the "
                        "acknowledgement given while the withdrawn reading's evaluation had the overdue firing")
     def test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_both_after_a_restart(self):
         """Live, the overdue the temperature found stays one episode across its withdrawal (D3), acknowledged and

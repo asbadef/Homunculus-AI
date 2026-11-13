@@ -190,6 +190,22 @@ class TestTheAnchor:
         eng.ingest(_obs(SignalCode.BILIRUBIN, 3.0, 0), now=_at(10), anchor_at=_at(30))
         assert eng.recognized_at(PID) == _at(10)
 
+    def test_the_anchor_never_passes_at_on_a_suspicion_mark_stamped_ahead_of_the_floor(self):
+        # D2 (3), the outer `min(…, at)` (spec §8.1). SOFA met at +100 with no infection charted, the patient judged
+        # at +100; a suspicion mark stamped +102 — a bedside clock inside the 2 min skew — arrives at wall +100
+        # and completes sepsis. The door asks for min(+102, +100) = +100, but the suspicion's bound is the mark's
+        # own stamp, +102: lifted to it the anchor would sit after the instant the clock is read at («62 min
+        # remaining»). It is held to `at`, exactly.
+        eng = Engine()
+        for code, value in [(SignalCode.PLATELETS, 80), (SignalCode.CREATININE, 3.5)]:
+            _door(eng, code, value, 100)
+        assert "sepsis" not in _kinds(eng)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 102, wall=100)
+        assert "sepsis" in _kinds(eng)
+        assert eng._judged_at[PID] == _at(100)
+        assert eng.recognized_at(PID) == _at(100)
+        assert _summary(eng, "antibiotic_due") == "Antibiotic window: 60 min remaining"
+
     def test_the_anchor_never_precedes_the_suspicion(self):
         # D2 (owner, «Şüpheden önceye gitmesin»): infection charted at +300, the patient judged at +300; a
         # bilirubin of 3.0 measured at +0 arrives at +300 and completes SOFA. The hour cannot start before the
