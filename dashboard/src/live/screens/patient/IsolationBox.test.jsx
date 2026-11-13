@@ -74,6 +74,8 @@ describe("the state line and the last record", () => {
     cleanup();
     await open({ known: false });
     expect(within(box()).getByRole("note").textContent).toBe("İzolyasiya: Təmas · Damcı · panel aktual deyil");
+    // Review M9: a line that says the board is not current is a warning, as the other not-LIVE lines are.
+    expect(within(box()).getByRole("note").getAttribute("data-tone")).toBe("warn");
   });
 });
 
@@ -167,6 +169,16 @@ describe("the answers (§5 M2)", () => {
       expect(screen.getByRole("region", { name: "Bildirişlər" }).textContent).toBe("");
       cleanup();
     }
+  });
+
+  // Review M9: a success clears the draft — the boxes follow the card again, then whatever the reloaded card says.
+  it("re-seeds the boxes from the card after a save on the patient shown", async () => {
+    await open();
+    fireEvent.click(boxes()[3]);
+    await press(SAVE);
+    expect(ticked()).toEqual([true, true, false, false]);             // the card's, not the draft's
+    act(() => { Host.set({ patientId: "S-001", isolation: { ...NOT_ISOLATED, charted_at: T2 }, known: true, canChart: true }); });
+    expect(ticked()).toEqual([false, false, false, false]);
   });
 
   it("re-seeds from the reloaded card after a save, and not when the answer lands for a patient no longer shown", async () => {

@@ -21,7 +21,7 @@
 // the bed (never the patient's name, Decision 14) and the reason; no answer (`mayHaveLanded`) may have written some of
 // the four rows — the box says so and has the board read again (`onRefresh`). The draft stays on every failure; a
 // success re-seeds it — in the patient's own box (keyed, review M2). The save button names what it saves: the patient screen has
-// other «Kaydet» buttons (plan note N15).
+// other «Kaydet» buttons (plan note N8 b).
 import React, { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { dayStamp } from "../../i18n/dates.js";
@@ -135,6 +135,7 @@ function PatientIsolationBox({ isolation, bed, canChart, known, nowMs, onChart, 
   let tone = "info";
   if (state === "isolated") {
     line = `${t("patient.isolation.isolated", { types: typesText(isolation?.types) })}${known ? "" : ` · ${t("patient.isolation.boardStale")}`}`;
+    if (!known) tone = "warn";                         // review M9: «pano güncel değil» is a warning, as below
   } else if (!known) {
     line = t("patient.isolation.cannotShow");
     tone = "warn";
