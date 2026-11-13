@@ -2900,13 +2900,21 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
   - **«Gecikti» geri dönmez.** Geç gelen bir tur ya da geriye tarihli bir giriş antibiyotik saatini geri çevirmez.
     Açık ve onaylanmış bir «gecikti» uyarısı onayıyla ve ilk görülme saatiyle aynı uyarı olarak kalır; yeni bildirim
     gitmez.
-  - **Geç gelen değer sepsis kriterlerinin saatler önce karşılandığını gösterirse «gecikti» hemen görünür.**
-    Antibiyotik saati, kriterleri tamamlayan ölçümün saatinden işler (sahibin kararı: «ölçüm saatinden»), ama
+  - **Geç gelen değer sepsis kriterlerinin saatler önce karşılandığını gösterirse antibiyotik saati ölçümden
+    işler.** Saat, kriterleri tamamlayan ölçümün saatinden başlar (sahibin kararı: «ölçüm saatinden»), ama
     **şüphenin başlangıcından ve son «enfeksiyon yok» işaretinden önce asla** (sahibin kararı: «Şüpheden önceye
-    gitmesin»). Örnek: şüpheli enfeksiyon 7 saat önce işaretlenmiş bir hastada 6 saat önce ölçülmüş bir değer sepsis
-    kriterlerini tamamlarsa saat 6 saat önceden başlar ve «gecikti» hemen çıkar; şüphe 30 dakika önce işaretlenmişse
-    saat 30 dakika önceden başlar (ekranda «Antibiotic window: 30 min remaining»). «Sıfır anı»nın nasıl tanımlanacağı bilgi tabanında açık bir
-    sorudur; bu bir işletme kuralıdır, klinik bir iddia değildir.
+    gitmesin»). Örnek, hastaya az önce bir ölçüm girilmişken (hasta en son şimdi değerlendirilmiş): şüpheli enfeksiyon
+    7 saat önce işaretlenmişse ve 6 saat önce ölçülmüş bir değer sepsis kriterlerini tamamlarsa saat 6 saat önceden
+    başlar ve «gecikti» hemen çıkar; şüphe 30 dakika önce işaretlenmişse saat 30 dakika önceden başlar (ekranda
+    «Antibiotic window: 30 min remaining»). «Sıfır anı»nın nasıl tanımlanacağı bilgi tabanında açık bir sorudur; bu
+    bir işletme kuralıdır, klinik bir iddia değildir.
+  - **«Gecikti»nin hemen çıkması, hastanın o ölçümden sonra değerlendirilmiş olmasına bağlıdır.** Kapıdan (elle
+    giriş, cihaz) gelen geç değer, hastanın en son değerlendirildiği an ile kendi ölçüm saatinin geç olanında okunur.
+    Hasta ölçümden beri hiç değerlendirilmediyse — örneğin şüphe 7 saat önce işaretlenmiş, o zamandan beri hiç
+    ölçüm girilmemiş ve 6 saat önceki bir MAP şimdi giriliyorsa — uyarı ölçüm saatinde okunur ve «Antibiotic window:
+    60 min remaining» der, oysa süre çoktan dolmuştur. Hastanın bir sonraki ölçümüne kadar doğruyu panodaki
+    antibiyotik geri sayımı gösterir: o duvar saatiyle işler (süre dolmuşsa eksi). Listeden bağlanan sette bu olmaz:
+    set bağlandığı an değerlendirilir. Düzeltmesi ayrı küçük bir dilimdir (aşağıda, «Sınırlar»).
   - **«Hatalı giriş» ve «Düzelt»ten sonra kurallar hastayı o anda yeniden değerlendirir.** Hasta yine geri alınan
     değer hiç girilmemiş gibi kurulur (3.12); ama uyarılar artık kalan son ölçümün saatine göre değil, geri alma
     anına göre okunur. Son ölçümden beri süresi dolan bir antibiyotik saati «gecikti» olur; bu, geri almanın ortaya
@@ -2937,14 +2945,29 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     antibiyotik saati geri gelir. Arada hastaya ölçüm gelmediyse geç bir düzeltme de eski saati geri getirir; arada
     gelen ölçümler 15 dakikayı geçirdiyse «var», saati «yok»un hemen sonrasına geri alınmış olsa bile yeni bir şüphe
     ve yeni bir saattir (en erken «yok»un işlendiği andan başlar).
+  - **Açık — Antibiyotik saatinin gerçek saate göre değerlendirilmesi: ayrı küçük dilim (sahip kararı
+    2026-11-13: «Belgeyi düzelt, sonra düzelt»).** Taban yalnız saatin geri gitmesini önler; hastanın en son
+    değerlendirildiği andan **sonraki** bir saate damgalı geç değer hâlâ kendi saatinde değerlendirilir (yukarıdaki
+    örnek). Uyarı o zaman «Antibiotic window: 60 min remaining» der: «zamanı» uyarısıdır, hemşireye bildirim gitmez,
+    yükseltilmez; panonun geri sayımı ise eksidedir. İnceleyenin iki denemesi: şüphe 7 saat önce, o zamandan beri
+    ölçüm yok, 6 saat önceki MAP 60 şimdi giriliyor → «60 min remaining»; 2 saat önce alınan bir laboratuvar değeri,
+    en son 3 saat önce değerlendirilmiş bir hastaya şimdi giriliyor → «60 min remaining», pano −60 dk. Bu dilimden
+    önce de böyleydi (her geç değer kendi saatinde değerlendiriliyordu); gerileme değildir. Önerilen düzeltme
+    (inceleyenin): kapılar duvar saatini motora üçüncü bir an olarak verir ve onu yalnız antibiyotik saati kullanır;
+    yeniden oynatma satırın yazıldığı anı verir.
   - **Açık (sahibin kararı):** yanlışlıkla girilen bir «enfeksiyon yok» işareti 15 dakikadan geç düzeltilirse
     başlayan yeni saatin bugün geri dönüşü yoktur: şüphe işareti «hatalı giriş» ile geri alınamaz (sunucu reddeder,
     3.12). Şüphe işaretine «hatalı giriş» açmak ayrı bir karardır.
   - **Kabul edilen fark (sahip; planın E-6'sı):** «gecikti»yi bulan ölçüm, uyarı onaylandıktan sonra geri alınırsa
-    canlı panoda uyarı onaylı ve ilk görülme saatiyle kalır; ama API yeniden başlatılırsa uyarı onaysız ve «ilk
-    görülme» saati olmadan geri gelir. Hastanın bir sonraki ölçümünde yeni bir ilk görülme saati alır ve **hemşireye
-    aynı uyarı için ikinci bir bildirim gider** (yürüyüşte görüldü); onaysız kaldığı için oradan yükseltilebilir.
-    Bir test bu farkı bilerek kırmızı tutar; düzeltilirse test bunu söyler.
+    canlı panoda uyarı onaylı kalır; ama API yeniden başlatılırsa uyarı **onaysız** geri gelir. İlk görülme saati
+    geri alma anı olur (son incelemeden beri, sahibin «Küçük önlemi ekle» kararıyla; önce hiç yoktu ve onaysız bir
+    uyarı hastanın bir sonraki ölçümüne kadar yükseltilmiyordu). Yani **yükseltme kaybolmaz, yalnız onay kaybolur**:
+    yeniden onaylanmazsa uyarı, geri almadan yükseltme süresi kadar sonra hekime yükseltilir. Bir test onay farkını
+    bilerek kırmızı tutar; düzeltilirse test bunu söyler.
+  - **Yeniden başlatmadan sonra ikinci «Yeni uyarı» bildirimi (bu dilime özgü değil).** API yeniden başlatılınca
+    bildirimlerin tekrar engeli sıfırlanır: «anında» aciliyetli açık bir uyarısı olan hastanın ilk ölçümünde hemşireye
+    aynı uyarı için yeniden bildirim gider — onaylanmış ve hiç geri alınmamış bir uyarı için de. Yürüyüşte görülen
+    ikinci bildirim budur. Bu dilimden önce de böyleydi; ayrı bir karar konusudur.
   - **Tersi de olabilir (incelemede bulundu):** yanlış bir değerin değerlendirmesi onaylı bir uyarıyı kapattıysa,
     canlıda onay o anda düşer; değer geri alınınca uyarı yeni ve onaysız döner. API yeniden başlatılırsa yanlış değer
     oynatılmadığı için uyarı hiç kapanmamış sayılır ve **eski onay geçerli kalır**: uyarı onaylı görünür, yükseltilmez.

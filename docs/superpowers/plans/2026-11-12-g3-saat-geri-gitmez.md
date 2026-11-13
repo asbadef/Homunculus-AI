@@ -2778,10 +2778,10 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
 - **The first restart replays the old trail under the new rule** (§7): for a patient with a back-dated reading after a recognition the board may differ from the pre-deploy board — an overdue the old code turned into «due» is overdue again, as one episode, with its earlier acknowledgement; a «due» may now read overdue, stamped and told at the patient's next reading. `_replay_ack`, the `first_seen` branch, `store.recent.clear()` and `expire_snoozes` are untouched; the hook still runs at each row's write time.
 - **The ward is told beforehand** (spec §9, in the ward's words):
   - a late reading (a device round sent late, a set charted at its own time) never turns «gecikti» back into «kalan süre»;
-  - when a late reading shows that the sepsis criteria were met hours ago, «gecikti» appears at once, because the hour runs from the measurement (the owner's choice);
+  - when a late reading shows that the sepsis criteria were met hours ago, «gecikti» appears at once, because the hour runs from the measurement (the owner's choice) — **as built:** at a door only on a patient evaluated after the measurement; otherwise the alert can read «60 min remaining» until the next reading and the board's countdown is the truth (spec §9 as amended, §12 open item 6);
   - after «hatalı giriş» or «Düzelt», the alerts are judged as of that moment, so an antibiotic hour that ran out since the last reading reads «gecikti» — and is told to the nurse;
   - a set linked from «Eşleşmeyen ölçümler» is scored at the moment it is linked, so an hours-old set is too old to count in the NEWS2 score; but if it completes the sepsis criteria, the antibiotic hour runs from its measurement, and «gecikti» can appear at once.
-- **Open (E-6):** if the reading that found an antibiotic hour gone is acknowledged and then withdrawn, the live board keeps the acknowledgement; after an API restart the overdue comes back unacknowledged and is stamped at the patient's next reading, from which it escalates. The owner decides whether to fix it before the deploy; the block need not change for it.
+- **Open (E-6), accepted by the owner and narrowed by the final review's I-2 (`19a59406`):** if the reading that found an antibiotic hour gone is acknowledged and then withdrawn, the live board keeps the acknowledgement; after an API restart the overdue comes back unacknowledged, first seen at the withdrawal, and escalates from there — its escalation is preserved, only the acknowledgement is lost. The block need not change for it.
 - **Rollback:** the previous api image. Nothing stored changes. Under the old image a back-dated reading is judged at its own time again (the false «kalan süre» comes back), and the next restart replays the trail under the old rules.
 
 ---
@@ -2807,6 +2807,14 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
   all five items PASS, no finding; item 5 (restart) shows E-6 exactly as accepted (A's overdue unacknowledged,
   `first_seen_at` null, and a second notification at the next reading) — notes at
   `/c/tmp/homunculus-plans/g3-saat/walk/notes.md`
+- After the final review («yes after fixes»; the owner's decisions 2026-11-13): I-2 fixed in `19a59406` (the replay
+  stamps an alert a `chart_retract` row's rejudge raises unstamped), the minors in `b537224b`, I-1 in the docs. At
+  `b537224b`: the six named files `151 passed, 1 skipped, 1 xfailed`; Postgres (`saat-pg`) `test_saat_replay.py
+  test_rehydrate.py test_audit_postgres.py test_bedside_trail_stores.py` `51 passed`, stopped after; no-DB chunks
+  in the plan's three calls `1369 passed, 827 skipped` · `1747 passed, 115 skipped` · `1407 passed, 587 skipped,
+  1 xfailed` — **4523 / 1529 / 1** (I-2's three tests); Python 3.14 `249 passed, 1 skipped, 1 xfailed`. The second
+  notification the walk saw is not E-6's: the notifier's dedup is not replayed, so any restart re-tells an
+  immediate alert at the patient's next reading (pre-existing; spec §12, open item 1).
 
 ---
 

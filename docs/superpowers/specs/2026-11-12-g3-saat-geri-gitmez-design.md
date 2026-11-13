@@ -433,9 +433,13 @@ Main and the VM are the owner's word, through Lane A, which writes the blocks. W
 - **The ward is told beforehand:**
   - a late reading (a device round sent late, a set charted at its own time) never turns «gecikti» back into «kalan
     süre»;
-  - when a late reading shows that the sepsis criteria were met hours ago, «gecikti» appears at once, because the
-    hour runs from the measurement (the owner's choice). It never runs from before the infection suspicion was
-    charted, or from before a rule-out;
+  - when a late reading shows that the sepsis criteria were met hours ago, the hour runs from the measurement (the
+    owner's choice), never from before the infection suspicion was charted or from before a rule-out. At a door
+    the alert reads «gecikti» at once **only on a patient the engine has evaluated after the measurement** (a later
+    reading, a withdrawal); a set linked from the list is judged at the link, so it always does. On a patient not
+    evaluated since, the late value is judged at its own measurement time and the alert can read «60 min
+    remaining» while the hour is long gone; until the patient's next reading the board's antibiotic countdown,
+    which runs on the wall clock, is the truth (final review I-1, 2026-11-13; §12, open item 6);
   - a suspicion charted present again more than 15 min after it was ruled out starts a new hour, even if its time
     is set back to just after the rule-out. The 15 min are counted on the patient's readings, not the wall clock;
   - after «hatalı giriş» or «Düzelt», the alerts are judged as of that moment, so an antibiotic hour that ran out
@@ -487,8 +491,9 @@ beyond §8.2 is known only when the plan runs. It is fixed as §8.2 says (as G3-
 ## 12. As built
 
 Plan: `docs/superpowers/plans/2026-11-12-g3-saat-geri-gitmez.md`. Built on `feat/g3-saat-geri-gitmez` (from main
-`88f6544c`); code head `786ff4e1`, this record on top; gates run 2026-11-13 (the lines are in the plan's «As run»
-block). No migration, no environment variable, no route, permission, audit type or screen.
+`88f6544c`); code head `b537224b` (after the final review's fixes), this record on top; gates run 2026-11-13 (the
+lines are in the plan's «As run» block). No migration, no environment variable, no route, permission, audit type or
+screen.
 
 **Commits, by task.**
 
@@ -503,6 +508,8 @@ block). No migration, no environment variable, no route, permission, audit type 
 | 6 (D4, D5) | `18962228` | the link judged at the link and anchored at the measurement; the shadow mirror's `judge_at` |
 | review | `e1471b87` | E-6's xfail takes `raises=AssertionError` (an overdue missing after the restart is a real failure); §8.1 «the anchor never passes `at`» on a suspicion mark stamped ahead of the floor |
 | review | `786ff4e1` | `_suspicion_start` → `_suspicion_began` (§3's name); its unreachable `or anchor_at` fallback dropped — `septic_shock.evaluate` returns before either recognition kind unless the latest mark is present, which is the first mark `_suspicion_began` reads |
+| final review I-2 | `19a59406` | the replay stamps an alert a `chart_retract` row's rejudge has firing with no stamp, at the row's write time (the live withdrawal's `_stamp_uncovered`); a later `first_seen` row of the same episode replaces that stamp; E-6's strict xfail now pins the acknowledgement only (owner, 2026-11-13: «Küçük önlemi ekle») |
+| final review minors | `b537224b` | comments only: a rejudge can end an episode by the clock alone; `adopt` can lower the floor until the rejudge |
 
 **What differs from the design above** (the plan's departures, E-1 … E-6):
 
@@ -514,28 +521,33 @@ block). No migration, no environment variable, no route, permission, audit type 
   — its «next reading» now comes after the restart's floor.
 - **D3 (E-4, E-5).** A `chart_retract` row whose `ts` has no zone is passed over like an unreadable one. A
   Postgres-marked replay test reads the withdrawal's write time from the `TEXT` column.
-- **D3, «a restart equals live» (E-6, F-1) — accepted by the owner.** It holds for kind, severity, urgency and
-  anchor. It does not hold for the first sight and the acknowledgement of an alert the withdrawn reading's own
-  evaluation raised: live keeps both across the withdrawal; the replay, skipping that reading, passes its
-  `first_seen` and `ack` rows over, and the `chart_retract` row's rejudge raises the alert unstamped and
-  unacknowledged — stamped at the next reading, escalating from there. Pinned by a strict `xfail` with
-  `raises=AssertionError` (`test_saat_api.py::TestAWithdrawal::test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_both_after_a_restart`).
+- **D3, «a restart equals live» (E-6, F-1) — accepted by the owner, narrowed by the final review's I-2.** It holds
+  for kind, severity, urgency and anchor. It does not hold exactly for an alert the withdrawn reading's own
+  evaluation raised: live keeps its acknowledgement and first sight across the withdrawal; the replay, skipping
+  that reading, passes its `first_seen` and `ack` rows over, and the `chart_retract` row's rejudge raises the alert
+  with neither. Since `19a59406` the replay stamps it there, at the withdrawal row's write time (before that, an
+  unacknowledged overdue had no escalation clock until the patient's next reading — the reviewer's finding); the
+  acknowledgement stays lost. The acknowledgement is pinned by a strict `xfail` with `raises=AssertionError`
+  (`test_saat_api.py::TestAWithdrawal::test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_its_acknowledgement_after_a_restart`),
+  the stamp by `test_an_unacknowledged_overdue_whose_finding_reading_is_withdrawn_still_escalates_after_a_restart`
+  and `test_saat_replay.py::TestAWithdrawalRowStampsWhatItRaises`.
 - **D2 as built** is §3's refined rule (`90a5a1b7`, `9947ba77`); the plan, written before it, has Task 2's
   `min(anchor_at, at)` only.
 
-**Gates (2026-11-13, code head `786ff4e1`).**
+**Gates (2026-11-13).**
 
 - Engine, no database, every file under `tests` but `test_infinity_vm_pilot.py` (never run; left out of the file
-  list): **4520 passed, 1529 skipped, 1 xfailed** — `test_[a-d]*` 1369 / 827; `test_[e-l]*` 1747 / 115 (run as
-  `test_[e-h]*` 431 / 85 and `test_[i-l]*` 1316 / 30, to keep each call under 600 s on this machine);
-  `test_[m-z]*` + `rules`, `scoring`, `tenant` 1404 / 587 / 1 xfailed (as `test_[m-r]*` 737 / 242 and the rest
-  667 / 345 / 1). Against the baseline at `b3e57312` (4470 / 1528, without the 13 vm_pilot tests): +50 passed,
-  +1 skipped (the Postgres test of `test_saat_replay.py`), +1 xfailed (E-6). The plan expected 4514; the six more are
-  the owner's refinement (5 tests, `18261d11`) and the review's anchor test (1).
-- Postgres (`saat-pg`, throwaway): **147 passed, 0 skipped** — `test_saat_replay.py` 15, `test_rehydrate.py` 19,
-  `test_audit_postgres.py` 12, `test_audit_since.py` 32, `test_bedside_trail_stores.py` 3 (81, one call);
-  `test_tasks_postgres.py` 10; `test_readings_postgres.py` 56 (133 s, one call). `alembic heads`: one head, `0021`.
-- Python 3.14, the slice's nine files: 246 passed, 1 skipped, 1 xfailed.
+  list), at `b537224b`: **4523 passed, 1529 skipped, 1 xfailed** — `test_[a-d]*` 1369 / 827; `test_[e-l]*` 1747 /
+  115; `test_[m-z]*` + `rules`, `scoring`, `tenant` 1407 / 587 / 1 xfailed. Against the baseline at `b3e57312`
+  (4470 / 1528, without the 13 vm_pilot tests): +53 passed, +1 skipped (the Postgres test of `test_saat_replay.py`),
+  +1 xfailed (E-6). The plan expected 4514; the nine more are the owner's refinement (5 tests, `18261d11`), the
+  review's anchor test (1) and I-2's three (`19a59406`). The first run, at `786ff4e1`, gave 4520 / 1529 / 1.
+- Postgres (`saat-pg`, throwaway), at `786ff4e1`: **147 passed, 0 skipped** — `test_saat_replay.py` 15,
+  `test_rehydrate.py` 19, `test_audit_postgres.py` 12, `test_audit_since.py` 32, `test_bedside_trail_stores.py` 3
+  (81, one call); `test_tasks_postgres.py` 10; `test_readings_postgres.py` 56 (133 s, one call). At `b537224b` the
+  replay's files again: `test_saat_replay.py` (17) `test_rehydrate.py` `test_audit_postgres.py`
+  `test_bedside_trail_stores.py` — 51 passed, 0 skipped. `alembic heads`: one head, `0021`.
+- Python 3.14, the slice's nine files, at `b537224b`: 249 passed, 1 skipped, 1 xfailed.
 - Dashboard: `git diff --stat 88f6544c HEAD -- dashboard deploy homunculus-engine/alembic` is empty; no dashboard
   run.
 
@@ -551,7 +563,9 @@ block). No migration, no environment variable, no route, permission, audit type 
 3. «Düzelt» on the device SpO₂ and «hatalı giriş» on the temperature that found the hour gone both left
    `antibiotic_overdue`, acknowledged, judged at the withdrawal; nothing latched; no new notification.
 4. Restart: four patients identical (alerts, acknowledgements, first sights, summaries, anchors); on A, E-6 exactly
-   as accepted (open item 1 below). The restart wrote no trail row.
+   as accepted then (open item 1 below): the overdue unacknowledged, `first_seen_at` null; the next reading wrote
+   a new `first_seen` row and a second notification. The restart wrote no trail row. (The walk ran before I-2,
+   which now stamps A's overdue at the withdrawal row; the second notification is not E-6's — open item 1.)
 5. A 6 h-old linked set: on a patient with no reading before, NEWS2-high values answered `alerts: []`; on one with
    infection charted before, it answered `antibiotic_overdue` «OVERDUE by 300 min» at once, anchored at the set's
    stamp, with no NEWS2 alert.
@@ -564,12 +578,18 @@ dashboard is unchanged by this slice.
 
 **Open items for the owner.**
 
-1. **E-6 (accepted).** After a restart, an acknowledged overdue whose finding reading was withdrawn returns
-   unacknowledged and with no first sight; it is stamped at the patient's next reading and escalates from there.
-   **What the ward sees** (the walk, patient A): after the restart the card showed `antibiotic_overdue` with
-   `acknowledged: false` and `first_seen_at: null`; the next current reading (a heart rate) wrote a new
-   `first_seen` row and sent the nurse a **second notification for the same episode** she had already
-   acknowledged, unacknowledged from then on.
+1. **E-6 (accepted; narrowed by I-2).** After a restart, an overdue whose finding reading was withdrawn returns
+   **unacknowledged** even if the nurse had acknowledged it, with its first sight at the withdrawal (since
+   `19a59406`; before, it had none until the next reading, and an unacknowledged one did not escalate until then).
+   **Its escalation is preserved; only the acknowledgement is lost**, so the overdue the nurse acknowledged
+   escalates to the doctor `escalate_after` after the withdrawal unless acknowledged again. **What the ward sees:**
+   the card shows the overdue unacknowledged. The walk (patient A, at `786ff4e1`, before I-2) showed
+   `acknowledged: false`, `first_seen_at: null`, and at the next reading a new `first_seen` row and a **second
+   notification** for the same episode. Of these, only the missing stamp was E-6's, and I-2 removed it. The second
+   notification is pre-existing and not this slice's: the notifier's dedup (`Notifier._notified_new`) is not
+   replayed, so after any API restart the first reading of a patient with an immediate alert tells the nurse again —
+   an acknowledged overdue never withdrawn included (checked on `b537224b`: one notification, no `first_seen` row).
+   It is worth its own decision.
 2. **Its mirror image (from the review).** A wrong value whose evaluation ended an acknowledged episode prunes the
    acknowledgement live (the hook), and the withdrawal's rejudge raises the alert again as a new, unacknowledged
    episode. After a restart the wrong row is skipped, the episode never ended, and the old acknowledgement stands:
@@ -584,6 +604,16 @@ dashboard is unchanged by this slice.
 5. **The 15-minute restore window counts judged time**, which the patient's readings move, not the wall clock: with
    no reading between, a late re-chart still restores; with readings past 15 min it starts a new hour, from the drop
    at the earliest.
+6. **Antibiyotik saatinin gerçek saate göre değerlendirilmesi — ayrı küçük dilim (sahip kararı 2026-11-13: «Belgeyi
+   düzelt, sonra düzelt»; final review I-1).** The floor only stops a clock going back. A late value stamped
+   *later* than the patient's last evaluation is still judged at its own stamp, so on a patient not evaluated since,
+   the antibiotic alert can read «60 min remaining» (`antibiotic_due`, HIGH/SOON: no nurse notification, no
+   escalation) while the board's countdown, on the wall clock, is negative. The reviewer's probes: suspicion charted
+   7 h ago with no reading since, then a MAP of 60 charted at −6 h → `antibiotic_due` «60 min remaining»; a lab
+   drawn 2 h ago charted now on a patient last evaluated 3 h ago → «60 min remaining», the board −3600 s.
+   Pre-existing (before this slice every late value was judged at its stamp), not a regression. **Proposed fix**
+   (the reviewer's): the doors pass the wall clock as a third instant, used only by the antibiotic clock; the replay
+   passes the row's write time. Until then §9's ward note says the board's countdown is the truth.
 
 **Deploy notes for the controller lane** (Lane A writes the blocks; the owner's «onay» runs them):
 
@@ -602,5 +632,9 @@ dashboard is unchanged by this slice.
   pre-deploy board.
 - **The ward is told beforehand** (§9 in full), first of all: a late reading never turns «gecikti» back into «süre
   var»; a sepsis completed by a late reading can show «gecikti» at once (the hour runs from the measurement, never
-  from before the suspicion was charted or a rule-out).
+  from before the suspicion was charted or a rule-out) — at once only on a patient evaluated after the
+  measurement; otherwise the alert can read «60 min remaining» until the next reading, and the board's countdown is
+  the truth (open item 6).
+- **E-6 after a restart** (open item 1): an acknowledged overdue whose finding reading was withdrawn comes back
+  unacknowledged, escalating from the withdrawal; its escalation is not lost. The block need not change for it.
 - **Rollback:** the previous api image; nothing stored changes (§9).
