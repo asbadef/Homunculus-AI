@@ -122,11 +122,14 @@ export function unitChoices(tree, answer) {
 /** The selection's counts and rows (spec D13 item 1, §5 S1, M4): «Tüm birimler» is the whole answer; a unit is its
  *  `units[]` entry and the rows whose own `unit_id` is it — a row with no `unit_id` stays under «Tüm birimler» only,
  *  where the server counts it. A unit the answer does not list has no scoped card: its counts are 0 (the page prints a 0
- *  only from a fresh answer). */
+ *  only from a fresh answer). A unit it lists without counts has none to print (null: every card «—», review M6). */
 export function selectionOf(answer, selected) {
   const mine = (r) => selected === ALL || normId(r?.unit_id) === selected;
-  const counts = selected === ALL ? (isObject(answer?.counts) ? answer.counts : null)
-    : (listOf(answer?.units).find((unit) => normId(unit?.unit_id) === selected)?.counts ?? (answer ? ZERO : null));
+  const entry = selected === ALL ? null : listOf(answer?.units).find((unit) => normId(unit?.unit_id) === selected);
+  let counts;
+  if (selected === ALL) counts = isObject(answer?.counts) ? answer.counts : null;
+  else if (entry) counts = isObject(entry.counts) ? entry.counts : null;
+  else counts = answer ? ZERO : null;
   return { counts, isolated: listOf(answer?.isolated).filter(mine), suspected: listOf(answer?.suspected).filter(mine) };
 }
 

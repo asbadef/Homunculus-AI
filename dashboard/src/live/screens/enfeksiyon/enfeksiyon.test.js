@@ -90,6 +90,12 @@ describe("the unit selection (spec D13 item 1, §5 S1, M4)", () => {
       suspected: 0, suspected_unrecorded: 0, clock_missed: 0, sepsis_open: 0 });
     expect(selectionOf(null, ALL)).toEqual({ counts: null, isolated: [], suspected: [] });
   });
+
+  it("has no counts for a unit the answer lists without them — «—», never a 0 (review M6)", () => {
+    for (const counts of [undefined, null, [], "x"]) {
+      expect(selectionOf(answer({ units: [{ unit_id: REA, counts }] }), REA).counts, String(counts)).toBeNull();
+    }
+  });
 });
 
 describe("the order, by the names a reader sees (§5 M4)", () => {
