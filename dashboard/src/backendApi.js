@@ -1037,6 +1037,37 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
     /** One sign-in at the platform with the stored account of the selected environment:
      *  {ok: true, message: null} | {ok: false, message}. 409 `egress_off`, 409 `tres_account_incomplete`. */
     testTres() { return authed("/admin/tres/test", { method: "POST" }); },
+    // TRƏS-01 F1 — the ledger, a stay, its preview, the hand (tres/deliveries.py) and the two maps (tres/maps.py).
+    /** {environment, session_refused_at, items: [{id, resource_type, local_id, status, reason, attempts, operation,
+     *  remote_id, next_attempt_at, updated_at, admission_id, board_key}], next} — never the platform's words. */
+    tresDeliveries({ status = null, type = null, admission = null, cursor = null } = {}) {
+      const q = new URLSearchParams();
+      if (status) q.set("status", status);
+      if (type) q.set("type", type);
+      if (admission) q.set("admission", admission);
+      if (cursor) q.set("cursor", cursor);
+      const s = q.toString();
+      return authed(`/admin/tres/deliveries${s ? `?${s}` : ""}`);
+    },
+    /** {admission_id, board_key, state, discharge_at}; 404 `tres_stay_unknown`. */
+    tresStay(key) { return authed(`/admin/tres/admissions?${new URLSearchParams({ key })}`); },
+    /** {admission_id, board_key, environment, items: [{resource_type, local_id, held, reason, resource, status,
+     *  last_error}]} — the bodies: PHI, and the read is audited (tres.preview). */
+    tresPreview(admissionId) { return authed(`/admin/tres/admissions/${seg(admissionId)}/preview`); },
+    /** «Şimdi gönder»: {admission_id, rows: [{resource_type, local_id, status, reason}], counts}. 409 `tres_busy`… */
+    sendTresStay(admissionId) { return authed(`/admin/tres/admissions/${seg(admissionId)}/send`, { method: "POST" }); },
+    /** «Yeniden dene»: as sendTresStay, the row's stay forced. */
+    retryTresDelivery(id) { return authed(`/admin/tres/deliveries/${seg(id)}/retry`, { method: "POST" }); },
+    /** [{unit_id, unit_name, unit_active, code, display, updated_at}] */
+    tresDepartments() { return authed("/admin/tres/departments"); },
+    /** The whole map: [{unit_id, code, display}] — a unit left out is unmapped. → as tresDepartments() */
+    saveTresDepartments(departments) { return authed("/admin/tres/departments", { method: "PUT", body: { departments } }); },
+    /** [{user_id, full_name, fin_set, family_name, given_name, updated_at}] — never a FİN. */
+    tresPractitioners() { return authed("/admin/tres/practitioners"); },
+    /** {fin?, family_name, given_name}: `fin` left out keeps the stored one, "" clears it. → one item as above */
+    saveTresPractitioner(userId, body) {
+      return authed(`/admin/tres/practitioners/${seg(userId)}`, { method: "PUT", body });
+    },
     // G3-02: Görevlerim — the task queue, its writes and the hospital's settings (homunculus/api/tasks.py).
     tasks(from = null, to = null) {
       const q = new URLSearchParams();

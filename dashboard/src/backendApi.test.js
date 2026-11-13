@@ -1983,3 +1983,40 @@ describe("TRƏS-01 calls", () => {
     expect(err).toMatchObject({ status: 409, apiCode: "egress_off" });
   });
 });
+
+// TRƏS-01 F1 — the ledger, a stay, its preview, the hand and the two maps (tres/deliveries.py, tres/maps.py)
+describe("TRƏS-01 F1 calls", () => {
+  it("each goes to its route with its method, its query and the session's token", async () => {
+    store.set("homunculus-access-token", "acc-1");
+    store.set("homunculus-refresh-token", "ref-1");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    const api = createBackendApi({ baseUrl: "", fetchImpl: fetchMock });
+    const stay = "66666666-6666-4666-8666-666666666601";
+    await api.tresDeliveries();
+    await api.tresDeliveries({ status: "stuck", type: "vital", admission: stay, cursor: "abc" });
+    await api.tresStay("202600000101");
+    await api.tresPreview(stay);
+    await api.sendTresStay(stay);
+    await api.retryTresDelivery("77777777-7777-4777-8777-777777777701");
+    await api.tresDepartments();
+    await api.saveTresDepartments([{ unit_id: "u-1", code: "RE-01", display: "Reanimasiya" }]);
+    await api.tresPractitioners();
+    await api.saveTresPractitioner("88888888-8888-4888-8888-888888888801", { family_name: "Sentetikov", given_name: "Elçin" });
+    expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init.method])).toEqual([
+      ["/admin/tres/deliveries", "GET"],
+      [`/admin/tres/deliveries?status=stuck&type=vital&admission=${stay}&cursor=abc`, "GET"],
+      ["/admin/tres/admissions?key=202600000101", "GET"],
+      [`/admin/tres/admissions/${stay}/preview`, "GET"],
+      [`/admin/tres/admissions/${stay}/send`, "POST"],
+      ["/admin/tres/deliveries/77777777-7777-4777-8777-777777777701/retry", "POST"],
+      ["/admin/tres/departments", "GET"],
+      ["/admin/tres/departments", "PUT"],
+      ["/admin/tres/practitioners", "GET"],
+      ["/admin/tres/practitioners/88888888-8888-4888-8888-888888888801", "PUT"],
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[7][1].body)).toEqual({
+      departments: [{ unit_id: "u-1", code: "RE-01", display: "Reanimasiya" }] });
+    expect(JSON.parse(fetchMock.mock.calls[9][1].body)).toEqual({ family_name: "Sentetikov", given_name: "Elçin" });
+    for (const [, init] of fetchMock.mock.calls) expect(init.headers.Authorization).toBe("Bearer acc-1");
+  });
+});

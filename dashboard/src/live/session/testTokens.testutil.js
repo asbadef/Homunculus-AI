@@ -118,6 +118,16 @@ export function fakeApi(vi, { access = null } = {}) {
     tresSettings: vi.fn(),
     saveTresSettings: vi.fn(),
     testTres: vi.fn(),
+    // TRƏS-01 F1: the panels «Gönderimler», «Bölüm eşleme», «Hekim kimlikleri» (screens/admin/Tres*.jsx)
+    tresDeliveries: vi.fn(),
+    tresStay: vi.fn(),
+    tresPreview: vi.fn(),
+    sendTresStay: vi.fn(),
+    retryTresDelivery: vi.fn(),
+    tresDepartments: vi.fn(),
+    saveTresDepartments: vi.fn(),
+    tresPractitioners: vi.fn(),
+    saveTresPractitioner: vi.fn(),
     // G2-B1c: the patient screen's «Bakım ekibi» box and its dialog
     careTeam: vi.fn(),
     careTeamCandidates: vi.fn(),
