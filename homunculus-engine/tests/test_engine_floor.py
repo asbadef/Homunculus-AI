@@ -170,3 +170,81 @@ class TestTheFloorIsPerPatientMemory:
         assert other._judged_at[PID] == _at(120)
         other.forget(PID)
         assert PID not in other._judged_at
+
+
+class TestTheAnchor:
+    def test_anchor_at_is_the_anchor_of_a_recognition_the_reading_completes(self):
+        # The link's two instants (D2, D4): judged at the link, +360, anchored at the measurement, +0. Infection
+        # was charted at -60; the linked bilirubin of 3.0 completes sepsis.
+        eng = Engine()
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, -60)
+        eng.ingest(_obs(SignalCode.BILIRUBIN, 3.0, 0), now=_at(360), anchor_at=_at(0))
+        assert eng.recognized_at(PID) == _at(0)
+        assert eng._judged_at[PID] == _at(360)
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 300 min"
+
+    def test_an_anchor_at_later_than_the_judgement_is_held_to_it(self):
+        # `min(anchor_at, at)`: a guard — every caller passes anchor_at <= now.
+        eng = Engine()
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 0)
+        eng.ingest(_obs(SignalCode.BILIRUBIN, 3.0, 0), now=_at(10), anchor_at=_at(30))
+        assert eng.recognized_at(PID) == _at(10)
+
+    def test_anchor_at_is_not_a_judgement_instant(self):
+        # A reading whose anchor_at is far back judges nothing there: the floor is `now`'s.
+        eng = Engine()
+        _door(eng, SignalCode.HEART_RATE, 80, 120)
+        eng.ingest(_obs(SignalCode.SPO2, 97, -240), now=_at(130), anchor_at=_at(-240))
+        assert eng._judged_at[PID] == _at(130)
+        assert eng.recognized_at(PID) is None
+
+
+class TestTheRestoreRule:
+    """G2-A1 X12, measured between floored instants (D2): a recognition restores a dropped anchor only within
+    ANCHOR_RESTORE_S after the drop, in the engine's own one-way time; a negative difference never restores."""
+
+    def test_a_back_dated_recognition_after_a_rule_out_does_not_inherit_the_old_episodes_doses(self):
+        # The old episode: anchored at +0, the antibiotic given at +20, ruled out at +71. SOFA back to normal at
+        # +100; a new infection charted at +126 with SOFA not met. A bilirubin measured at +60 — the only one —
+        # arrives at +130 and completes SOFA. Compared on requested instants, +60 - +71 is negative and "within"
+        # the window: the +0 anchor came back, and the dose of +20 silenced the new episode's clock.
+        eng = Engine()
+        _sepsis(eng, 0)
+        _door(eng, SignalCode.ANTIBIOTIC_ADMINISTERED, 1.0, 20)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 0.0, 71)
+        assert eng.recognized_at(PID) is None and eng._dropped_anchor[PID] == (_at(0), _at(71))
+        for code, value in [(SignalCode.PLATELETS, 200), (SignalCode.CREATININE, 0.8)]:
+            _door(eng, code, value, 100)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 126)
+        assert "sepsis" not in _kinds(eng)
+        _door(eng, SignalCode.BILIRUBIN, 3.0, 60, wall=130)
+        assert "sepsis" in _kinds(eng)
+        assert eng.recognized_at(PID) == _at(60), "55 floored minutes after the drop: a new episode's own anchor"
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 6 min", \
+            "judged at +126; the dose of +20 was before the new anchor"
+        assert PID not in eng._dropped_anchor, "the remembered drop is spent"
+
+    def test_a_corrected_toggle_whose_completing_mark_is_back_dated_restores_the_anchor(self):
+        # Overdue by 10 at +70; infection charted absent at +71, a pulse at +78, and the correction — present
+        # again — stamped +72 arrives at +80. Seven floored minutes after the drop: the same episode.
+        eng = Engine()
+        _sepsis(eng, 0)
+        _door(eng, SignalCode.PLATELETS, 80, 70)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 0.0, 71)
+        _door(eng, SignalCode.HEART_RATE, 80, 78)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 72, wall=80)
+        assert eng.recognized_at(PID) == _at(0)
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 18 min"
+
+    def test_a_drop_is_remembered_at_its_floored_instant(self):
+        # The rule-out itself back-dated: infection charted absent at +50 arrives at +71, on a patient judged up to
+        # +71. The drop is remembered at +71, and a recognition at +80 is nine minutes after it — a correction.
+        # Remembered at its stamp, +50, it was thirty minutes before, and the overdue hour started again.
+        eng = Engine()
+        _sepsis(eng, 0)
+        _door(eng, SignalCode.HEART_RATE, 80, 71)
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 0.0, 50, wall=71)
+        assert eng._dropped_anchor[PID] == (_at(0), _at(71))
+        _door(eng, SignalCode.SUSPECTED_INFECTION, 1.0, 80)
+        assert eng.recognized_at(PID) == _at(0)
+        assert _summary(eng, "antibiotic_overdue") == "Antibiotic OVERDUE by 20 min"

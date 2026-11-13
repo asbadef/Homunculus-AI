@@ -52,7 +52,8 @@ class Engine:
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
         self._recognized_at: dict[str, datetime] = {}
-        # X12: an anchor dropped by infection charted absent -> (anchor, when it was dropped).
+        # X12: an anchor dropped by infection charted absent -> (anchor, the floored instant it was
+        # dropped at; G3-06 D2).
         self._dropped_anchor: dict[str, tuple[datetime, datetime]] = {}
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
         # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
@@ -86,15 +87,19 @@ class Engine:
         from homunculus.model.scorer import Scorer
         self._scorer = Scorer(artifact)
 
-    def ingest(self, obs: Observation, now: datetime) -> list[Alert]:
+    def ingest(self, obs: Observation, now: datetime, *, anchor_at: datetime | None = None) -> list[Alert]:
         """Add one reading and evaluate its patient. `now` is the REQUESTED instant — the doors'
         min(stamp, wall clock) (G2-A2, X10), the replay's min(stamp, the row's write time) (X10b) —
-        and the rules judge at its floor (`_evaluate`, G3-06 D1). The reading keeps its own stamp."""
+        and the rules judge at its floor (`_evaluate`, G3-06 D1). The reading keeps its own stamp.
+        `anchor_at` is the anchor of a recognition this reading completes (D2): None is `now`, the
+        doors' one instant; a linked reading is judged at the link and anchored at its measurement
+        (D4)."""
         state = self._repo.get_or_create(obs.patient_id)
         state.ingest(obs)
-        return self._evaluate(obs.patient_id, state, now)
+        return self._evaluate(obs.patient_id, state, now, now if anchor_at is None else anchor_at)
 
-    def _evaluate(self, patient_id: str, state: PatientState, requested: datetime) -> list[Alert]:
+    def _evaluate(self, patient_id: str, state: PatientState, requested: datetime,
+                  anchor_at: datetime) -> list[Alert]:
         """One evaluation of `patient_id` as its state stands. Every rule judges at `at`, the
         requested instant floored at the patient's last judgement (G3-06, D1; NEWS2's since G2-A2,
         X9e): a reading stamped in the past is information about the past, not a reason to judge the
@@ -128,11 +133,14 @@ class Engine:
         #    reads the latest MAP, so a single reading at 70 or above (MAP 70 scores 0) stops
         #    `sepsis` for one evaluation, and an anchor dropped then would let an untreated sepsis
         #    never go overdue, or give a treated one a false overdue when it came back.
-        #  - A dropped anchor is remembered with the time of its drop (X12). A recognition within
-        #    ANCHOR_RESTORE_S (15 min) of the drop restores the old anchor: infection charted absent
-        #    and present again is a corrected toggle, the same episode, and an antibiotic charted in
-        #    the gap counts against the restored hour. A later recognition gets its own anchor,
-        #    `now`.
+        #  - A dropped anchor is remembered with the floored instant of its drop (X12; G3-06, D2). A
+        #    recognition within ANCHOR_RESTORE_S (15 min) after the drop, floored instant to floored
+        #    instant, restores the old anchor: infection charted absent and present again is a
+        #    corrected toggle, the same episode, and an antibiotic charted in the gap counts against
+        #    the restored hour. A later recognition gets its own anchor: `anchor_at` — the requested
+        #    instant at the doors, the reading's measurement at the link (D4) — never after `at`.
+        #    Requested instants can run backwards; compared on them, a back-dated recognition
+        #    "before" the drop restored the anchor however long ago the rule-out was.
         #  - The antibiotic findings are emitted only while a recognition kind fires in THIS
         #    evaluation, so they leave the board with the sepsis alert (D9); the clock keeps
         #    counting underneath, and a sepsis that fires again shows the true elapsed time.
@@ -140,11 +148,11 @@ class Engine:
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
             if patient_id not in self._recognized_at:
-                self._recognized_at[patient_id] = self._new_anchor(patient_id, requested)
+                self._recognized_at[patient_id] = self._new_anchor(patient_id, min(anchor_at, at), at)
         elif infection is None or infection.value < 1.0:
             dropped = self._recognized_at.pop(patient_id, None)
             if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
-                self._dropped_anchor[patient_id] = (dropped, requested)
+                self._dropped_anchor[patient_id] = (dropped, at)
 
         findings += antibiotic_clock.evaluate(
             state, self._recognized_at.get(patient_id) if recognizing else None, at
@@ -272,13 +280,17 @@ class Engine:
         stale = vitals + [label for labels in charts.values() for label in labels]
         return replace(kept, clinical_reasoning=kept.clinical_reasoning + note, stale_inputs=stale)
 
-    def _new_anchor(self, patient_id: str, now: datetime) -> datetime:
-        """The anchor of a recognition with none running (X12): the anchor dropped at most
-        ANCHOR_RESTORE_S ago, restored, or else `now`. Either way the remembered drop is spent."""
+    def _new_anchor(self, patient_id: str, anchor: datetime, at: datetime) -> datetime:
+        """The anchor of a recognition with none running (X12; G3-06, D2): the anchor dropped at
+        most ANCHOR_RESTORE_S before `at`, restored, or else `anchor`. `at` is the recognising
+        evaluation's floored instant and the drop is remembered at its own, so the difference is
+        measured in the engine's one-way time; within one engine the floor never goes back, and
+        `forget`, `copy` and `adopt` move `_judged_at` and `_dropped_anchor` together, so it is
+        never negative — the `0 <=` is a guard. Either way the remembered drop is spent."""
         dropped = self._dropped_anchor.pop(patient_id, None)
-        if dropped is not None and (now - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
+        if dropped is not None and 0 <= (at - dropped[1]).total_seconds() <= ANCHOR_RESTORE_S:
             return dropped[0]
-        return now
+        return anchor
 
     def active_alerts(self, patient_id: str) -> list[Alert]:
         return list(self._alerts.get(patient_id, {}).values())
