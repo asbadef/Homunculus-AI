@@ -16,7 +16,9 @@ değiştirmez, alarm susturmaz.
 
 **1. USB belleğe koy.** Bu klasörün tamamı (`medibus/`) + `homunculus-engine/src/homunculus/`
 (köprü onu yan klasörde arar) + Python 3.12 kurulumu + çevrimdışı pyserial wheel'i
-(`pip download pyserial` ile indir, sahada `pip install pyserial-*.whl`).
+(`pip download pyserial` ile indir, sahada `pip install pyserial-*.whl`). İki klasörü aynı sürümden, birlikte
+kopyala: makinede ayrıca kurulu bir `homunculus` paketi varsa `run.py` onu yan klasöre tercih eder, ve eski bir
+paketle köprü açılmayabilir.
 
 **2. Adaptörü test et — ventilatöre dokunmadan.** USB-seri adaptörün DB-9 ucunda 2 ile 3 numaralı
 pinleri bir ataşla köprüle, sonra:
