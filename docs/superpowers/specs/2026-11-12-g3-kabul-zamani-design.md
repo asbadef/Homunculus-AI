@@ -64,8 +64,8 @@ behaves exactly as today.
 4. The attending is a physician (`:522–524`), 422.
 5. **new** `form.check_admission_time(at, now=now)`: 422 `field_invalid:admission_datetime` when
    `at < now − BACKDATE_MAX`. `now` is the route's (`:495`). *(As built, final review: the same step goes on with
-   `form.check_admission_not_before_birth` — the same 422 when the DATE of `at` in the hospital's zone is before the
-   patient's date of birth; §11.)*
+   `form.check_admission_not_before_birth` — the same 422 when the DATE of `at` in the hospital's zone is more than a day
+   (`BIRTH_SLACK`) before the patient's date of birth; §11.)*
 6. One open admission per person (`:525–527`), 409 `duplicate_open_admission`.
 7. `bed_closed` (`:528–529`); `bed_reserved` without the confirmation (`:534–536`).
 8. **new** The bed bound (D3): only for a bed AVAILABLE or RESERVED; a RESERVED bed reaches this step only with
@@ -436,7 +436,8 @@ no environment variable, no route, no permission, no event type.
 | D1 — the guide, the roadmap row, this section | `1397d8a8` |
 | Final review polish — the dashboard (hint wording, the refusal's scope) | `f274d9d4` |
 | Final review polish — the engine's birth-date guard, the 422's widened words | `48ab42de` |
-| Final review polish — the guide, this section, the plan's «As run» | the docs commit after `48ab42de` |
+| Final review polish — the guide, this section, the plan's «As run» | `c6567f32` |
+| The birth-date guard allows a day's margin (a tenant zone never blocks a newborn) | the commit after `c6567f32` |
 
 What differs from the design above (the plan's departures, E-1 … E-7, and the reviews):
 
@@ -479,17 +480,22 @@ What differs from the design above (the plan's departures, E-1 … E-7, and the 
 4. **The guide** (§3.8, §3.27) says what the bound is on each path: the «Temizlik bitti · boş» press for a bed that was
    cleaned; the reservation's start for a reserved bed; the moment of the un-reserve or the return to service for a bed
    that went that way; the form's hint shows the real time.
-5. **A time on a day before the birth is refused** (the NICU). `form.check_admission_not_before_birth(admitted_on,
-   born=)`: 422 `field_invalid:admission_datetime` when the DATE of the time sent, in the hospital's own zone, is before
-   the date of birth; the birth day passes, and a form that sent no time is not asked. The route runs it right after
+5. **A time more than a day before the birth is refused** (the NICU). `form.check_admission_not_before_birth(
+   admitted_on, born=)`: 422 `field_invalid:admission_datetime` when the DATE of the time sent, in the hospital's own
+   zone, is more than `BIRTH_SLACK` (a day, the birth date's own margin) before the date of birth; the birth day and the
+   day before it pass, and a form that sent no time is not asked. The route runs it right after
    `check_admission_time`, so also after the look-up of an earlier send, and reads the date with
-   `hospital_today(zone, sent_at)` — the mechanism of the birth date's own `today` (A-10). A child born at 00:30 local
-   and admitted at 00:40 is not refused for the UTC date being the day before, when the tenant's zone is set. Tests: the
-   rule (no database, `test_admission_form.py`) and the route (`test_admission_time.py`, Asia/Baku by a stand-in zone
-   database as `test_admission_api.py` does: 00:30 on the birth day passes, 23:30 the day before is refused, and the
-   same instant under a UTC tenant is refused). The dashboard's words for the code widen in four languages: tr «Kabul
-   zamanı geçerli değil (gelecekte, 6 saatten eski ya da doğum tarihinden önceki bir günde olamaz).» The form does not
-   bound the field by the birth date: the server's refusal is said under the field (item 2).
+   `hospital_today(zone, sent_at)` — the mechanism of the birth date's own `today` (A-10). **The margin is there so no
+   tenant zone can block a newborn:** `Tenant.timezone` is «UTC» until set and unchecked when written (A-16), and a
+   strict date test would refuse a child born at 00:30 local and admitted at 00:40 under a «UTC» tenant. The guard
+   still catches a gross back-dating error (two days or more before the birth). Tests: the rule (no database,
+   `test_admission_form.py`: the edge, the day after, two days before) and the route (`test_admission_time.py`,
+   Asia/Baku by a stand-in zone database as `test_admission_api.py` does: the birth day and the day before pass under a
+   Baku tenant and under a UTC tenant; a time two days before the birth is refused). The dashboard's words for the code
+   widen in four languages: tr «Kabul zamanı geçerli değil (gelecekte, 6 saatten eski ya da doğum tarihinden önceki bir
+   günde olamaz).» The form does not bound the field by the birth date: the server's refusal is said under the field
+   (item 2). *(First built without the margin — a strict date test, `48ab42de` — and loosened by the commit after
+   `c6567f32`.)*
 
 The open item of §5 is settled: the Kabul screen is under the shell's `BoardProvider` (`LiveApp.jsx` wraps every phase
 in it), so the field's clock is `useBoardNow`, the server-corrected one.
@@ -519,7 +525,9 @@ suite): dashboard `src/live/screens/kabul` + `src/live/i18n` 26 files, **522 pas
 `admitForm.test.js`, `admitDraft.test.jsx`, `apiErrors.test.js`, `strings.test.js` alone: 442 — the polish adds 4 tests
 to `AdmitTab.test.jsx`); engine, no database, `test_admission_form.py` **154 passed** (+2); Postgres (`kabulz-pg`, stopped
 after) `test_admission_time.py` **24 passed** (+3), `test_admission_api.py -k "date or time or newborn or hospital"` 5
-passed, 1 skipped. A whole-suite run, and the build's precache line, are the controller's.
+passed, 1 skipped. After the margin (the commit after `c6567f32`): `test_admission_form.py` 154 passed,
+`test_admission_time.py` **26 passed** (the birth test now has five cases), dashboard `src/live/screens/kabul` 14 files,
+**416 passed**. A whole-suite run, and the build's precache line, are the controller's.
 
 **Open, for the owner:**
 
@@ -533,10 +541,10 @@ passed, 1 skipped. A whole-suite run, and the build's precache line, are the con
 5. **A transfer's arrival time is not back-datable** (§9, D7); Doluluk's tile and the bed card show the save, not the
    stay's start (O1).
 6. **The az/ru/en strings await a native reader** (O5).
-7. **The birth-date guard reads the tenant's time zone** (`Tenant.timezone`, «UTC» until set; the walk's seeded tenant is
-   still «UTC»). In a Baku hospital left on «UTC», a child born between 00:00 and 03:59 local and admitted in that window
-   with a typed «Kabul zamanı» is refused, the UTC date being the day before the birth. An untouched field sends no
-   time and is never asked. The tenant's zone should be set before the ward uses the field.
+7. **The birth-date guard has a day's margin, so no admission can be blocked by the tenant's time zone** (`Tenant.timezone`
+   is «UTC» until set; the walk's seeded tenant is still «UTC»). It refuses only a time more than a day before the date
+   of birth, so it catches errors of more than a day and nothing finer; a time up to a day before the birth is accepted
+   whatever the zone. An untouched field sends no time and is never asked.
 8. **A device set under the patient's OWN number, measured before the back-dated stay began, is recorded on the stay**
    (walk O-1; below). Only the link checks the stay's start; ingest under a live number checks none (G3-05's door,
    unchanged here).

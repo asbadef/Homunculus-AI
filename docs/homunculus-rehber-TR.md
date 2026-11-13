@@ -2836,8 +2836,9 @@ sözüyle çıkar, ikisinde de henüz yok. Örneklerdeki adlar uydurmadır.
     zaman en çok 6 saat geriye gider; yatağın boşaldığı andan («Temizlik bitti · boş»a basıldığı an; rezerve bir
     yatakta rezervin başladığı an, rezervi kaldırılmış ya da kullanıma açılmış bir yatakta o işlemin yapıldığı an —
     formun ipucu gerçek saati gösterir; bu yüzden düğmeye temizlik bittiği anda basılır) ve aynı hastanın son
-    taburcusundan önce olamaz; ayrıca hastanın doğum tarihinden önceki bir güne (hastanenin kendi saatiyle) denk
-    gelemez. Yatış o andan başlar: seçilen
+    taburcusundan önce olamaz; ayrıca hastanın doğum tarihinden bir günden fazla önce olamaz (hastanenin kendi
+    saatiyle; bir günlük pay, hastanenin saat dilimi yanlış tanımlı olsa bile yenidoğanın kabulünü engellemez, yalnız
+    büyük bir geri tarih hatasını yakalar). Yatış o andan başlar: seçilen
     zamandan 2 dakika öncesinden itibaren ölçülmüş bir set bağlanabilir. Bu pencerede hastanın kendi numarasıyla
     ölçülmüş bir seti yalnız o hastayı görenler görür. Bedeli: başka bir servisin bir sonraki numarayla yanlış girdiği
     ve bu pencerede ölçülmüş bir tur da bu hastaya bağlanabilir hâle gelir; bağlamadan önceki kimlik sorusu ve cihazın

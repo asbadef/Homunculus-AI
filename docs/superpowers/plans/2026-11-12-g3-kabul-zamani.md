@@ -2739,6 +2739,12 @@ Then report to Lane A that the branch is ready for the owner's «main'e al», wi
   `test_admission_api.py -k "date or time or newborn or hospital"` 5 passed, 1 skipped. The guide's §3.8 and §3.27 say
   what the bed bound is on each path and name the birth-date rule. A whole-suite re-run and the build's precache line
   are the controller's.
+- The birth-date guard loosened (the commit after `c6567f32`, «the birth-date guard allows a day's margin»): refused
+  only when the hospital's date of the time sent is MORE than a day (`BIRTH_SLACK`) before the date of birth, so no
+  tenant zone — «UTC» until set — can block a newborn's admission; it still catches a gross back-dating error. The
+  Postgres route test is five cases (birth day and the day before pass under Baku and UTC tenants; two days before is
+  refused). Gates: `test_admission_form.py` 154 passed; `test_admission_time.py` 26 passed on `kabulz-pg` (stopped
+  after); dashboard `src/live/screens/kabul` 14 files, 416 passed. The guide's §3.27 says «bir günden fazla önce».
 
 ---
 

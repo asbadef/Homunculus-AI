@@ -6,8 +6,8 @@
 - Sent, the time is the row's and the answer's, and the audit row says `backdated`; the card's identity
   stamp stays the save's (D6, §4.2).
 - Six hours back at most (D2): 422 `field_invalid:admission_datetime`, nothing spent.
-- Not on a day before the date of birth (final review, the NICU): the same 422, the time's date read in the
-  hospital's own zone.
+- Not more than a day before the date of birth (final review, the NICU): the same 422, the time's date read
+  in the hospital's own zone, with the birth date's day of margin so a tenant zone never blocks a newborn.
 - Not before the bed became free (D3): 409 `admitted_before_bed_free`, for a bed AVAILABLE or RESERVED.
 - Not before this person's last discharge (D4): 409 `admitted_before_discharge`; a moved stay binds by its
   last row; another person and a row without a digest bind nothing.
@@ -184,24 +184,28 @@ async def test_six_hours_less_a_minute_is_taken_and_a_minute_more_is_refused_spe
 BORN_NIGHT = datetime(2026, 3, 1, 21, 30, tzinfo=timezone.utc)   # 01:30 on 2 March in Baku (UTC+4)
 
 
-@pytest.mark.parametrize(("zone", "at", "status"), [
-    ("Asia/Baku", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 201),   # 00:30 on 2 March: the birth day
-    ("Asia/Baku", datetime(2026, 3, 1, 19, 30, tzinfo=timezone.utc), 422),   # 23:30 on 1 March: the day before
-    ("UTC", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 422),         # the same instant: UTC's date is the 1st
+@pytest.mark.parametrize(("zone", "born", "at", "status"), [
+    # born on 2 March, the form sent at 01:30 Baku time (21:30 UTC on the 1st):
+    ("Asia/Baku", "2026-03-02", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 201),   # 00:30 on the 2nd: the birth day
+    ("Asia/Baku", "2026-03-02", datetime(2026, 3, 1, 19, 30, tzinfo=timezone.utc), 201),   # 23:30 on the 1st: a day's margin
+    ("UTC", "2026-03-02", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 201),         # a wrong zone: UTC's date is the 1st
+    ("UTC", "2026-03-02", datetime(2026, 3, 1, 19, 30, tzinfo=timezone.utc), 201),
+    # born on the 3rd (a day ahead of Baku's date, which the form allows): the 1st is two days before
+    ("Asia/Baku", "2026-03-03", datetime(2026, 3, 1, 19, 30, tzinfo=timezone.utc), 422),
 ])
-async def test_a_time_on_a_day_before_the_birth_is_refused_by_the_hospitals_date(
-        ward, db_session, monkeypatch, zone, at, status):
-    """A child born on 2 March, the form sent at 01:30 Baku time with «Kabul zamanı» an hour or two back: the time
-    the form sends is judged by the hospital's own date (`hospital_today`, the tenant's zone), as the date
-    of birth itself is (A-10) — 422 `field_invalid:admission_datetime` when that date is before the
-    birth's, nothing written, nothing spent."""
+async def test_a_time_more_than_a_day_before_the_birth_is_refused_by_the_hospitals_date(
+        ward, db_session, monkeypatch, zone, born, at, status):
+    """The time the form sends is judged by the hospital's own date (`hospital_today`, the tenant's zone),
+    as the date of birth itself is (A-10), with the birth date's own day of margin: a newborn is never
+    refused for a tenant zone left on «UTC» — only a time more than a day before the birth is, 422
+    `field_invalid:admission_datetime`, nothing written, nothing spent."""
     w, client, _ = ward
     w.tenant.timezone = zone
     await db_session.commit()
     await _free_since(db_session, datetime(2026, 2, 1, tzinfo=timezone.utc))
     monkeypatch.setattr(admission_router, "ZoneInfo", _baku_only)
     monkeypatch.setattr(admission_router, "_now", lambda: BORN_NIGHT)
-    r = await _admit(w, client, at=at, patient={"date_of_birth": "2026-03-02"}, note={"weight_kg": 3.2})
+    r = await _admit(w, client, at=at, patient={"date_of_birth": born}, note={"weight_kg": 3.2})
     assert r.status_code == status, r.text
     if status == 422:
         assert _refusal(r) == (422, "field_invalid:admission_datetime")
