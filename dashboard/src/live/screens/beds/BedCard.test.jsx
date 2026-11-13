@@ -76,12 +76,12 @@ describe("the bed card — what it says, and what it refuses to", () => {
   });
 
   describe("the measured channels", () => {
-    it("shows the channels that have a value, with their units", () => {
-      card(entry("S-001", [], { ...reading({ heart_rate: 118, spo2: 91, resp_rate: 26, map: 58, sbp: 92, temperature: 38.4 }, 30) }));
+    it("shows the prototype's five columns — HR, MAP, SpO2, RR, temperature — with their values", () => {
+      const { container } = card(entry("S-001", [], { ...reading({ heart_rate: 118, spo2: 91, resp_rate: 26, map: 58, sbp: 92, temperature: 38.4 }, 30) }));
       expect(screen.getByText("118")).toBeInTheDocument();
       expect(screen.getByText("91")).toBeInTheDocument();
-      expect(screen.getByText("Nəbz")).toBeInTheDocument();
-      expect(screen.getAllByText("mmHg")).toHaveLength(2);     // systolic and mean
+      expect(screen.getByText("58")).toBeInTheDocument();
+      expect([...container.querySelectorAll("dl dt")].map((d) => d.textContent)).toEqual(["HR", "MAP", "SpO₂", "RR", "Hərarət"]);
     });
 
     it("a measured 0 is a finding, not a missing value", () => {
@@ -89,10 +89,12 @@ describe("the bed card — what it says, and what it refuses to", () => {
       expect(screen.getByText("0")).toBeInTheDocument();
     });
 
-    it("a channel with no value is left out rather than printed as a dash", () => {
+    it("a channel with no value keeps its column: a dash, read out as not measured", () => {
       const { container } = card(entry("S-001", [], { at: measured(30), vitals: { heart_rate: 78 } }));
-      expect(container.querySelectorAll("dl dt")).toHaveLength(1);
-      expect(screen.queryByText("SpO2")).toBeNull();
+      const cells = container.querySelectorAll("dl dd");
+      expect(cells).toHaveLength(5);
+      expect(cells[2].textContent).toMatch(/^—/);
+      expect(cells[2].querySelector(".sr-only")).not.toBeNull();
     });
 
     it("a card with nothing measured says that once, in a sentence", () => {
@@ -147,8 +149,8 @@ describe("the bed card — what it says, and what it refuses to", () => {
         at: measured(30),
         score: news2({ total: 4, partial: true, missing: ["respiration_rate", "temperature"] }),
       }));
-      expect(screen.getByText(/qismən/)).toBeInTheDocument();
-      expect(screen.getByText(/tənəffüs tezliyi, temperatur/)).toBeInTheDocument();
+      expect(screen.getByText("NEWS2 4 · qismən")).toBeInTheDocument();                 // the foot line
+      expect(screen.getByText(/tənəffüs tezliyi, temperatur/)).toBeInTheDocument();     // the details
     });
 
     it("a red parameter is stated as a fact and does NOT change the engine's level", () => {

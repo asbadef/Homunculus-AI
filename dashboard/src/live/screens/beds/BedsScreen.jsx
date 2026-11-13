@@ -419,7 +419,7 @@ export function BedsScreen() {
               {group.items.map((p) => (
                 <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
                   monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-                  draft={draftNumbers.has(p.patient_id)} />
+                  draft={draftNumbers.has(p.patient_id)} spark />
               ))}
             </ul>
           </section>

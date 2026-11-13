@@ -31,7 +31,10 @@ import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { patientFeedHealth } from "../common/feedHealth.js";
-import { measuredVitals } from "../common/vitals.js";
+import { VITALS, measuredVitals } from "../common/vitals.js";
+import { useTrends, measuredKeyOf } from "../patient/trends/useTrends.js";
+import { channelsOf } from "../patient/trends/cards.js";
+import { parsePoints } from "../patient/trends/trendGeometry.js";
 import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
 import { MonitorStrip } from "../common/MonitorStrip.jsx";
 import { ageText } from "../patient/ageText.js";
@@ -55,39 +58,67 @@ function Provenance({ patient }) {
   );
 }
 
-/** Age and sex as the HIS sent them; a part the HIS did not send is left out, never guessed. */
+/** Age and sex as the HIS sent them, in the prototype's short form («52y E»); a part the HIS did
+ *  not send is left out, never guessed. */
 function AgeSex({ patient }) {
   const { t } = useI18n();
   const parts = [
     Number.isInteger(patient?.age) ? t("beds.ageYears", { age: patient.age }) : null,
-    patient?.sex === "female" || patient?.sex === "male" ? t(`kabul.sex.${patient.sex}`) : null,
+    patient?.sex === "female" || patient?.sex === "male" ? t(`beds.sexShort.${patient.sex}`) : null,
   ].filter(Boolean);
-  return parts.length ? <span className="mt-0.5 block text-12.5 text-mute">{parts.join(" · ")}</span> : null;
+  return parts.length ? <span className="mt-0.5 block text-12.5 text-mute">{parts.join(" ")}</span> : null;
 }
 
-/** The channels this bed HAS values for. A card with none says so once, instead of a row of
- *  dashes that repeats the same absence five times. */
+// The prototype's five columns (.vrow), in its order and with its short names. A channel not
+// measured on a card that has others reads «—»; a card with none says so once instead.
+const ROW = [
+  ["heart_rate", "HR"], ["map", "MAP"], ["spo2", "SpO₂"], ["resp_rate", "RR"], ["temperature", null],
+];
+
 function Vitals({ patient }) {
   const { t } = useI18n();
   const shown = measuredVitals(patient);
   if (shown.length === 0) {
-    return <p className="m-0 mt-2 text-12.5 text-mute">{t("beds.noVitals")}</p>;
+    return <p className="m-0 mt-3 text-12.5 text-mute">{t("beds.noVitals")}</p>;
   }
+  const byKey = new Map(shown.map((v) => [v.at, v]));
+  const meta = new Map(VITALS.map((v) => [v.at, v]));
   return (
-    <dl className="m-0 mt-3 flex flex-wrap gap-x-4 gap-y-2">
-      {shown.map((v) => (
-        <div key={v.at} className="min-w-[44px]">
-          <dt className={`text-10 font-bold uppercase leading-[normal] tracking-[.04em] ${v.color}`}>{t(v.labelKey)}</dt>
-          {/* The prototype's .vrow: the number large, the unit small beside it. */}
-          <dd className="m-0 font-data text-20 font-bold leading-tight text-ink">
-            {v.value}
-            <small className="ml-0.5 font-text text-10 font-semibold text-mute">{t(v.unitKey)}</small>
-          </dd>
-        </div>
-      ))}
+    <dl className="m-0 mt-3 grid grid-cols-5 gap-x-2">
+      {ROW.map(([key, short]) => {
+        const v = byKey.get(key);
+        return (
+          <div key={key} className="min-w-0">
+            <dt className={`text-10 font-bold leading-[normal] ${meta.get(key)?.color ?? "text-mute"}`}>{short ?? t("beds.tempShort")}</dt>
+            <dd className={`m-0 font-data text-20 font-bold leading-tight ${v ? "text-ink" : "text-mute"}`}>
+              {v ? v.value : "—"}
+              {v ? null : <span className="sr-only">{` ${t("board.notMeasured")}`}</span>}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
+
+/** The heart rate of the last hours as one line (the prototype's .spark), from the engine's own
+ *  trend read — never drawn from anything else. Too few readings: no line. */
+function Spark({ patient, tone }) {
+  const { data } = useTrends(patient?.patient_id, SPARK_HOURS, measuredKeyOf(patient?.measuredAt));
+  const pts = parsePoints(channelsOf(data).heart_rate?.points).filter((p) => Number.isFinite(p.ms) && Number.isFinite(p.value));
+  if (pts.length < 2) return null;
+  const xs = pts.map((p) => p.ms);
+  const vs = pts.map((p) => p.value);
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+  const [lo, hi] = [Math.min(...vs), Math.max(...vs)];
+  const line = pts.map((p) => `${(((p.ms - x0) / (x1 - x0 || 1)) * 100).toFixed(1)},${(20 - ((p.value - lo) / (hi - lo || 1)) * 16).toFixed(1)}`).join(" ");
+  return (
+    <svg aria-hidden="true" viewBox="0 0 100 22" preserveAspectRatio="none" className={`mt-1.5 block h-6 w-full ${railOf(tone).replace(/\bbg-/g, "text-")}`}>
+      <polyline points={line} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </svg>
+  );
+}
+const SPARK_HOURS = 6;
 
 /** The shadow tag's words: the score with its newest input's age, «none» from a live board only. */
 function shadowTagText(t, shadow, known, nowMs) {
@@ -129,7 +160,7 @@ function shadowTagText(t, shadow, known, nowMs) {
  *   shadow alone too (the strip may be momentarily unreadable), the strip part staying conditional on
  *   its own entry.
  */
-export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -186,14 +217,19 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
         ) : null}
 
         <Vitals patient={patient} />
+        {/* `spark`: the board turns it on; it reads trends through the session. */}
+        {spark ? <Spark patient={patient} tone={style.tone} /> : null}
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2 text-11 text-mute">
-          {/* G2-A2 (D10): the card's clock, so a stale input's age is the server's. */}
-          <News2 news2={patient?.news2} nowMs={nowMs} />
-          {last !== null ? <span>{t("board.measuredAt", { time: hhmm(last) })}</span> : null}
-          {stale > 0 ? <span className="text-att-ink">{t("beds.staleChannels", { count: stale })}</span> : null}
+        {/* The prototype's foot line: the score on the left, the last reading on the right. */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-11.5 text-mute">
+          <span>
+            {typeof patient?.news2?.total === "number"
+              ? `${t("board.news2")} ${patient.news2.total}${patient.news2.partial ? ` · ${t("board.news2Partial").toLocaleLowerCase()}` : ""}`
+              : t("beds.noScore")}
+          </span>
+          {stale > 0 ? <><span aria-hidden="true">·</span><span className="text-att-ink">{t("beds.staleChannels", { count: stale })}</span></> : null}
           <span className="ml-auto flex items-center gap-1">
-            <Icon name="user" size={12} />
+            {last !== null ? `${t("board.measuredAt", { time: hhmm(last) })} · ` : `${t("beds.lastNone")} · `}
             <Provenance patient={patient} />
           </span>
         </div>
@@ -203,22 +239,33 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           </p>
         ) : null}
       </a>
-      {monitor?.entry || patient?.shadow ? (
-        <div data-monitor-slot="" className="pb-3 pl-[18px] pr-3.5">
-          {monitor?.entry ? (
-            <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-              maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
-          ) : null}
-          {patient?.shadow ? (
-            <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
-              {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
-              <Tag tone="warn" className="!whitespace-normal">
-                {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
-              </Tag>
+      {/* Everything the engine adds beyond the prototype's card — the NEWS2 caveats, the monitor's
+          unvalidated strip, the shadow — kept one click away, never dropped. */}
+      <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5">
+        <summary className={`flex cursor-pointer list-none items-center gap-1 rounded text-11.5 font-semibold text-mute hover:text-ink ${FOCUS_RING}`}>
+          <Icon name="chevR" size={13} className="transition-transform group-open:rotate-90" />
+          {t("beds.details")}        </summary>
+        <div className="mt-2 flex flex-col gap-2">
+          {/* G2-A2 (D10): the card's clock, so a stale input's age is the server's. */}
+          <News2 news2={patient?.news2} nowMs={nowMs} />
+          {monitor?.entry || patient?.shadow ? (
+            <div data-monitor-slot="">
+              {monitor?.entry ? (
+                <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+                  maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
+              ) : null}
+              {patient?.shadow ? (
+                <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
+                  {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
+                  <Tag tone="warn" className="!whitespace-normal">
+                    {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
+                  </Tag>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
-      ) : null}
+      </details>
     </li>
   );
 }
