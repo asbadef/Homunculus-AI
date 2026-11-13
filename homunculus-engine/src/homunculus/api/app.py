@@ -50,7 +50,7 @@ from homunculus.api.clinical import (
     RETRACT_MIN_REASON_CHARS, RETRACT_NEEDS_PERSON, RETRACT_NOT_BEDSIDE, RETRACT_REASON_LONG, RETRACT_REASON_SHORT,
     RETRACT_UNKNOWN, RETRACTABLE_CODES, ClinicalEntryError, build_entries,
     chart_observations, profile_from_payload, profile_to_payload,
-    ISOLATION_CODES,                                              # G4-05: refused at /ingest (spec §5 M8)
+    ISOLATION_CODES, DROPPED_ISOLATION,                           # G4-05: not applied at /ingest (spec §5 M8, A7)
 )
 from homunculus.api.escalation import escalate
 from homunculus.api.identity import Caller, bounded_role
@@ -1949,11 +1949,16 @@ def create_app(
             obs = parse_fhir_observation(resource)
         except GatewayError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        # G4-05 (spec §5 M8): isolation is a clinician's record. A monitor or the HIS cannot decide it, so the four flags
-        # are refused right here — before the engine, the trail, the measurement record or the unmatched list hears of
-        # them. An inline literal: the dashboard's apiErrors.test.js reads it from this file and holds it mapped.
+        # G4-05 (spec §5 M8, A7): isolation is a clinician's record. A monitor or the HIS cannot decide it, so a flag from
+        # a device is not applied — right here, before the engine, the trail, the measurement record or the unmatched
+        # list hears of it. 200 with `dropped`, as a discharged or an unmatched number is answered: the input is
+        # well-formed and the server chose not to apply it. A 4xx would stop the bridge's serial uplink on this row and
+        # hold every reading queued behind it, for every patient (D18; the code review of 2026-11-13 proved it). The
+        # bridge's own tables never carry the four slugs (gateway/hl7.py, the site loaders); this answers any other
+        # sender. Logged with the code only — never the number or the value.
         if obs.code in ISOLATION_CODES:
-            raise HTTPException(status_code=400, detail="izolasyon bir klinisyen kaydıdır; cihazdan alınmaz")
+            log.warning("ingest: an isolation flag from a device was not applied (%s)", obs.code.value)
+            return {"patient_id": obs.patient_id, "dropped": DROPPED_ISOLATION}
         # G2-A11 (D3), as G3-05 (D4) changed it: a reading for a number whose admission here was discharged
         # never reaches the engine — no evaluation, no hook, no stamp, no frame, no notification. The owner's
         # decision (2026-10-26) stands: no alert and no page may come of it. Since G3-05 its VALUE is kept, in

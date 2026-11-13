@@ -28,7 +28,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from homunculus.canonical import SignalCode
+from homunculus.canonical import ISOLATION_CODES, SignalCode
 from homunculus.crypto import validate_key
 from homunculus.edge.bridge import EdgeBridge
 from homunculus.edge.buffer import SqliteBuffer
@@ -43,7 +43,8 @@ def load_mapping(path: str | None) -> dict[str, SignalCode] | None:
     """Read a site mapping file: {"<OBX code>": "<SignalCode slug>"}.
 
     Unknown slugs are a configuration error and stop startup — quietly ignoring one would drop a
-    signal for the whole pilot without anyone noticing.
+    signal for the whole pilot without anyone noticing. So is an isolation flag (G4-05, spec §5 A7):
+    isolation is a clinician's record, and no device mapping may carry it.
     """
     if not path:
         return None
@@ -54,6 +55,9 @@ def load_mapping(path: str | None) -> dict[str, SignalCode] | None:
             mapping[code] = SignalCode(slug)
         except ValueError:
             raise SystemExit(f"mapping {path}: unknown signal slug {slug!r} for OBX code {code!r}")
+        if mapping[code] in ISOLATION_CODES:
+            raise SystemExit(f"mapping {path}: {slug!r} for OBX code {code!r} is an isolation flag — a "
+                             "clinician's record, which no device mapping may carry")
     return mapping
 
 

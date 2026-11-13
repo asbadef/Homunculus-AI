@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from homunculus.canonical import Observation, SignalCode
+from homunculus.canonical import ISOLATION_CODES, Observation, SignalCode
 from homunculus.gateway.fhir import GatewayError
 
 
@@ -50,7 +50,8 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
 
     An unknown slug stops startup rather than dropping that signal for the whole pilot: a bridge
     that runs while quietly discarding blood pressure is worse than one that refuses to start and
-    says why.
+    says why. So does an isolation flag (G4-05, spec §5 A7): isolation is a clinician's record,
+    and no device mapping may carry it.
     """
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -64,6 +65,9 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
             raise SystemExit(
                 f"{path}: unknown signal slug {slug!r} for device field {name!r}"
             ) from None
+        if signals[name].signal in ISOLATION_CODES:
+            raise SystemExit(f"{path}: {slug!r} for device field {name!r} is an isolation flag — "
+                             "a clinician's record, which no device mapping may carry")
 
     pair_attributes: list[tuple[str, str]] = []
     for pair in raw.get("pair_attributes") or ():
@@ -82,6 +86,9 @@ def load_site_mapping(path: str | Path) -> SiteMapping:
             raise SystemExit(
                 f"{path}: unknown signal slug {slug!r} for HL7 code {code!r}"
             ) from None
+        if hl7_signals[code] in ISOLATION_CODES:
+            raise SystemExit(f"{path}: {slug!r} for HL7 code {code!r} is an isolation flag — "
+                             "a clinician's record, which no device mapping may carry")
 
     return SiteMapping(
         signals=signals,

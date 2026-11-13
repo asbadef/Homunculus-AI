@@ -13,7 +13,7 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 
-from homunculus.canonical import Observation, SignalCode
+from homunculus.canonical import ISOLATION_CODES, Observation, SignalCode
 from homunculus.gateway.fhir import GatewayError, to_utc  # shared gateway contract
 
 # HL7 DTM: YYYY[MM[DD[HH[MM[SS[.S[S[S[S]]]]]]]]][+/-ZZZZ]. The fraction is dropped, the offset kept.
@@ -21,7 +21,9 @@ _DTM = re.compile(r"^\s*(\d+)(?:\.\d+)?\s*(?:([+-])(\d{2})(\d{2}))?")
 
 # Default identifier table: OBX-3 code == our SignalCode slug. A per-hospital mapping table
 # (vendor OBX code -> SignalCode) is passed in for real sites and replaces this default.
-_DEFAULT_MAP = {c.value: c for c in SignalCode}
+# G4-05 (spec §5 A7): never the four isolation flags — a clinician's record, which no device may send. An OBX naming one
+# is unmapped here: dropped and counted, as any code nothing maps (edge/bridge.py `unmapped`).
+_DEFAULT_MAP = {c.value: c for c in SignalCode if c not in ISOLATION_CODES}
 
 
 def default_mapping() -> dict[str, SignalCode]:

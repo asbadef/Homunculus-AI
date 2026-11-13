@@ -65,6 +65,17 @@ class SignalCode(Enum):
     ISOLATION_PROTECTIVE = "isolation_protective"
 
 
+#: G4-05 (spec D3, D7, §5 M8, A7): the four isolation flags in the one order the board's `isolation` block, GET /infection
+#: and the dashboard follow — contact, droplet, airborne, protective. A flag's name on the card is its slug after
+#: `isolation_`. A clinician's record only: no device table carries them (gateway/hl7.py's default leaves them out; a
+#: site's table naming one stops the bridge at startup — scripts/run_bridge.py, edge/ncefiles.py, medibus), `/ingest`
+#: answers one from a device 200 and applies nothing, and the chart door refuses one from the device token
+#: (api/clinical.py ISOLATION_FROM_DEVICE). Defined here, not in api/, because the bridge runs on the standard library
+#: alone (tests/test_bridge_import_chain.py); api/clinical.py re-exports it.
+ISOLATION_CODES: tuple[SignalCode, ...] = (SignalCode.ISOLATION_CONTACT, SignalCode.ISOLATION_DROPLET,
+                                           SignalCode.ISOLATION_AIRBORNE, SignalCode.ISOLATION_PROTECTIVE)
+
+
 @dataclass(frozen=True)
 class Observation:
     """A single measurement or event, normalized. Immutable."""

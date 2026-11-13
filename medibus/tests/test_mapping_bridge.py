@@ -49,6 +49,15 @@ def test_mapping_rejects_unknown_signal_and_bad_code():
         SiteMapping.from_dict({"codepage1": {"XYZ": {"signal": "spo2", "unit": "%"}}})
 
 
+@pytest.mark.parametrize("table", ["codepage1", "codepage2", "settings"])
+def test_mapping_rejects_an_isolation_flag_in_every_table(table):
+    """G4-05 (spec §5 A7): isolation is a clinician's record. No device mapping may carry the four flags — a table that
+    names one stops startup, as an unknown signal does."""
+    for slug in ("isolation_contact", "isolation_droplet", "isolation_airborne", "isolation_protective"):
+        with pytest.raises(ValueError, match=f"{slug}.*isolation"):
+            SiteMapping.from_dict({table: {"EB": {"signal": slug}}})
+
+
 def test_mapping_codes_are_normalised_to_uppercase():
     mapping = SiteMapping.from_dict({"codepage1": {"eb": {"signal": "spo2", "unit": "%"}}})
     assert "EB" in mapping.codepage1

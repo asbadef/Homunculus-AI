@@ -33,7 +33,7 @@ from homunculus.api.ackstore import AckStore
 from homunculus.api.alert_lifecycle import live_keys, sync_alerts
 from homunculus.api.audit import AuditEvent, AuditLog
 from homunculus.api.notify import Notifier
-from homunculus.canonical import Observation, SignalCode
+from homunculus.canonical import ISOLATION_CODES, Observation, SignalCode   # G4-05: re-exported (A7)
 from homunculus.pipeline import Engine
 from homunculus.reco.engine import Alert
 from homunculus.rules.septic_shock import MAX_SOFA
@@ -103,8 +103,9 @@ CHARTABLE: dict[SignalCode, str] = {
     # G4-05 «Enfeksiyon kontrol» (spec D3, D7): the patient's isolation precautions — four flags, 1 or 0 (`_BOOLEAN`),
     # charted from the patient screen's «İzolasyon» box. Not withdrawable (they stay out of RETRACTABLE_CODES, and so
     # out of the measurement record): a flag is corrected by a new entry, as the suspected-infection mark is (X22). No
-    # rule reads them, and no device sends them (`/ingest` refuses them, spec §5 M8; this door refuses them from the
-    # device token, `ISOLATION_FROM_DEVICE`).
+    # rule reads them, and no device sends them: no bridge table carries them, `/ingest` applies none from a device
+    # (200, `DROPPED_ISOLATION`, spec §5 M8, A7), and this door refuses one from the device token
+    # (`ISOLATION_FROM_DEVICE`).
     SignalCode.ISOLATION_CONTACT: "bool",
     SignalCode.ISOLATION_DROPLET: "bool",
     SignalCode.ISOLATION_AIRBORNE: "bool",
@@ -215,15 +216,17 @@ RETRACT_UNKNOWN = "bu hastada böyle bir ölçüm değeri yok"
 RETRACT_ALREADY = "bu değer zaten hatalı giriş olarak işaretlenmiş"
 RETRACT_DISCHARGED = "taburcu edilmiş bir hastada değer geri alınamaz"
 
-#: G4-05 (spec D3, D7): the four isolation flags in the one order the board's `isolation` block, GET /infection and the
-#: dashboard follow — contact, droplet, airborne, protective. A flag's name on the card is its slug after `isolation_`.
-ISOLATION_CODES: tuple[SignalCode, ...] = (SignalCode.ISOLATION_CONTACT, SignalCode.ISOLATION_DROPLET,
-                                           SignalCode.ISOLATION_AIRBORNE, SignalCode.ISOLATION_PROTECTIVE)
+#: G4-05 (spec D3, D7): `ISOLATION_CODES` — the four isolation flags in their one order — is canonical.py's (the bridge
+#: reads it too, and runs without api/); imported above and re-exported here, where the API's modules take it from.
 #: G4-05 (spec §5 M8's intent, closed at the chart door too — the coordinator's decision of 2026-11-13): a monitor or
-#: the HIS cannot decide isolation, so `build_entries` refuses a flag from the bridge's device token, as `/ingest`
-#: refuses it from a device. One sentence for both doors: api/app.py's `/ingest` carries it as an inline literal, which
-#: the dashboard's apiErrors.test.js reads and holds mapped; test_isolation_chart.py holds the two equal.
+#: the HIS cannot decide isolation, so `build_entries` refuses a flag from the bridge's device token: 400 with this
+#: sentence, which the dashboard maps (apiErrors.js). The chart door is a request and its answer; the bridge's queue is
+#: not, and `/ingest` answers a device's flag 200 with `DROPPED_ISOLATION` instead (§5 A7).
 ISOLATION_FROM_DEVICE = "izolasyon bir klinisyen kaydıdır; cihazdan alınmaz"
+#: G4-05 (spec §5 A7, code review 2026-11-13): `/ingest`'s `dropped` word for an isolation flag from a device — a
+#: well-formed observation the server chose not to apply, answered 200 as a discharged or an unmatched number is, so
+#: the bridge's serial uplink never stalls behind it (D18). Nothing of it is written.
+DROPPED_ISOLATION = "isolation"
 
 # The flags are recorded as 1.0 / 0.0; anything else is a caller error rather than a value.
 _BOOLEAN = {SignalCode.SUSPECTED_INFECTION, SignalCode.ANTIBIOTIC_ADMINISTERED,

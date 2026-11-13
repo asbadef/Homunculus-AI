@@ -23,7 +23,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from homunculus.canonical import SignalCode
+from homunculus.canonical import ISOLATION_CODES, SignalCode
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,10 @@ def _table(raw: dict, name: str) -> dict[str, Entry]:
             raise ValueError(
                 f"{name}/{code}: unknown signal {spec.get('signal')!r} — must be one of "
                 f"{[s.value for s in SignalCode]}") from None
+        if signal in ISOLATION_CODES:
+            # G4-05 (spec §5 A7): isolation is a clinician's record; no device mapping may carry it.
+            raise ValueError(f"{name}/{code}: {signal.value!r} is an isolation flag — a clinician's record, "
+                             "which no device mapping may carry")
         out[code] = Entry(signal, str(spec.get("unit", "")), float(spec.get("scale", 1.0)))
     return out
 
