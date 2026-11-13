@@ -117,7 +117,7 @@ def _internals(c, pid="bed-3"):
     held = e._held_news2_alert.get(pid)
     return {"readings": readings, "recognized_at": e._recognized_at.get(pid), "dropped": e._dropped_anchor.get(pid),
             "alerts": sorted((k, a.severity, a.urgency, a.summary) for k, a in e._alerts.get(pid, {}).items()),
-            "held": held and held.summary, "judged": e._news2_judged_at.get(pid), "profile": e._profiles.get(pid)}
+            "held": held and held.summary, "judged": e._judged_at.get(pid), "profile": e._profiles.get(pid)}
 
 
 def _view(card):

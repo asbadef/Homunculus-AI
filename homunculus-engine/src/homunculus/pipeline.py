@@ -47,7 +47,7 @@ class Engine:
     #: this list would be kept by a discharged patient and lost by a shadow copy, so a test pins
     #: the list against the instance's dicts.
     _PER_PATIENT = ("_recognized_at", "_dropped_anchor", "_alerts", "_held_news2_alert",
-                    "_news2_judged_at", "_profiles")
+                    "_judged_at", "_profiles")
 
     def __init__(self, repository: PatientRepository | None = None):
         self._repo = repository or InMemoryPatientRepository()
@@ -57,8 +57,9 @@ class Engine:
         self._alerts: dict[str, dict[str, Alert]] = {}   # patient -> kind -> alert
         # G2-A2 X9b: patient -> the NEWS2 alert a running hold keeps, as it was last scored.
         self._held_news2_alert: dict[str, Alert] = {}
-        # G2-A2 X9e: patient -> the latest instant NEWS2 was judged at; it never goes back.
-        self._news2_judged_at: dict[str, datetime] = {}
+        # G3-06 (D1; NEWS2's since G2-A2 X9e): patient -> the latest instant the rules judged the patient
+        # at. It never goes back, and every rule of an evaluation judges at it (`_evaluate`).
+        self._judged_at: dict[str, datetime] = {}
         self._profiles: dict[str, PatientProfile] = {}
         self._scorer = None   # optional ML seam; inert until set_model loads an artifact
 
@@ -86,27 +87,35 @@ class Engine:
         self._scorer = Scorer(artifact)
 
     def ingest(self, obs: Observation, now: datetime) -> list[Alert]:
+        """Add one reading and evaluate its patient. `now` is the REQUESTED instant — the doors'
+        min(stamp, wall clock) (G2-A2, X10), the replay's min(stamp, the row's write time) (X10b) —
+        and the rules judge at its floor (`_evaluate`, G3-06 D1). The reading keeps its own stamp."""
         state = self._repo.get_or_create(obs.patient_id)
         state.ingest(obs)
+        return self._evaluate(obs.patient_id, state, now)
 
-        profile = self._profiles.get(obs.patient_id)
+    def _evaluate(self, patient_id: str, state: PatientState, requested: datetime) -> list[Alert]:
+        """One evaluation of `patient_id` as its state stands. Every rule judges at `at`, the
+        requested instant floored at the patient's last judgement (G3-06, D1; NEWS2's since G2-A2,
+        X9e): a reading stamped in the past is information about the past, not a reason to judge the
+        present as if it were the past. Judged at its stamp, a reading from four hours ago turned an
+        overdue antibiotic into «300 min remaining» and ended the overdue's episode, and a vital stale
+        at the wall clock lifted NEWS2 again or ended a hold. The values keep their own stamps: the
+        state, freshness, trends and the audit's `obs_ts` do not move. The engine reads no clock — `at`
+        is only ever an instant a caller asked for."""
+        at = max(requested, self._judged_at.get(patient_id, requested))
+        self._judged_at[patient_id] = at
+
+        profile = self._profiles.get(patient_id)
         # The profile reaches septic_shock directly, not through patient_relative: a charted
         # baseline SOFA is part of the Sepsis-3 criterion itself, not a downgrade applied after
         # the fact. Getting it there late would mean the alert had already been raised.
-        findings = list(septic_shock.evaluate(state, now, profile))
-        # NEWS2 — the rule, the patient-relative layer and the hold — is judged no earlier than this
-        # patient's last NEWS2 judgement (G2-A2, X9e). The doors judge a reading at its own time,
-        # never past the wall clock (X10); a reading stamped in the past was judged at that past
-        # instant, where every later reading is fresh and a stale one not yet stale, and a vital
-        # stale at the wall clock lifted NEWS2 again — or ended a hold. `now` is unchanged for
-        # everything else: the antibiotic anchor, sepsis and shock, the model.
-        judge_at = max(now, self._news2_judged_at.get(obs.patient_id, now))
-        self._news2_judged_at[obs.patient_id] = judge_at
-        news2_findings = news2.evaluate(state, judge_at)
+        findings = list(septic_shock.evaluate(state, at, profile))
+        news2_findings = news2.evaluate(state, at)
         findings += news2_findings
         # Patient-relative layer: downgrade chronic-normal, surface acute deviation. At the same
         # instant NEWS2 was judged at (G2-A2, D6).
-        findings = patient_relative.apply(findings, state, profile, judge_at)
+        findings = patient_relative.apply(findings, state, profile, at)
 
         # The antibiotic clock (G2-A1, D9, X1, X9). Recognition is `sepsis` OR `septic_shock`: a
         # baseline SOFA charted during shock can take `sepsis` away while `septic_shock` still
@@ -130,20 +139,20 @@ class Engine:
         recognizing = any(f.kind in _RECOGNITION_KINDS for f in findings)
         infection = state.latest(SignalCode.SUSPECTED_INFECTION)
         if recognizing:
-            if obs.patient_id not in self._recognized_at:
-                self._recognized_at[obs.patient_id] = self._new_anchor(obs.patient_id, now)
+            if patient_id not in self._recognized_at:
+                self._recognized_at[patient_id] = self._new_anchor(patient_id, requested)
         elif infection is None or infection.value < 1.0:
-            dropped = self._recognized_at.pop(obs.patient_id, None)
+            dropped = self._recognized_at.pop(patient_id, None)
             if dropped is not None:      # an evaluation with no anchor to drop keeps the first drop's time
-                self._dropped_anchor[obs.patient_id] = (dropped, now)
+                self._dropped_anchor[patient_id] = (dropped, requested)
 
         findings += antibiotic_clock.evaluate(
-            state, self._recognized_at.get(obs.patient_id) if recognizing else None, now
+            state, self._recognized_at.get(patient_id) if recognizing else None, at
         )
 
         # Optional ML seam: an additive early-warning signal that NEVER overrides the rules.
         if self._scorer is not None:
-            risk, top = self._scorer.score(state, now)
+            risk, top = self._scorer.score(state, at)
             if risk >= self._scorer.threshold:
                 drivers = ", ".join(f"{n} {v:g}" for n, v in top) or "rising trend"
                 findings.append(Finding(
@@ -159,11 +168,11 @@ class Engine:
                     citations=[Citation("physionet-cinc-2019", "early-sepsis model, setting-specific")],
                 ))
 
-        alerts = [to_alert(f, obs.patient_id) for f in findings]
+        alerts = [to_alert(f, patient_id) for f in findings]
         alerts = [replace(a, source="model") if a.kind == "sepsis_watch" else a for a in alerts]
         # Staleness — a vital past its window, a chart past its shift (X11) — may withhold a new
         # NEWS2 alert but cannot end a running one (G2-A2, X9, X9b).
-        held = self._held_news2(obs.patient_id, bool(news2_findings), state, profile, judge_at)
+        held = self._held_news2(patient_id, bool(news2_findings), state, profile, at)
         if held is not None:
             alerts.append(held)
         # The bucket IS this evaluation (G2-A1, D1): exactly the kinds the rules produced for this
@@ -174,7 +183,7 @@ class Engine:
         # past its window (X12). What the API keeps of one (a
         # critical nobody acknowledged) is the API's business (api/alert_lifecycle.py), not the
         # engine's.
-        self._alerts[obs.patient_id] = {a.kind: a for a in alerts}
+        self._alerts[patient_id] = {a.kind: a for a in alerts}
         return alerts
 
     def _held_news2(self, patient_id: str, fired: bool, state: PatientState,
@@ -283,7 +292,7 @@ class Engine:
     def forget(self, patient_id: str) -> None:
         """Drop everything the engine holds for one patient (G2-A11, D9): readings, the alerts
         of the last evaluation, the antibiotic anchor and a dropped anchor's memory, a held NEWS2
-        alert, the NEWS2 judge-at and the charted profile. The API calls it when an admission made
+        alert, the instant the rules last judged it at (G3-06, D1) and the charted profile. The API calls it when an admission made
         here is discharged: the number is retired, and a reading that still arrives for it is
         dropped at the door, so nothing would ever end these alerts otherwise. A profile is the
         admission's — a readmission is a new number and a new profile. Idempotent."""

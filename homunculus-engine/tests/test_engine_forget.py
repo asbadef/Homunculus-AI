@@ -35,8 +35,8 @@ def test_forget_drops_state_alerts_anchor_and_profile():
     # The private maps are read on purpose: the test pins that forget clears every per-patient map
     # (spec D9), not only the ones the public accessors reach.
     maps = (engine._recognized_at, engine._dropped_anchor, engine._alerts,
-            engine._held_news2_alert, engine._news2_judged_at, engine._profiles)
-    assert all("bed-3" in m for m in (engine._news2_judged_at, engine._alerts,
+            engine._held_news2_alert, engine._judged_at, engine._profiles)
+    assert all("bed-3" in m for m in (engine._judged_at, engine._alerts,
                                       engine._recognized_at, engine._profiles))
 
     engine.forget("bed-3")

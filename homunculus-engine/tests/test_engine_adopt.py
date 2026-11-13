@@ -150,7 +150,7 @@ def test_copy_carries_every_per_patient_structure_and_shares_none_of_them():
     _put(shadow, "bed-4", SignalCode.SBP, 120, minute=241, source="infinity:x:sbp")
     _put(shadow, "bed-5", SignalCode.HEART_RATE, 150, minute=3, source="infinity:x:hr")
     assert _snapshot(real) == before
-    assert shadow._alerts != real._alerts and shadow._news2_judged_at != real._news2_judged_at
+    assert shadow._alerts != real._alerts and shadow._judged_at != real._judged_at
     assert shadow._recognized_at != real._recognized_at, "the shadow dropped bed-3's anchor, the real one kept it"
 
 
@@ -181,14 +181,14 @@ def test_adopt_replaces_one_patient_from_the_other_engine_and_leaves_the_rest():
     # D1: a monitor reading the shadow takes in afterwards stays in the shadow.
     alerts_before = real.active_alerts("bed-1")
     bucket_before = _copy.deepcopy(real._alerts.get("bed-1"))
-    judged_before = real._news2_judged_at.get("bed-1")
+    judged_before = real._judged_at.get("bed-1")
     shadow.ingest(_obs("bed-1", SignalCode.HEART_RATE, 160, T0 + timedelta(minutes=3), "infinity:x:hr"), now=T0 + timedelta(minutes=3))
     assert shadow.state("bed-1").latest(SignalCode.HEART_RATE).value == 160
     assert real.state("bed-1").latest(SignalCode.HEART_RATE).value == 70
     assert real.state("bed-1").latest(SignalCode.SPO2).value == 92
     assert real.active_alerts("bed-1") == alerts_before
     assert real._alerts.get("bed-1") == bucket_before
-    assert real._news2_judged_at.get("bed-1") == judged_before
+    assert real._judged_at.get("bed-1") == judged_before
     assert [a.kind for a in shadow.active_alerts("bed-2")] == bed2_kinds
 
 
