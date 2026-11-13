@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { DICTIONARIES } from "./catalog.js";
 import { LANG_CODES } from "./langs.js";
+import { ENVIRONMENT_KEYS, REASONS, STAY_STATES, STATUSES, TYPES } from "../screens/admin/tresWords.js";
 
 const words = (key) => Object.fromEntries(LANG_CODES.map((lang) => [lang, DICTIONARIES[lang][key]]));
 
@@ -50,6 +51,25 @@ describe("TRƏS strings — wording that must not read as its opposite", () => {
       if (key.startsWith("tres.practitioners.") || key === "tres.reason.identityMissing") {
         expect(value, key).not.toMatch(/identifikasiya/i);
       }
+    }
+  });
+
+  it("puts every English count after its label, so no plural is ever wrong — «Failed 1», never «1 records»", () => {
+    expect(DICTIONARIES.en["tres.deliveries.handled"]).toBe("Handled: {counts}");
+    expect(DICTIONARIES.en["tres.deliveries.retried"]).toBe("Retried: {counts}");
+    for (const lang of LANG_CODES) {
+      for (const key of ["tres.deliveries.handled", "tres.deliveries.retried"]) {
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).toMatch(/: \{counts\}$/);
+        expect(DICTIONARIES[lang][key], `${lang} ${key}`).not.toMatch(/\{count\}/);
+      }
+    }
+  });
+
+  it("has words, in every language, for each state, status, reason, type and environment the screens can say", () => {
+    const keys = [...STAY_STATES.values(), ...ENVIRONMENT_KEYS.map(([, key]) => key), ...STATUSES.map(([, key]) => key),
+      ...TYPES.map(([, key]) => key), ...REASONS.values()];
+    for (const lang of LANG_CODES) {
+      for (const key of keys) expect(DICTIONARIES[lang][key], `${lang} ${key}`).toEqual(expect.any(String));
     }
   });
 });
