@@ -184,6 +184,39 @@ async def test_a_room_number_change_is_written_into_the_rooms_rename_row(ward):
     ]
 
 
+async def test_an_existing_room_is_marked_and_unmarked_as_an_isolation_room_one_row_per_change(ward):
+    """G4-05 (spec §5 O1): `is_isolation` on an existing room, under its unit's lock, `structure.manage` only. A change
+    writes one `structure.isolation` row — the kind, the id, the unit, the old and the new flag, the actor — never a
+    `structure.rename` (which «Denetim bütünlüğü» prints «Yapı: adı değişti»); the same value again writes none; a rename
+    sent with it writes its own row beside it. The tree every screen reads carries the new flag."""
+    w, client, app = ward
+    admin = w.auth["admin"]
+    o2, rea = str(w.rooms["o2"].id), str(w.units["rea"].id)
+    r = await client.patch(f"/tenant/rooms/{o2}", json={"is_isolation": True}, headers=admin)
+    assert (r.status_code, r.json()["is_isolation"]) == (200, True), r.text
+    tree = (await client.get("/tenant/structure", headers=admin)).json()
+    flags = {room["name"]: room["is_isolation"] for site in tree["sites"] for unit in site["units"]
+             for room in unit["rooms"]}
+    assert (flags["Otaq 1"], flags["Otaq 2"]) == (False, True)
+    r = await client.patch(f"/tenant/rooms/{o2}", json={"is_isolation": True}, headers=admin)      # unchanged
+    assert (r.status_code, r.json()["is_isolation"]) == (200, True), r.text
+    r = await client.patch(f"/tenant/rooms/{o2}", json={"name": "Otaq 2A", "is_isolation": False}, headers=admin)
+    assert (r.status_code, r.json()["name"], r.json()["is_isolation"]) == (200, "Otaq 2A", False), r.text
+    assert [row.payload for row in _rows(app, "structure.isolation")] == [
+        {"kind": "room", "id": o2, "unit_id": rea, "old_is_isolation": False, "new_is_isolation": True, "actor": ADMIN},
+        {"kind": "room", "id": o2, "unit_id": rea, "old_is_isolation": True, "new_is_isolation": False, "actor": ADMIN},
+    ]
+    assert [row.payload for row in _rows(app, "structure.rename")] == [
+        {"kind": "room", "id": o2, "unit_id": rea, "old_name": "Otaq 2", "new_name": "Otaq 2A", "actor": ADMIN}]
+
+
+async def test_only_structure_manage_marks_an_isolation_room(ward):
+    w, client, app = ward
+    r = await client.patch(f"/tenant/rooms/{w.rooms['o2'].id}", json={"is_isolation": True}, headers=w.auth["charge"])
+    assert (r.status_code, r.json()["detail"]) == (403, "permission required: structure.manage")
+    assert _rows(app, "structure.isolation") == []
+
+
 async def test_a_name_another_room_or_bed_of_the_same_parent_holds_is_refused(ward):
     w, client, _ = ward
     admin = w.auth["admin"]
@@ -543,6 +576,8 @@ _AUDITED_WRITES = {
                    {"name": "Sentetik Rea"}, "admin", 200, "structure.rename"),
     "room patch": ("PATCH", lambda w: f"/tenant/rooms/{w.rooms['o2'].id}",
                    {"name": "Sentetik Otaq 2"}, "admin", 200, "structure.rename"),
+    "room isolation": ("PATCH", lambda w: f"/tenant/rooms/{w.rooms['o2'].id}",           # G4-05 (spec §5 O1)
+                       {"is_isolation": True}, "admin", 200, "structure.isolation"),
     "bed patch": ("PATCH", lambda w: f"/tenant/beds/{w.beds['3'].id}",
                   {"is_active": False}, "admin", 200, "structure.close"),
     "bed release": ("POST", lambda w: f"/tenant/beds/{w.beds['2'].id}/release",

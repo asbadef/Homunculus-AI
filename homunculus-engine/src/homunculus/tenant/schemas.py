@@ -124,6 +124,7 @@ class RoomPatch(BaseModel):
     name: _Rename100 | None = None
     room_number: _Number20 | None = None
     is_active: bool | None = None
+    is_isolation: bool | None = None        # G4-05 (spec §5 O1): mark or unmark an existing room as an isolation room
 
 
 class BedPatch(BaseModel):

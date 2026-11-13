@@ -20,9 +20,10 @@ both take every such card off first (`_last_card_off`, `BoardLink.take_off`), an
 `board_not_cleared` when they cannot. The raw move frees no bed whose admission is still open
 either (`bed_in_use`); the release needs no such check, as only cleaning is released.
 
-Every structure write — create a site, unit, room or bed; rename, close or reopen one — writes one
-audit row per change (`structure.create|rename|close|reopen`: the kind, the id, the unit, the old
-and new name or `is_active`, the actor; never a patient) through admission/trail.py, after its
+Every structure write — create a site, unit, room or bed; rename, close or reopen one; mark a room as
+an isolation room or unmark it (G4-05, spec §5 O1) — writes one audit row per change
+(`structure.create|rename|close|reopen|isolation`: the kind, the id, the unit, the old and new name,
+`is_active` or `is_isolation`, the actor; never a patient) through admission/trail.py, after its
 commit; a refused write writes none. A bed's label is unique in its whole unit (any room, closed
 beds included, trimmed and case-insensitive: `bed_label_taken`), and a room's name in its unit
 (`name_taken`). Writes inside one unit take a lock on its row first, so two at once cannot both
@@ -198,9 +199,12 @@ async def _commit_unless_taken(db: AsyncSession, taken: Refusal) -> None:
 
 
 def _changes(*, old_name: str, new_name: str, was_active: bool, is_active: bool,
-             renamed_too: dict | None = None) -> list[tuple[str, dict]]:
+             renamed_too: dict | None = None, was_isolation: bool | None = None,
+             is_isolation: bool | None = None) -> list[tuple[str, dict]]:
     """The audit rows one PATCH owes (amendment A-4): a rename and a close sent together are two
-    changes and two rows; what did not change writes nothing."""
+    changes and two rows; what did not change writes nothing. G4-05 (spec §5 O1): a room's isolation
+    mark is a change of its own, `structure.isolation` — not a `structure.rename`, which «Denetim
+    bütünlüğü» prints «Yapı: adı değişti»; a unit and a bed pass no flag."""
     out: list[tuple[str, dict]] = []
     rename = {"old_name": old_name, "new_name": new_name} if new_name != old_name else {}
     rename.update(renamed_too or {})
@@ -209,6 +213,9 @@ def _changes(*, old_name: str, new_name: str, was_active: bool, is_active: bool,
     if is_active != was_active:
         out.append(("structure.reopen" if is_active else "structure.close",
                     {"old_is_active": was_active, "new_is_active": is_active}))
+    if is_isolation is not None and is_isolation != was_isolation:
+        out.append(("structure.isolation",
+                    {"old_is_isolation": was_isolation, "new_is_isolation": is_isolation}))
     return out
 
 
@@ -529,10 +536,13 @@ async def patch_room(
         raise Refusal(409, HAS_OPEN_BEDS, "Close every bed of this room first.").http()
     renumbered = ({"old_room_number": room.room_number, "new_room_number": number}
                   if number != room.room_number else {})
+    # G4-05 (spec §5 O1): an existing room marked or unmarked as an isolation room, under the unit's lock above.
+    is_isolation = room.is_isolation if body.is_isolation is None else body.is_isolation
     changes = _changes(old_name=room.name, new_name=name, was_active=room.is_active,
-                       is_active=is_active, renamed_too=renumbered)
+                       is_active=is_active, renamed_too=renumbered,
+                       was_isolation=room.is_isolation, is_isolation=is_isolation)
     hospital = await trail.hospital_of(db, caller_tenant)
-    room.name, room.room_number, room.is_active = name, number, is_active
+    room.name, room.room_number, room.is_active, room.is_isolation = name, number, is_active, is_isolation
     await _commit_unless_taken(db, _ROOM_NAME_TAKEN)
     await db.refresh(room)
     for event_type, change in changes:
