@@ -58,6 +58,8 @@ const KaliteScreen = lazyScreen(() => import("../screens/kalite/KaliteScreen.jsx
 
 const IsYukuScreen = lazyScreen(() => import("../screens/isyuku/IsYukuScreen.jsx"), "IsYukuScreen"); // G4-04
 
+const EnfeksiyonScreen = lazyScreen(() => import("../screens/enfeksiyon/EnfeksiyonScreen.jsx"), "EnfeksiyonScreen"); // G4-05
+
 /** The screen each route shows in THIS build, by route id — `null` until its wave sets it.
  *  THIS is the line a wave edits (and only its own). Frozen: it is the canonical answer, and
  *  `resetScreens` puts it back whatever a test stood in for. */
@@ -97,6 +99,8 @@ const SCREENS = Object.freeze({
   kalite: KaliteScreen, // G4-03 — «Kalite göstergeleri»: per unit, alarm response, snoozes, RRT, handovers; no patient
 
   isyuku: IsYukuScreen, // G4-04 — «İş yükü»: per unit this shift, the nurse cards, the charge nurse's assignment; no patient
+
+  enfeksiyon: EnfeksiyonScreen, // G4-05 — «Enfeksiyon kontrol»: isolation, suspected infection, the antibiotic clock, sepsis alarms, the isolation beds
 
   settings: SettingsScreen,
 });
@@ -191,6 +195,12 @@ export const ROUTES = Object.freeze([
   // used by no other route.
   route({ id: "isyuku", path: "/is-yuku", icon: "users", labelKey: "isyuku.nav", shortKey: "isyuku.navShort",
     perms: ["workload.view", "shifts.manage"], work: true, nav: "main" }),
+
+  // G4-05 (spec D2, D13, §5 M1) — «Enfeksiyon kontrol»: for whoever holds `infection.view` — the default attending,
+  // unit-physician, physician, charge-nurse and nurse groups (migration 0023), the system administrator by rule. A work
+  // screen; after «İş yükü», so nobody's home moves. `thermo`: used by no other route (`shield` is the administration's).
+  route({ id: "enfeksiyon", path: "/enfeksiyon", icon: "thermo", labelKey: "enfeksiyon.nav", shortKey: "enfeksiyon.navShort",
+    perms: ["infection.view"], work: true, nav: "main" }),
 
   route({ id: "settings", path: "/settings", icon: "gear", labelKey: "nav.settings", shortKey: "nav.settingsShort",
     perms: [], work: false, nav: "bottom" }),

@@ -398,9 +398,8 @@ describe("the quality indicators' route", () => {
 
 // G4-04 (spec D2, D6, §5 M6): «İş yükü» — for `workload.view` or `shifts.manage` (the form needs the second): the
 // charge-nurse group holds both by default (migration 0022), the system administrator by rule, any group a hospital
-// gives one. A work screen, after the quality indicators, so nobody's home moves. THE ONE PINNED TAIL of the table is
-// here: a slice that adds a route after «isyuku» edits this line and no other.
-// The order: devir → eczane → ozet → kalite → isyuku → settings.
+// gives one. A work screen, after the quality indicators, so nobody's home moves. G4-05 put «Enfeksiyon kontrol» after
+// it; the table's one pinned tail is in that route's block now.
 describe("the workload page's route", () => {
   afterEach(() => resetScreens());
   const isyuku = () => ROUTES.find((r) => r.id === "isyuku");
@@ -414,7 +413,8 @@ describe("the workload page's route", () => {
     expect(isyuku()).toMatchObject({ path: "/is-yuku", perms: ["workload.view", "shifts.manage"], work: true, nav: "main",
       icon: "users", labelKey: "isyuku.nav", shortKey: "isyuku.navShort" });
     expect(screenOf(isyuku())).not.toBeNull();
-    expect(ROUTES.map((r) => r.id).slice(-5)).toEqual(["eczane", "ozet", "kalite", "isyuku", "settings"]);
+    const ids = ROUTES.map((r) => r.id);
+    expect(ids[ids.indexOf("isyuku") + 1]).toBe("enfeksiyon");
     expect(["tr", "az", "ru", "en"].map((lang) => DICTIONARIES[lang]["isyuku.nav"])).toEqual(["İş yükü", "İş yükü", "Нагрузка", "Workload"]);
   });
 
@@ -433,6 +433,46 @@ describe("the workload page's route", () => {
       expect(hasWorkRoute([key]), key).toBe(true);
       expect(homePath([key]), key).toBe("/is-yuku");
     }
+  });
+});
+
+// G4-05 (spec D2, D13, §5 M1): «Enfeksiyon kontrol» — for `infection.view`: the default attending, unit-physician,
+// physician, charge-nurse and nurse groups hold it (migration 0023), the system administrator by rule. A work screen,
+// after «İş yükü», so nobody's home moves. Its icon is `thermo`, which no other route has. THE ONE PINNED TAIL of the
+// table is here: a slice that adds a route after «enfeksiyon» edits this line and no other.
+// The order: devir → eczane → ozet → kalite → isyuku → enfeksiyon → settings.
+describe("the infection-control page's route", () => {
+  afterEach(() => resetScreens());
+  const enfeksiyon = () => ROUTES.find((r) => r.id === "enfeksiyon");
+  /** The default nurse and physician groups, as the engine seeds them since G4-05 (auth/permissions.py). */
+  const NURSE_GROUP = ["board.view", "alerts.ack", "admissions.view", "admissions.admit", "admissions.transfer.confirm",
+    "handover.sign", "clinical.chart", "beds.release", "tasks.view", "tasks.manage", "infection.view"];
+  const PHYSICIAN = ["board.view", "alerts.ack", "alerts.escalate", "admissions.view", "handover.sign", "break_glass.use",
+    "clinical.chart", "scores.sign", "tasks.view", "tasks.manage", "pharmacy.view", "infection.view"];
+  const PHARMACIST = ["board.view", "admissions.view", "pharmacy.view"];
+  const AUDITOR = ["board.view", "audit.view", "quality.view"];
+
+  it("is a work screen for infection.view, on the main rail, with an icon no other route has, and its names", () => {
+    expect(enfeksiyon()).toMatchObject({ path: "/enfeksiyon", perms: ["infection.view"], work: true, nav: "main",
+      icon: "thermo", labelKey: "enfeksiyon.nav", shortKey: "enfeksiyon.navShort" });
+    expect(screenOf(enfeksiyon())).not.toBeNull();
+    expect(ROUTES.filter((r) => r.icon === "thermo").map((r) => r.id)).toEqual(["enfeksiyon"]);
+    expect(ROUTES.map((r) => r.id).slice(-6)).toEqual(["eczane", "ozet", "kalite", "isyuku", "enfeksiyon", "settings"]);
+    expect(["tr", "az", "ru", "en"].map((lang) => DICTIONARIES[lang]["enfeksiyon.nav"]))
+      .toEqual(["Enfeksiyon kontrol", "İnfeksiya nəzarəti", "Инфекционный контроль", "Infection control"]);
+  });
+
+  it("is the ward's clinicians', moves nobody's home, and is neither the pharmacist's nor the auditor's", () => {
+    for (const perms of [NURSE_GROUP, PHYSICIAN, ADMIN]) {
+      expect(navRoutes(perms).main.map((r) => r.id), perms.join(",")).toContain("enfeksiyon");
+      expect(homePath(perms), perms.join(",")).toBe("/beds");
+    }
+    for (const perms of [PHARMACIST, AUDITOR, NURSE]) expect(canReach(enfeksiyon(), perms), perms.join(",")).toBe(false);
+  });
+
+  it("is a work screen: a group given infection.view alone signs in to it and lands on it", () => {
+    expect(hasWorkRoute(["infection.view"])).toBe(true);
+    expect(homePath(["infection.view"])).toBe("/enfeksiyon");
   });
 });
 

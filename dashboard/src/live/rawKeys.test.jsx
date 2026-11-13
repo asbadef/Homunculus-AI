@@ -51,6 +51,7 @@ import { fluids } from "./screens/patient/fluids/fluids.testutil.js"; // G3-03
 import { readings } from "./screens/patient/readings/readings.testutil.js"; // G3-05
 import { unmatched } from "./screens/bedside/unmatched.testutil.js"; // G3-05
 import { answer as pharmacyAnswer } from "./screens/eczane/eczane.testutil.js"; // G3-04
+import { answer as infectionAnswer, tree as infectionTree } from "./screens/enfeksiyon/enfeksiyon.testutil.js"; // G4-05
 import { ANSWER as QUALITY_SWEEP } from "./screens/kalite/kalite.testutil.js"; // G4-03
 
 /** `src/live/` on disk. (Paths with node:path: under jsdom the global URL is jsdom's, which
@@ -152,6 +153,9 @@ const PAYLOAD = board([
       pressors: { norepinephrine: 0.08 }, antibiotic_given: true, antibiotic_at: ago(600),
       antibiotic_clock: null, weight_kg: 72, creatinine: 1.9,
     },
+    // G4-05: in isolation, so the patient screen's «İzolasyon» box draws its types and its last record.
+    isolation: { contact: true, droplet: true, airborne: false, protective: null, types: ["contact", "droplet"],
+      state: "isolated", charted_at: ago(900) },
   }),
   // G2-B5b: a snoozed alarm, so the alarm screen draws «Ertelenenler», its row's snooze line, and the dialog.
   entry("S-002", [alarm("acute_change", "moderate", { urgency: "soon", summary: "Acute change from baseline",
@@ -343,6 +347,9 @@ async function openAt(path, extra) {
       // G4-04: «İş yükü» (screens/isyuku) — the shift's assignment and the form's people.
       api.shiftSchedule.mockResolvedValue(SCHEDULE_SWEEP);
       api.shiftNurses.mockResolvedValue(NURSES_SWEEP);
+
+      // G4-05: «Enfeksiyon kontrol» (screens/enfeksiyon) — the isolated, the suspected, who lies on each bed.
+      api.infection.mockResolvedValue(infectionAnswer());
       extra?.(api);   // G4-01: a test's own answers, laid over the sweep's
     },
   });
@@ -573,6 +580,26 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getAllByRole("option", { name: "Nigar Sentetik — bu şöbəni görə bilməz" }).length).toBeGreaterThan(0); // isyuku.form.unreached
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+  });
+
+  // G4-05 — «Enfeksiyon kontrol»: its cards, both tables and the isolation beds in every tile state (on a tree with an
+  // isolation room), then the patient screen's «İzolasyon» box on the fixture's isolated card.
+  it("the infection-control page's keys resolve on its cards, tables and tiles, and on the patient's isolation box", async () => {
+    let mounted = await openAt("/enfeksiyon", (api) => api.structure.mockResolvedValue(infectionTree()));
+    expect(screen.getByRole("heading", { level: 1, name: "İnfeksiya nəzarəti" })).toBeInTheDocument();       // enfeksiyon.title
+    expect(screen.getByRole("table", { name: "İzolyasiyadakı xəstələr: 4" })).toBeInTheDocument();             // .isolated.caption
+    expect(screen.getByRole("table", { name: "Şübhəli infeksiya və ya sepsis siqnalı: 4 xəstə" })).toBeInTheDocument();
+    expect(screen.getByText("strukturda boş · paneldə xəstə var")).toBeInTheDocument();                        // .beds.tile.conflict
+    expect(screen.getAllByText("Septik şok meyarları ödənilib").length).toBeGreaterThan(0);                    // .kind.septicShock
+    expect(screen.getByText("3 xəstədə izolyasiya qeydi yoxdur")).toBeInTheDocument();                         // .count.isolationUnrecorded
+    expect(rawKeys(document.body)).toEqual([]);
+    expect(document.body.textContent).not.toMatch(UUID_TEXT);
+    act(() => { mounted.board.clear(); });
+    cleanup();
+    mounted = await openAt(`/patients/${FIXTURE_ID}`);
+    expect(screen.getByText("İzolyasiya: Təmas · Damcı")).toBeInTheDocument();                                 // patient.isolation.isolated
+    expect(rawKeys(document.body)).toEqual([]);
     act(() => { mounted.board.clear(); });
   });
 
