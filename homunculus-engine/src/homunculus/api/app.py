@@ -69,6 +69,7 @@ from homunculus.api.rehydrate import (
 from homunculus.api.snooze import SNOOZE_CAPS, clean_reason, minutes_ok, snooze_cap   # G2-B5b: «Ertele»
 from homunculus.api.fluids import patient_fluids                  # G3-03
 from homunculus.api.pharmacy import ward_pharmacy                 # G3-04
+from homunculus.api.infection import ward_infection               # G4-05
 from homunculus.api.readings import (                             # G3-05
     MANUAL_CODES, POLICY_CARD, POLICY_UNMATCHED, READING_HOURS, READING_TARGET_DISCHARGED, READING_UNMATCHED,
     READINGS_HOURS, REASON_DISCHARGED, REASON_UNKNOWN, RECONCILE_WINDOW, RECORD_ROWS_MAX, UNKNOWN_POLICIES,
@@ -108,6 +109,7 @@ BOARD_VIEW, ALERTS_ACK, AUDIT_VIEW, CLINICAL_CHART, SCORES_SIGN, DEVICES_MANAGE 
     ("board.view", "alerts.ack", "audit.view", "clinical.chart", "scores.sign", "devices.manage"))
 (ALERTS_ESCALATE,) = validate_permissions(("alerts.escalate",))   # G2-B5: «RRT çağır»
 (PHARMACY_VIEW,) = validate_permissions(("pharmacy.view",))       # G3-04: «Eczane»
+(INFECTION_VIEW,) = validate_permissions(("infection.view",))     # G4-05: «Enfeksiyon kontrol»
 
 #: Aşama A: a patient's admitted beds are re-read for the monitor strip at most this often.
 SHADOW_OCCUPANCY_CACHE_S = 10.0
@@ -2213,6 +2215,19 @@ def create_app(
                                zone=zone_of(tasks.timezone(caller.hospital)),
                                start_a=settings.shift_start_a, start_b=settings.shift_start_b)
         return {**answer, "scope": result.as_dict(), "scope_note": scope_report(result)}
+
+    @app.get("/infection")
+    async def infection(authorization: str | None = Header(default=None)):
+        """G4-05 «Enfeksiyon kontrol»: the infection-control page (`api/infection.py`) — one row per card of the
+        caller's scoped board, read through `_board_for` as `/patients` and `/pharmacy` are: the isolated patients, the
+        patients with suspected infection or a Sepsis-3 alarm with Eczane's antibiotic state, who lies on each bed, and
+        the counts (spec D4, D10, §5). The answer carries `/patients`' own `scope` block and `scope_note`. The isolation
+        beds are drawn by the page from the structure tree (§5 S1): no database is read here. Read-only and not
+        audited, as `/pharmacy` (a poll would bury the trail); a device token passes, as on every board route. `now`
+        is taken right after the board was built, as `/pharmacy`'s."""
+        _, _, result = await _board_for(authorization, INFECTION_VIEW)
+        now = datetime.now(timezone.utc)
+        return {**ward_infection(result.boards, now=now), "scope": result.as_dict(), "scope_note": scope_report(result)}
 
     @app.get("/patients/{patient_id}/trends")
     async def trends(patient_id: str, hours: str = "24",
