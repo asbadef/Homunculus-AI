@@ -75,6 +75,8 @@ const NEUTRAL = new Set([
 // is therefore reviewed and listed here, key by key; a new one fails until someone has checked it,
 // and an entry whose texts have since diverged fails until it is removed.
 const AZ_SAME_AS_TR = new Set([
+  "beds.emptyBed", //       «Boş» — the same word in Azerbaijani
+  "beds.unitFill", //       «{occupied} / {total} dolu» — "dolu" (full) is Azerbaijani too
   "beds.ageYears", //       «{age} yaş» — "yaş" (age) is the same word in Azerbaijani
   "risk.critical", //        Kritik — the prototype's AZ dictionary (grafik.js gd_k_crit)
   "risk.prefix", //          Risk — the same word in Azerbaijani, Turkish and English

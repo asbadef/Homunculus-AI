@@ -118,7 +118,9 @@ function Spark({ patient, tone }) {
     </svg>
   );
 }
-const SPARK_HOURS = 6;
+// The widest window the trends endpoint serves: a ward whose monitors paused still shows its
+// last readings' shape (owner, 2026-11-14).
+const SPARK_HOURS = 72;
 
 /** The shadow tag's words: the score with its newest input's age, «none» from a live board only. */
 function shadowTagText(t, shadow, known, nowMs) {

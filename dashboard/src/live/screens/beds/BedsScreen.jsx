@@ -44,7 +44,8 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
-import { useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
+import { useStructure, useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
+import { UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
 import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
 import { boardKeyOf } from "../kabul/boardKey.js";                  // G2-B1d: the card key
 import { useShadow } from "../../data/ShadowProvider.jsx";
@@ -162,6 +163,36 @@ function Waiting({ nowMs }) {
 
 const CRIT_EDGE = "border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)]";
 
+/** A unit's beds from the hospital's own structure (Yönetim → Yapı), active ones only, in label
+ *  order; [] while the structure is not known — the board never invents a bed. */
+export function unitBeds(index, unitId) {
+  if (!unitId) return [];
+  const key = normId(unitId);
+  return [...index.beds.values()]
+    .filter((b) => normId(b.unitId) === key && b.isActive)
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), "en", { numeric: true, sensitivity: "base" }));
+}
+
+/** The prototype's empty-bed card (.bed.empty): the bed, its room, and «Hasta ata» for whoever may
+ *  admit. Only a bed the structure says is AVAILABLE and open gets one. */
+function EmptyBed({ bed, kabulHref }) {
+  const { t } = useI18n();
+  return (
+    <li className="flex flex-col rounded-box border border-line bg-card/60 px-3.5 pb-3 pt-3">
+      <p className="m-0 flex items-baseline gap-2">
+        <b className="font-data text-15 font-bold text-ok-ink">{bed.label}</b>
+        <span className="font-display text-15 font-bold text-ok-ink">{t("beds.emptyBed")}</span>
+      </p>
+      <span className="mt-0.5 block text-12.5 text-mute">{[bed.roomName, t("beds.emptyAssignable")].filter(Boolean).join(" · ")}</span>
+      {kabulHref ? (
+        <a href={kabulHref} className={`mx-auto mt-3 inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line2 bg-card px-3 text-12.5 font-semibold text-ink hover:border-pri ${FOCUS_RING}`}>
+          <Icon name="plus" size={14} />{t("beds.assign")}
+        </a>
+      ) : null}
+    </li>
+  );
+}
+
 /** The cards under one heading per unit (the prototype's .unit-h sections), in the order they
  *  came: bed order already runs unit by unit, risk order keeps its ranking inside each unit and
  *  puts first the unit whose card ranks highest. A card with no unit goes in a last group. */
@@ -249,6 +280,7 @@ export function BedsScreen() {
   // G2-B1a: a unit by its name, never its UUID (data/structure.js), the names in order; a numbered
   // placeholder while the structure is not known — never «unknown».
   const names = useUnitNames(units);
+  const structure = useStructure();
   const unitName = names.nameOf;
   const drafts = useAdmissions(DRAFT, { every: DRAFT_EVERY_MS });   // G2-B1a: the badge
   const draftNumbers = useMemo(() => new Set((drafts.rows ?? []).map(boardKeyOf)), [drafts.rows]);
@@ -408,22 +440,36 @@ export function BedsScreen() {
       ) : view === "liste" ? (
         <BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} />
       ) : (
-        byUnit(shown).map((group, _i, groups) => (
-          <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")} className="flex flex-col gap-2.5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 pt-1">
-              <h2 className="m-0 font-display text-15 font-bold">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
-              {/* With one unit the page's own count already says it. */}
-              {groups.length > 1 ? <span className="text-12 text-mute">{t("beds.sub", { count: group.items.length })}</span> : null}
-            </div>
-            <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
-              {group.items.map((p) => (
-                <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
-                  monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-                  draft={draftNumbers.has(p.patient_id)} spark />
-              ))}
-            </ul>
-          </section>
-        ))
+        byUnit(shown).map((group, _i, groups) => {
+          const beds = unitBeds(structure.index, group.unitId);
+          const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
+          // A search narrows to what matched: an empty bed matches no patient's name.
+          const empty = query ? [] : beds.filter((b) => b.open && b.state === "AVAILABLE");
+          const type = structure.index.units.get(normId(group.unitId))?.unitType;
+          return (
+            <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")} className="flex flex-col gap-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="m-0 font-display text-15 font-bold">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
+                  {UNIT_TYPE_KEYS[type] ? <span className="rounded-md bg-card2 px-2 py-0.5 text-11.5 font-semibold text-mute">{t(UNIT_TYPE_KEYS[type])}</span> : null}
+                </div>
+                <span className="text-12 text-mute">
+                  {beds.length
+                    ? `${t("beds.unitFill", { occupied, total: beds.length })} · ${t(order === "risk" ? "beds.byRisk" : "beds.byBed")}`
+                    : groups.length > 1 ? t("beds.sub", { count: group.items.length }) : null}
+                </span>
+              </div>
+              <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
+                {group.items.map((p) => (
+                  <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
+                    monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
+                    draft={draftNumbers.has(p.patient_id)} spark />
+                ))}
+                {empty.map((b) => <EmptyBed key={b.id} bed={b} kabulHref={kabulHref} />)}
+              </ul>
+            </section>
+          );
+        })
       )}
       {order === "yatak" ? <p className="m-0 text-11.5 text-mute">{t("beds.orderNote")}</p> : null}
       {strip ? <MonitorSection beds={looseFound} devices={straysFound} view={stripView} /> : null}
