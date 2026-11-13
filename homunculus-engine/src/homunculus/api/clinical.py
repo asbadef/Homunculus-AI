@@ -218,6 +218,10 @@ RETRACT_DISCHARGED = "taburcu edilmiş bir hastada değer geri alınamaz"
 
 #: G4-05 (spec D3, D7): `ISOLATION_CODES` — the four isolation flags in their one order — is canonical.py's (the bridge
 #: reads it too, and runs without api/); imported above and re-exported here, where the API's modules take it from.
+#: G4-05 (spec D8, review M3): the card's three isolation words, defined once — `isolated` (a type is in place),
+#: `not_isolated` (a flag was charted and none is in place), `unrecorded` (none was ever charted). The card's writer
+#: (api/board.py `_isolation`) and its reader (api/infection.py) import them; the dashboard spells them in its own model.
+ISOLATED, NOT_ISOLATED, UNRECORDED = "isolated", "not_isolated", "unrecorded"
 #: G4-05 (spec §5 M8's intent, closed at the chart door too — the coordinator's decision of 2026-11-13): a monitor or
 #: the HIS cannot decide isolation, so `build_entries` refuses a flag from the bridge's device token: 400 with this
 #: sentence, which the dashboard maps (apiErrors.js). The chart door is a request and its answer; the bridge's queue is

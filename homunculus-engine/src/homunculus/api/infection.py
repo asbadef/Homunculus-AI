@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from homunculus.api.clinical import ISOLATED, UNRECORDED       # review M3: the words are defined once, there
 from homunculus.api.pharmacy import ANTIBIOTIC_WINDOW_SOURCE, CLOCK_OPEN, antibiotic_of
 from homunculus.rules.antibiotic_clock import WINDOW as ANTIBIOTIC_WINDOW
 
@@ -27,8 +28,7 @@ from homunculus.rules.antibiotic_clock import WINDOW as ANTIBIOTIC_WINDOW
 #: / `antibiotic_overdue` (the antibiotic cell says it) and not the model's `sepsis_watch` (an early warning with its
 #: own source, not one of the three rule kinds).
 SEPSIS_KINDS = ("septic_shock", "sepsis", "under_resuscitated_sepsis")
-#: The card's three isolation words (api/board.py `_isolation`).
-ISOLATED, NOT_ISOLATED, UNRECORDED = "isolated", "not_isolated", "unrecorded"
+#: The card's three isolation words (api/board.py `_isolation`) are api/clinical.py's, imported above (review M3).
 
 
 def _iso(at: datetime) -> str:

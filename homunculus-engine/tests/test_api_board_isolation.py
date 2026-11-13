@@ -6,7 +6,9 @@ flags three-valued (null: never charted; else its latest value ≥ 1), `types` t
 through the existing chart replay. Synthetic patients only (CLAUDE.md rule 6)."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -142,3 +144,15 @@ class TestTheTrail:
         with TestClient(_app(audit)) as client:
             block = _card(client)["isolation"]
         assert (block["types"], block["charted_at"]) == (["contact"], at.isoformat())
+
+
+def test_the_three_state_words_are_defined_once():
+    """Review M3 (2026-11-13): the card's three isolation words are api/clinical.py's — the module of the four flags —
+    and the card's writer (board.py) and its reader (infection.py) import them; neither spells one as a value (a field
+    NAMED `isolated` — a count, a list — is a key, not the word, and is left alone)."""
+    from homunculus.api import clinical
+    assert (clinical.ISOLATED, clinical.NOT_ISOLATED, clinical.UNRECORDED) == ("isolated", "not_isolated", "unrecorded")
+    api = Path(__file__).resolve().parents[1] / "src" / "homunculus" / "api"
+    for name in ("board.py", "infection.py"):
+        text = (api / name).read_text(encoding="utf-8")
+        assert re.findall(r'"(?:isolated|not_isolated|unrecorded)"(?!\s*:)', text) == [], name

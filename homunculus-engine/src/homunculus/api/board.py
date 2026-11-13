@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from homunculus.api.ackstore import AckStore
-from homunculus.api.clinical import ISOLATION_CODES          # G4-05
+from homunculus.api.clinical import ISOLATED, ISOLATION_CODES, NOT_ISOLATED, UNRECORDED   # G4-05
 from homunculus.api.patient_identity import IdentityRecord, IdentityStore, is_tombstone
 from homunculus.canonical import SignalCode
 from homunculus.pipeline import Engine
@@ -248,7 +248,7 @@ def _isolation(state) -> dict:
         if obs is not None:
             times.append(obs.timestamp)
     types = [name for name, on in flags.items() if on]
-    word = "isolated" if types else "not_isolated" if times else "unrecorded"
+    word = ISOLATED if types else NOT_ISOLATED if times else UNRECORDED
     return {**flags, "types": types, "state": word, "charted_at": _iso(max(times)) if times else None}
 
 
