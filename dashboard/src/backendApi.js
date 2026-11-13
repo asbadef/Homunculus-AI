@@ -39,6 +39,13 @@ export const ADMIN_LDAP_TIMEOUT_MS = 30_000;
  *  wait for nginx's 504. A verification still running when this gives up finishes on the server, and a
  *  press meanwhile is told one is already running (409), never started twice. */
 export const AUDIT_VERIFY_TIMEOUT_MS = 60_000;
+/** How long «Şimdi gönder» and «Yeniden dene» wait (TRƏS-01, final review 2026-11-13). Each sends one stay's package to
+ *  the national platform as it runs: a first one is about 35 requests, at least 300 ms apart (the feed's pace, D21), each
+ *  with its own deadline — it cannot finish in the usual 15 s, and the panel would say «no answer» about a send the server
+ *  then completed. 180 s, and nginx gives these two routes as long (deploy/local/web/nginx.conf, past its 60 s default;
+ *  tests/test_nginx_routes.py holds the two together). A hand still running when this gives up finishes on the server:
+ *  the panel reads the list again, which shows its rows. */
+export const TRES_HAND_TIMEOUT_MS = 180_000;
 /** The most accounts one `/admin/ldap/import` call takes (the API's own cap). */
 export const LDAP_IMPORT_MAX = 50;
 /** The most rows a directory search or a group search answers with, whatever is asked
@@ -1067,10 +1074,15 @@ export function createBackendApi({ baseUrl = defaultBaseUrl(), fetchImpl, timeou
       // PHI: `cache: "no-store"` — the browser's HTTP cache keeps no copy of the stay's resources (review, 2026-11-13).
       return authed(`/admin/tres/admissions/${seg(admissionId)}/preview`, { cache: "no-store" });
     },
-    /** «Şimdi gönder»: {admission_id, rows: [{resource_type, local_id, status, reason}], counts}. 409 `tres_busy`… */
-    sendTresStay(admissionId) { return authed(`/admin/tres/admissions/${seg(admissionId)}/send`, { method: "POST" }); },
-    /** «Yeniden dene»: as sendTresStay, the row's stay forced. */
-    retryTresDelivery(id) { return authed(`/admin/tres/deliveries/${seg(id)}/retry`, { method: "POST" }); },
+    /** «Şimdi gönder»: {admission_id, rows: [{resource_type, local_id, status, reason}], counts}. 409 `tres_busy`…
+     *  It waits TRES_HAND_TIMEOUT_MS: the package goes to the platform while the request runs. */
+    sendTresStay(admissionId) {
+      return authed(`/admin/tres/admissions/${seg(admissionId)}/send`, { method: "POST", timeoutMs: TRES_HAND_TIMEOUT_MS });
+    },
+    /** «Yeniden dene»: as sendTresStay, the row's stay forced — and as long a wait. */
+    retryTresDelivery(id) {
+      return authed(`/admin/tres/deliveries/${seg(id)}/retry`, { method: "POST", timeoutMs: TRES_HAND_TIMEOUT_MS });
+    },
     /** [{unit_id, unit_name, unit_active, code, display, updated_at}] */
     tresDepartments() { return authed("/admin/tres/departments"); },
     /** The whole map: [{unit_id, code, display}] — a unit left out is unmapped. → as tresDepartments() */

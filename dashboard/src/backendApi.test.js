@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   ADMIN_LDAP_TIMEOUT_MS, AUDIT_VERIFY_TIMEOUT_MS, LDAP_IMPORT_CHUNK, LDAP_IMPORT_MAX, REQUEST_TIMEOUT,
-  createBackendApi, retryAfterSeconds,
+  TRES_HAND_TIMEOUT_MS, createBackendApi, retryAfterSeconds,
 } from "./backendApi.js";
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
@@ -414,6 +414,42 @@ describe("backendApi — a server that does not answer", () => {
     expect(await Promise.race([outcome, Promise.resolve("pending")])).toBe("pending");
     await vi.advanceTimersByTimeAsync(1);
     expect((await outcome).code).toBe(REQUEST_TIMEOUT);
+  });
+
+  // TRƏS-01 (final review, 2026-11-13): a stay's first «Şimdi gönder» is ~35 requests to the national platform, paced
+  // at least 300 ms apart — it cannot finish in 15 s, and the panel would say «no answer» while the server completed it.
+  // nginx gives these two routes the same wait (deploy/local/web/nginx.conf; tests/test_nginx_routes.py holds it).
+  it("«Şimdi gönder» and «Yeniden dene» wait 180 s, not 15", async () => {
+    expect(TRES_HAND_TIMEOUT_MS).toBe(180_000);
+    const calls = [
+      [(api) => api.sendTresStay("66666666-6666-4666-8666-666666666601"), "/admin/tres/admissions/66666666-6666-4666-8666-666666666601/send"],
+      [(api) => api.retryTresDelivery("77777777-7777-4777-8777-777777777701"), "/admin/tres/deliveries/77777777-7777-4777-8777-777777777701/retry"],
+    ];
+    for (const [call, path] of calls) {
+      const fetchMock = vi.fn();
+      const api = await signedIn(fetchMock);
+      fetchMock.mockImplementationOnce(hanging);
+      const outcome = call(api).then(() => "answered", (err) => err);
+      await vi.advanceTimersByTimeAsync(179_999);
+      expect(fetchMock.mock.calls.at(-1)[0]).toBe(path);
+      expect(await Promise.race([outcome, Promise.resolve("pending")]), path).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await outcome).code, path).toBe(REQUEST_TIMEOUT);
+    }
+  });
+
+  it("the feed's other calls keep the 15 s — the long wait is the hand's alone", async () => {
+    const stay = "66666666-6666-4666-8666-666666666601";
+    const calls = [(api) => api.tresDeliveries(), (api) => api.tresStay("202600000101"), (api) => api.tresPreview(stay),
+      (api) => api.tresSettings(), (api) => api.testTres(), (api) => api.tresDepartments(), (api) => api.tresPractitioners()];
+    for (const call of calls) {
+      const fetchMock = vi.fn();
+      const api = await signedIn(fetchMock);
+      fetchMock.mockImplementationOnce(hanging);
+      const outcome = call(api).then(() => "answered", (err) => err);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect((await outcome).code, String(fetchMock.mock.calls.at(-1)[0])).toBe(REQUEST_TIMEOUT);
+    }
   });
 
   it("a caller may make a call more patient, never less", async () => {

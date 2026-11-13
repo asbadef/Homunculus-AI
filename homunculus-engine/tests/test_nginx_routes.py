@@ -27,6 +27,7 @@ API_PATHS = [
     "/scores/sofa/p1", "/alarm-quality", "/infinity-research/state",
     "/infinity-shadow/board", "/infinity-shadow/readings", "/infinity-shadow/device-beds",
     "/infinity-waves/192.0.2.10", "/patients", "/pharmacy", "/ack",
+    "/admin/tres/admissions/a1/send", "/admin/tres/deliveries/d1/retry",
     "/ingest", "/view", "/audit", "/audit/verify", "/health", "/stream", "/stream-ticket",
     "/notifications",
 ]
@@ -96,11 +97,62 @@ def test_stream_ticket_is_served_by_the_sse_block() -> None:
 
 
 def test_every_api_location_is_found() -> None:
-    """Six: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
+    """Seven: the SSE block, the prefix block — the exact `/auth/login`, `/auth/reauth` and
     `/auth/password` blocks, which nginx picks before any regex location so that the routes
-    that check a password carry a per-address limit — and the exact block of Aşama A's
-    forwarder POST, which refuses plain HTTP."""
-    assert len(_api_locations()) == 6
+    that check a password carry a per-address limit — the exact block of Aşama A's
+    forwarder POST, which refuses plain HTTP, and the TRƏS hand's block (its long wait)."""
+    assert len(_api_locations()) == 7
+
+
+DASHBOARD_API = Path(__file__).resolve().parents[2] / "dashboard" / "src" / "backendApi.js"
+#: A stay's id and a ledger row's (synthetic).
+STAY, ROW = "66666666-6666-4666-8666-666666666601", "77777777-7777-4777-8777-777777777701"
+TRES_HAND = [f"/admin/tres/admissions/{STAY}/send", f"/admin/tres/deliveries/{ROW}/retry"]
+
+
+def _regex_location_of(text: str, path: str) -> tuple[str, str]:
+    """(pattern, body) of the regex location nginx picks for `path` — the FIRST one, in file order,
+    that matches it (no exact location is written for these paths)."""
+    for match in re.finditer(r"location\s+~\s+(\S+)\s*\{(.*?)\}", text, re.S):
+        if re.search(match.group(1), path):
+            return match.group(1), match.group(2)
+    raise AssertionError(f"no regex location takes {path}")
+
+
+def _seconds(body: str, name: str) -> int | None:
+    found = re.findall(rf"^\s*{name}\s+(\d+)s?;", body, re.M)
+    assert len(found) <= 1, (name, found)
+    return int(found[0]) if found else None
+
+
+def test_the_feeds_hand_waits_as_long_as_the_dashboard_and_nothing_else_does() -> None:
+    """TRƏS-01 (final review, 2026-11-13): «Şimdi gönder» and «Yeniden dene» send one stay's package to
+    the national platform — a first one is about 35 requests, paced at least 300 ms apart, each with its
+    own deadline — so it outlasts nginx's 60 s default, and a 504 would tell the administrator «no answer»
+    about a send the API then finished. Their block, ahead of the prefix block (regex locations: the
+    first match wins), waits at least the dashboard's TRES_HAND_TIMEOUT_MS each way; its proxy settings
+    are the prefix block's. The feed's other routes — the list, a stay, its preview — and every other
+    API path keep the prefix block, with nginx's default."""
+    text = CONF.read_text(encoding="utf-8")
+    wait = re.search(r"export const TRES_HAND_TIMEOUT_MS = ([\d_]+);", DASHBOARD_API.read_text(encoding="utf-8"))
+    assert wait, "TRES_HAND_TIMEOUT_MS is not in dashboard/src/backendApi.js"
+    dashboard_s = int(wait.group(1).replace("_", "")) / 1000
+    assert dashboard_s >= 180
+    prefix = _location(text, "location ~ ^/(auth|")
+    proxy = ("proxy_pass", "proxy_http_version", "proxy_set_header")
+    for path in TRES_HAND:
+        pattern, body = _regex_location_of(text, path)
+        assert not pattern.startswith("^/(auth|"), path
+        assert _seconds(body, "proxy_read_timeout") >= dashboard_s, path
+        assert _seconds(body, "proxy_send_timeout") >= dashboard_s, path
+        assert _directives(body, *proxy) == _directives(prefix, *proxy), path
+        assert "access_log" not in body                     # the server's redacted log takes it (G2-B1d O10)
+    for path in (f"/admin/tres/admissions/{STAY}/preview", f"/admin/tres/admissions/{STAY}/sendx",
+                 f"/admin/tres/deliveries/{ROW}", "/admin/tres/deliveries", "/admin/tres/admissions",
+                 "/admin/tres/settings", "/admin/tres/test", "/admin/users", f"/admissions/{STAY}"):
+        pattern, body = _regex_location_of(text, path)
+        assert pattern.startswith("^/(auth|"), path
+        assert _seconds(body, "proxy_read_timeout") is None, path
 
 
 def _condition_map(text: str) -> list[tuple[str, str]]:
