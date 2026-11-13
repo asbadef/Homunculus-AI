@@ -25,7 +25,9 @@ committed, so that one key has one writer at a time (`_row`):
   its attempts, its wait, its last words. A row made by this call stays `pending`.
 
 `record_skip` writes why a resource was not built (`fin_missing`, `unit_unmapped`… — a catalogue
-code, never text); with `keep_held`, never over a row the platform holds. `held` reads the
+code, never text); with `keep_held`, never over a row the platform holds. `record_failure` writes
+that the stay's package raised before the resource was sent (`package_error`, final review): `failed`,
+counted as a refusal is, never over a row the platform holds. `held` reads the
 platform's id of a row without locking it (a reference, a preview); `forget_skip` removes a skip
 that stood for no record at all (a Patient's placeholder, ids.patient_placeholder) once the
 resource has an id of its own.
@@ -338,6 +340,31 @@ async def record_skip(db: AsyncSession, *, tenant_id: uuid.UUID, environment: st
     if row.status != "skipped" or row.reason != reason:
         row.status, row.reason = "skipped", reason
         row.attempts, row.last_error, row.next_attempt_at = 0, None, None
+    await db.commit()
+    return row
+
+
+async def record_failure(db: AsyncSession, *, tenant_id: uuid.UUID, environment: str, resource_type: str,
+                         local_id: str, reason: str, now: datetime, admission_id: uuid.UUID | None = None,
+                         lock_timeout_ms: int | None = None) -> TresDelivery:
+    """The stay's package raised before this resource was sent (final review, 2026-11-13: an
+    exception nothing else handles — source.StaySource.package): the row reads `failed` with the
+    catalogue's reason code (`package.PACKAGE_ERROR`), never the exception's words, COUNTED AS A
+    REFUSAL IS — one attempt more while the row already said this reason (else the count starts
+    again), the 30-minute wait (`next_attempt_at`), `stuck` at the MAX_ATTEMPTS-th — so the ledger's
+    list shows the stay and the nightly retry (which takes `failed` and `stuck` rows) tries it
+    again. A row the platform holds (`remote_id`) is left exactly as it is (`keep_held`): a later
+    failure does not rewrite what was sent. Nothing is asked of the platform.
+    With `lock_timeout_ms`, `LedgerBusy` rolls back the caller's WHOLE session transaction."""
+    row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
+                     local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
+    if row.remote_id:
+        await db.commit()
+        return row
+    again = row.status in ("failed", "stuck") and row.reason == reason
+    row.attempts = (row.attempts if again else 0) + 1
+    row.status = "stuck" if row.attempts >= MAX_ATTEMPTS else "failed"
+    row.reason, row.last_error, row.next_attempt_at = reason, None, now + RETRY_AFTER
     await db.commit()
     return row
 

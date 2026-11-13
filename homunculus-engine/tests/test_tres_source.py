@@ -38,8 +38,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from homunculus.admission.models import AdmissionState, Patient
 from homunculus.api.audit import AuditEvent, InMemoryAuditLog
 from homunculus.tres import ids, source
-from homunculus.tres.client import TresClient
-from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, payload_digest
+from homunculus.tres import package as tres_package
+from homunculus.tres.client import TresClient, TresError
+from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, RETRY_AFTER, LedgerBusy, payload_digest
 from homunculus.tres.mapping.patient import patient as map_patient
 from homunculus.tres.models import RESOURCE_TYPES, TresDelivery, TresDepartmentMap, TresSettings
 from homunculus.tres.source import REACH, StaySource, due_stays, nightly_due, retry_stays, window, zone_of
@@ -997,3 +998,92 @@ async def test_an_encounter_the_platform_holds_keeps_its_row_when_its_unit_is_un
     assert (row.status, row.reason, row.remote_id) == ("sent", None, held_id)
     assert len(fake.stored("Encounter")) == 1 and len(fake.requests) == asked     # D7: nothing changed was asked
     assert admission_id not in await retry_stays(db_session, settings, NOW + timedelta(minutes=5))
+
+
+def _breaks(*_args, **_kwargs):
+    raise RuntimeError("Sentetikova Leyla")          # words that must reach neither the row nor a log line
+
+
+@requires_db
+@pytest.mark.parametrize("module, name", [("package", "map_encounter"), ("source", "readings_of")])
+async def test_a_package_that_raises_leaves_its_stay_failed_with_package_error_and_the_night_retries_it(
+        db_session, monkeypatch, caplog, module, name):
+    """Final review (2026-11-13): a stay whose package raises what nothing else handles — a mapper, or the
+    read of the stay itself — never drops out silently. Its Encounter row (`ids.encounter(root)`, keyed to
+    the stay's last admission) reads `failed` with the catalogue reason `package_error`, one attempt counted
+    and the 30-minute wait set as for a counted refusal, no words of the exception; the round goes on to its
+    end (the reach advances); and the night, which takes `failed` rows, sends the stay once the cause is gone
+    — after its week, where no round reaches it."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    admission_id = admission.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    monkeypatch.setattr({"package": tres_package, "source": source}[module], name, _breaks)
+    with caplog.at_level("ERROR"):
+        report = await _round(db_session, fake, audit)
+    assert (report.packages, report.failed) == (0, 1)
+    assert await _reached(db_session) == NOW - timedelta(hours=24)              # the round ran to its end
+    row = await _encounter_row(db_session)
+    assert (row.status, row.reason, row.attempts, row.remote_id, row.last_error) == (
+        "failed", "package_error", 1, None, None)
+    assert (row.local_id, row.admission_id, row.next_attempt_at) == (ids.encounter(admission_id), admission_id,
+                                                                     NOW + RETRY_AFTER)
+    assert "RuntimeError" in caplog.text and "Sentetik" not in caplog.text
+    assert fake.stored("Encounter") == [] and admission_id in await retry_stays(db_session, settings, NOW)
+    monkeypatch.undo()
+    later = NOW + REACH + timedelta(days=1)                                   # 15 Nov 12:00 UTC: out of reach
+    await db_session.execute(text("UPDATE tres_settings SET retried_at = :t"), {"t": later - timedelta(hours=1)})
+    await db_session.commit()                                                 # tonight's retry has run
+    await _round(db_session, fake, audit, now=later)
+    assert fake.stored("Encounter") == []                                     # the rounds no longer reach it
+    await _round(db_session, fake, audit, now=later + timedelta(hours=12, minutes=5))    # 16 Nov 04:05 Baku
+    assert len(fake.stored("Encounter")) == 1
+    row = await _encounter_row(db_session)
+    assert (row.status, row.reason, row.attempts) == ("sent", None, 0)
+
+
+@requires_db
+async def test_a_package_that_raises_never_relabels_an_encounter_the_platform_holds(db_session, monkeypatch):
+    """Final review (2026-11-13): an Encounter the platform holds stays `sent` with its id (`keep_held`) when a
+    later run of its stay raises; nothing else is written, and the night does not take the stay for it."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    admission_id = admission.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    settings = await feed_settings(db_session, ward, fake)
+    audit = InMemoryAuditLog()
+    await _round(db_session, fake, audit)
+    held_id = (await _encounter_row(db_session)).remote_id
+    assert held_id
+    monkeypatch.setattr(tres_package, "map_encounter", _breaks)
+    report = await _round(db_session, fake, audit, now=NOW + timedelta(minutes=5))
+    assert report.failed == 1
+    row = await _encounter_row(db_session)
+    assert (row.status, row.reason, row.attempts, row.remote_id, row.next_attempt_at) == ("sent", None, 0, held_id, None)
+    assert admission_id not in await retry_stays(db_session, settings, NOW + timedelta(minutes=5))
+
+
+@requires_db
+@pytest.mark.parametrize("raised", [TresError(503, "Sentetik"), LedgerBusy("encounter")])
+async def test_an_outage_or_a_busy_row_is_not_a_package_error(db_session, monkeypatch, raised):
+    """Final review (2026-11-13): what the round and the hand already handle — the platform's outage (an
+    outage leaves the rows as they were), a row another sender holds — is not recorded as `package_error`."""
+    ward, fake = await _world(db_session)
+    admission = await add_stay(db_session, ward)
+    admission_id = admission.id
+    await map_unit(db_session, ward)
+    await identify(db_session, ward)
+    await feed_settings(db_session, ward, fake)
+
+    def raise_it(*_args, **_kwargs):
+        raise raised
+
+    monkeypatch.setattr(tres_package, "map_encounter", raise_it)
+    report = await _round(db_session, fake, InMemoryAuditLog())
+    assert report.failed == 1
+    rows = await _rows_of(db_session, admission_id)
+    assert "encounter" not in rows and rows["patient"] == ("sent", None)

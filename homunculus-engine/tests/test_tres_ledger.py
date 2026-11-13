@@ -24,7 +24,7 @@ from homunculus.tenant.models import Bed, Room, Site, Tenant, Unit, UnitType
 from homunculus.tres.client import LOCAL_ID_EXTENSION, TresClient, TresError, is_outage
 from homunculus.tres.ledger import (
     ERROR_MAX_BYTES, ERROR_MAX_CHARS, HAND_LOCK_TIMEOUT_MS, MAX_ATTEMPTS, RETRY_AFTER, LedgerBusy, _row, clip_error,
-    deliver, due, forget_skip, held, is_lock_timeout, newer_stay, payload_digest, record_skip,
+    deliver, due, forget_skip, held, is_lock_timeout, newer_stay, payload_digest, record_failure, record_skip,
 )
 from homunculus.tres.models import TresDelivery
 from tests.conftest import requires_db
@@ -319,6 +319,29 @@ async def test_a_skip_is_a_row_with_its_reason_and_ends_when_the_resource_is_sen
     assert renamed.reason == "name_single"
     sent = await send()
     assert (sent.id, sent.status, sent.reason) == (row.id, "sent", None)
+
+
+@requires_db
+async def test_a_package_error_is_counted_as_a_refusal_is_and_leaves_a_held_row(world, db_session):
+    """Final review (2026-11-13): `record_failure` — a stay's package raised before its resource was sent. The
+    row reads `failed` with the catalogue's reason and no words; each failure in a row counts an attempt and
+    sets the 30-minute wait, the fifth makes it `stuck`, as a refused payload's do; a row that said something
+    else before starts the count again; a row the platform holds is left exactly as it is."""
+    fake, send, tenant = world
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "encounter", "local_id": "hmn-e-0001."}
+    await record_skip(db_session, **key, reason="unit_unmapped")
+    for n in range(1, MAX_ATTEMPTS + 1):
+        row = await record_failure(db_session, **key, reason="package_error", now=T0)
+        assert (row.status, row.reason, row.attempts) == ("stuck" if n == MAX_ATTEMPTS else "failed", "package_error", n)
+    assert (row.last_error, row.next_attempt_at, row.remote_id) == (None, T0 + RETRY_AFTER, None)
+    await record_skip(db_session, **key, reason="unit_unmapped")
+    assert (await record_failure(db_session, **key, reason="package_error", now=T0)).attempts == 1   # counted afresh
+    sent = await send()
+    kept = await record_failure(db_session, **{**key, "resource_type": "patient", "local_id": LOCAL},
+                                reason="package_error", now=T0)
+    assert (kept.id, kept.status, kept.reason, kept.attempts, kept.remote_id) == (sent.id, "sent", None, 0, "7001")
+    assert fake.fhir_requests == [("GET", "/fhir/Patient"), ("POST", "/fhir/Patient")]   # it asks the platform nothing
+    assert await _rows(db_session) == 2
 
 
 async def _admission(db_session, tenant: Tenant, label: str, at: datetime = T0) -> uuid.UUID:

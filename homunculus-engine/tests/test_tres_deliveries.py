@@ -433,9 +433,13 @@ async def test_the_preview_shows_a_patient_left_to_the_persons_newer_stay_and_go
 
 
 @requires_db
-async def test_an_unexpected_failure_in_a_hand_is_rolled_back_audited_as_an_error_and_raised(desk, monkeypatch):
-    """M6: never a hand with no trail — `result: "error"`, no message, no value; then the 500."""
+async def test_an_unexpected_failure_in_a_hand_is_rolled_back_audited_as_an_error_and_raised(desk, db_session,
+                                                                                             monkeypatch):
+    """M6: never a hand with no trail — `result: "error"`, no message, no value; then the 500. Final review
+    (2026-11-13): the hand goes through the source's one package, so its stay's Encounter row reads `failed`
+    with `package_error` as a round's would — the list shows it, the night retries it — with no words."""
     ward, fake, stay, client, app = desk
+    stay_id = stay.id
     from homunculus.tres import package
 
     def broken(*_args, **_kwargs):
@@ -445,7 +449,11 @@ async def test_an_unexpected_failure_in_a_hand_is_rolled_back_audited_as_an_erro
     with pytest.raises(RuntimeError):
         await client.post(_send(stay), headers=ward.auth["admin"])
     (row,) = _audit(app, "tres.send")
-    assert row.payload == {"actor": ward.users["admin"].username, "admission_id": str(stay.id), "result": "error"}
+    assert row.payload == {"actor": ward.users["admin"].username, "admission_id": str(stay_id), "result": "error"}
+    encounter = (await db_session.execute(select(TresDelivery).where(TresDelivery.resource_type == "encounter")
+                                          .execution_options(populate_existing=True))).scalar_one()
+    assert (encounter.status, encounter.reason, encounter.attempts, encounter.last_error, encounter.admission_id) == (
+        "failed", "package_error", 1, None, stay_id)
 
 
 @requires_db

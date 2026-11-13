@@ -85,6 +85,7 @@ export default {
       organizationMissing: "Kurum kimliği girilmemiş", timezoneUnknown: "Hastanenin saat dilimi sunucuda bilinmiyor",
       noReference: "Doğrulanamadı: başvurduğu kayıt platformda yok", typeOff: "Bu kayıt türü kapalı",
       dischargeMissing: "Taburcu zamanı girilmemiş", patientUnheld: "Hasta kaydı platformda yok: yatış kaydı onunla birlikte atlandı",
+      packageError: "Yatışın gönderimi beklenmedik bir hatayla durdu",
     },
     deliveries: {
       title: "Gönderimler",
@@ -243,6 +244,7 @@ export default {
       organizationMissing: "Müəssisənin identifikatoru daxil edilməyib", timezoneUnknown: "Xəstəxananın saat qurşağı serverdə məlum deyil",
       noReference: "Yoxlanılmadı: istinad etdiyi qeyd platformada yoxdur", typeOff: "Bu qeyd növü bağlıdır",
       dischargeMissing: "Evə yazılma vaxtı daxil edilməyib", patientUnheld: "Xəstə qeydi platformada yoxdur: yatış qeydi də göndərilmədi",
+      packageError: "Yatışın göndərişi gözlənilməz xəta ilə dayandı",
     },
     deliveries: {
       title: "Göndərişlər",
@@ -401,6 +403,7 @@ export default {
       organizationMissing: "Идентификатор организации не указан", timezoneUnknown: "Часовой пояс больницы неизвестен серверу",
       noReference: "Не проверено: запись, на которую он ссылается, отсутствует на платформе", typeOff: "Этот вид записей выключен",
       dischargeMissing: "Время выписки не указано", patientUnheld: "Записи пациента нет на платформе: запись о госпитализации пропущена вместе с ней",
+      packageError: "Отправка госпитализации остановлена непредвиденной ошибкой",
     },
     deliveries: {
       title: "Отправки",
@@ -560,6 +563,7 @@ export default {
       organizationMissing: "No organization id entered", timezoneUnknown: "The hospital's time zone is not known to the server",
       noReference: "Not validated: what it refers to is not on the platform", typeOff: "This record type is switched off",
       dischargeMissing: "No discharge time entered", patientUnheld: "The patient's record is not on the platform: the stay's record is skipped with it",
+      packageError: "The stay's sending stopped on an unexpected error",
     },
     deliveries: {
       title: "Deliveries",

@@ -35,7 +35,9 @@ every early end — a session refused, a 429, five failures in a row, the settin
 and a tenant parked, passed over or behind a closed lock never reaches the source). A package that
 failed alone (fewer than five in a row) does not end the round: its stay was due in this window
 and stays within the week of the next rounds — and, past it, its `failed` or `pending` row takes it
-to the nightly retry (batch-4 review: a gap stay the watermark has passed included). Its last step
+to the nightly retry (batch-4 review: a gap stay the watermark has passed included). A package that
+RAISED what nothing else handles leaves such a row too: its stay's Encounter, `failed` with
+`package_error` (final review, `StaySource.package`) — never a stay with no row at all. Its last step
 writes `reached_to` = its upper bound, by its own statement (never `updated_at`), as a
 compare-and-set: only while the settings are still the version the round began on and `reached_to`
 is still what it read — a save during the last package, or another process's round, moves nothing.
@@ -105,8 +107,11 @@ from homunculus.admission.boardkey import board_key
 from homunculus.admission.models import Admission, AdmissionState, Patient
 from homunculus.api.audit import AuditEvent, AuditLog, iter_records_of
 from homunculus.tenant.models import Tenant
+from homunculus.tres import ids
+from homunculus.tres.client import TresError
+from homunculus.tres.ledger import LedgerBusy, record_failure
 from homunculus.tres.models import TresDelivery, TresDepartmentMap, TresPractitionerIdentity, TresSettings
-from homunculus.tres.package import Outcome, run
+from homunculus.tres.package import PACKAGE_ERROR, Outcome, run
 from homunculus.tres.stay import CHART, RETRACT, Clinician, Department, Person, Stay, readings_of
 
 log = logging.getLogger(__name__)
@@ -355,22 +360,60 @@ class StaySource:
         `nightly` (the night's retry, never a person's hand): a stay whose last admission was
         discharged before the cut-off — judged on the stay as read now (`before_cut_off`) — is
         left: nothing asked, nothing written, an empty Outcome. «Yeniden dene» forces the same
-        package without it: a person's deliberate hand is not held by the cut-off."""
+        package without it: a person's deliberate hand is not held by the cut-off.
+
+        A PACKAGE THAT RAISES what nothing else handles (final review, 2026-11-13) — not
+        `LedgerBusy`, not the client's `TresError` (an outage, a refusal, a session: the round and
+        the hand read those) — is recorded here, the one place the rounds, the night and the hand all
+        reach (`_package_failed`), and then raised again: the round counts it towards its five in a
+        row and logs its class, the hand audits `error` and answers 500. Without it a stay whose
+        package kept raising left the rounds' week with no row at all, and nothing would ever try it
+        again."""
         tenant_id = settings.tenant_id
 
         async def package(sender) -> Outcome | None:
-            stay = await self.load(db, tenant_id, admission_id)
-            if stay is None:
-                return None
-            if nightly and before_cut_off(stay, settings.send_from):
-                return Outcome()
-            organization = getattr(settings, f"{sender.environment}_organization_id", None)
-            outcome = await run(stay, sender, organization_id=organization, force=force)
-            if outcome.first_complete:
-                await self._audit_package(db, tenant_id, stay, sender.environment, outcome)
-            return outcome
+            try:
+                stay = await self.load(db, tenant_id, admission_id)
+                if stay is None:
+                    return None
+                if nightly and before_cut_off(stay, settings.send_from):
+                    return Outcome()
+                organization = getattr(settings, f"{sender.environment}_organization_id", None)
+                outcome = await run(stay, sender, organization_id=organization, force=force)
+                if outcome.first_complete:
+                    await self._audit_package(db, tenant_id, stay, sender.environment, outcome)
+                return outcome
+            except (LedgerBusy, TresError):
+                raise
+            except Exception:
+                await self._package_failed(db, tenant_id, admission_id, sender)
+                raise
 
         return package
+
+    async def _package_failed(self, db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID,
+                              sender) -> None:
+        """The stay's package raised (`package`): the session is rolled back, and the stay's Encounter
+        row — `ids.encounter(root)`, keyed to the stay's LAST admission, its chain read afresh (the
+        failure may have come before the stay was read) — reads `failed` with PACKAGE_ERROR, counted
+        as a refusal is (`ledger.record_failure`), so «Gönderimler» shows the stay and the night,
+        which takes `failed` rows, tries it again. An Encounter the platform holds is left `sent`
+        (`keep_held`). Nothing of the exception goes into the row. A record that cannot be written
+        (the database itself down, a hand's row another sender holds) is logged by its class and
+        given up: the caller raises the package's own exception all the same."""
+        await db.rollback()
+        try:
+            chain = await chain_of(db, tenant_id, admission_id)
+            if not chain:
+                return
+            root_id, last_id = chain[0].id, chain[-1].id
+            await record_failure(db, tenant_id=tenant_id, environment=sender.environment, resource_type="encounter",
+                                 local_id=ids.encounter(root_id), reason=PACKAGE_ERROR, now=sender.now,
+                                 admission_id=last_id, lock_timeout_ms=getattr(sender, "lock_timeout_ms", None))
+        except Exception as exc:  # noqa: BLE001 — the package's own exception is what the caller raises
+            await db.rollback()
+            log.error("TRƏS: the failure of admission %s's package was not recorded (%s)", admission_id,
+                      type(exc).__name__)
 
     async def load(self, db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID) -> Stay | None:
         """The stay `admission_id` belongs to, read whole (the module's docstring); None when the

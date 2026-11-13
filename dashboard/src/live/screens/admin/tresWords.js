@@ -19,7 +19,9 @@ export const STATUSES = Object.freeze([
 
 /** The catalogue's skip reasons of phase F1 (tres/az.py, tres/mapping/*, tres/package.py, tres/worker.py) —
  *  `discharge_missing` (a finished stay with no discharge time, its Encounter skipped) and `patient_unheld`
- *  (in a send, a stay whose package stopped at its Patient: its Encounter row is skipped with it) among them. */
+ *  (in a send, a stay whose package stopped at its Patient: its Encounter row is skipped with it) among them —
+ *  and `package_error`, the one reason of a FAILED row (final review: the stay's package raised an unexpected
+ *  error; its Encounter row reads `failed`, and the night tries it again). */
 export const REASONS = new Map([
   ["fin_missing", "tres.reason.finMissing"], ["fin_format", "tres.reason.finFormat"],
   ["name_single", "tres.reason.nameSingle"], ["father_name_missing", "tres.reason.fatherNameMissing"],
@@ -28,7 +30,7 @@ export const REASONS = new Map([
   ["unit_unmapped", "tres.reason.unitUnmapped"], ["organization_missing", "tres.reason.organizationMissing"],
   ["timezone_unknown", "tres.reason.timezoneUnknown"], ["discharge_missing", "tres.reason.dischargeMissing"],
   ["no_reference", "tres.reason.noReference"], ["patient_unheld", "tres.reason.patientUnheld"],
-  ["type_off", "tres.reason.typeOff"],
+  ["type_off", "tres.reason.typeOff"], ["package_error", "tres.reason.packageError"],
 ]);
 
 /** The two platforms a hospital's account can point at (the tab's select; the engine's `environment`). */

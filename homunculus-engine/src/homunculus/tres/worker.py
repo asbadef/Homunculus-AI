@@ -327,6 +327,8 @@ async def _work(db: AsyncSession, client: TresClient, sender: Sender, settings: 
                     return
                 consecutive += 1
             except Exception as exc:  # noqa: BLE001 — one bad package must not end the round
+                # The app's source has already recorded the stay's Encounter `failed`/`package_error`
+                # (source.StaySource.package, final review): the list shows it, the night retries it.
                 report.failed += 1
                 consecutive += 1
                 log.error("TRƏS: a package failed for tenant %s (%s at %s)", sender.tenant_id,

@@ -240,7 +240,7 @@ const TRES_SETTINGS_SWEEP = { mode: "validate", environment: "test", settle_hour
 const TRES_STATUS_SWEEP = ["pending", "sent", "validated", "failed", "skipped", "stuck", "deleted"];
 const TRES_REASON_SWEEP = ["fin_missing", "fin_format", "name_single", "father_name_missing", "sex_unmapped",
   "birth_date_invalid", "identity_missing", "name_missing", "unit_unmapped", "organization_missing", "timezone_unknown",
-  "discharge_missing", "no_reference", "patient_unheld", "type_off"];
+  "discharge_missing", "no_reference", "patient_unheld", "type_off", "package_error"];
 const TRES_DELIVERIES_SWEEP = { environment: "test", session_refused_at: "2026-10-08T08:00:00Z", next: "c-2",
   items: [...TRES_STATUS_SWEEP, ...TRES_REASON_SWEEP].map((value, n) => ({
     id: `r-${n}`, resource_type: "vital", local_id: `hmn-v-${n}.`, status: TRES_STATUS_SWEEP.includes(value) ? value : "skipped",
@@ -680,6 +680,7 @@ describe("no screen shows a reader a translation key", () => {
     // sweep's lists are the whole vocabulary of tresWords.js, so a status or reason added there is swept here.
     expect(screen.getByText("Evə yazılma vaxtı daxil edilməyib")).toBeInTheDocument();             // tres.reason.dischargeMissing
     expect(screen.getByText("Xəstə qeydi platformada yoxdur: yatış qeydi də göndərilmədi")).toBeInTheDocument();   // tres.reason.patientUnheld
+    expect(screen.getByText("Yatışın göndərişi gözlənilməz xəta ilə dayandı")).toBeInTheDocument();          // tres.reason.packageError (final review)
     expect([...TRES_STATUS_SWEEP].sort()).toEqual(STATUSES.map(([status]) => status).sort());
     expect([...TRES_REASON_SWEEP].sort()).toEqual([...REASONS.keys()].sort());
     expect(rawKeys(document.body)).toEqual([]);

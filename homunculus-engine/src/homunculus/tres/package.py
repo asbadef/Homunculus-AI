@@ -81,6 +81,9 @@ from homunculus.tres.worker import TYPE_OFF
 
 NO_REFERENCE = "no_reference"
 PATIENT_UNHELD = "patient_unheld"
+#: The stay's package raised what nothing else handles (final review): its Encounter row reads `failed`
+#: with this reason (source.StaySource.package, ledger.record_failure) — the list shows it, the night retries it.
+PACKAGE_ERROR = "package_error"
 
 
 @dataclass
