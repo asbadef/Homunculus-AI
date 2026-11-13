@@ -4,7 +4,10 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COMORBIDITIES, CONSENTS, ageOf, emptyForm, missing, positive, toBody } from "./admitForm.js";
+import {
+  BACKDATE_MS, COMORBIDITIES, CONSENTS, admittedAtOf, admittedBounds, ageOf, emptyForm, missing, positive, toBody,
+} from "./admitForm.js";
+import { localInput } from "./DischargeDialog.jsx";
 import { DICTIONARIES } from "../../i18n/catalog.js";
 import { LANG_CODES } from "../../i18n/langs.js";
 import { createTranslator } from "../../i18n/translate.js";
@@ -152,5 +155,72 @@ describe("the body POST /admissions takes", () => {
     const form = fs.readFileSync(path.resolve(here, "../../../../../homunculus-engine/src/homunculus/admission/form.py"), "utf8");
     const server = /COMORBIDITY_CODES = \(([^)]*)\)/.exec(form)[1].match(/"(\w+)"/g).map((s) => s.slice(1, -1));
     for (const { value } of COMORBIDITIES) expect(server, value).toContain(value);
+  });
+});
+
+// G3-07 «Kabul zamanı» (spec D1, §5): untouched, nothing is sent; touched, the minute in ISO UTC — the same
+// string on every send — bounded by six hours, the bed's free time and the clock.
+describe("«Kabul zamanı»", () => {
+  // The clock (the server's, as the screen holds it) at 14:00:30 local, so the bounds are minutes one can name.
+  const NOW = new Date(2026, 10, 12, 14, 0, 30).getTime();
+  const at = (h, m) => localInput(new Date(2026, 10, 12, h, m).getTime());
+  /** Bed free since 11:30:40.123456 — the server's string, microseconds and all (Date.parse keeps milliseconds). */
+  const FREE = new Date(2026, 10, 12, 11, 30, 40, 123).toISOString().replace(/Z$/, "456Z");
+  const touched = (text) => ({ ...complete(), admittedAt: text, admittedAtTouched: true });
+  const missingAt = (form, freeSince = null) => missing(form, TODAY, { now: NOW, freeSince }).map((m) => m.field);
+
+  it("starts untouched and empty, so «Yeni qəbul» clears it", () => {
+    expect(emptyForm()).toMatchObject({ admittedAt: "", admittedAtTouched: false });
+  });
+
+  it("reaches back as far as the server's BACKDATE_MAX (admission/form.py)", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const form = fs.readFileSync(path.resolve(here, "../../../../../homunculus-engine/src/homunculus/admission/form.py"), "utf8");
+    const hours = Number(/^BACKDATE_MAX = timedelta\(hours=(\d+)\)/m.exec(form)[1]);
+    expect(BACKDATE_MS).toBe(hours * 3_600_000);
+    expect(hours).toBe(6);
+  });
+
+  it("is bounded a minute inside six hours, rounded up — or by the bed's minute when later — and a minute ahead", () => {
+    const sixHours = new Date(2026, 10, 12, 8, 2).getTime();             // 14:00:30 − 6 h + 1 min = 08:01:30, up
+    expect(admittedBounds(NOW, null)).toEqual({ minMs: sixHours, maxMs: NOW + 60_000 });
+    expect(admittedBounds(NOW, FREE).minMs).toBe(new Date(2026, 10, 12, 11, 30).getTime());
+    expect(admittedBounds(NOW, new Date(2026, 10, 11, 23, 0).toISOString()).minMs).toBe(sixHours);
+    expect(admittedBounds(NOW, "not a time").minMs).toBe(sixHours);
+  });
+
+  it("sends nothing untouched: the note holds no time, whatever the bed", () => {
+    expect("admission_datetime" in toBody(complete()).note).toBe(false);
+    expect("admission_datetime" in toBody(complete(), null, { freeSince: FREE }).note).toBe(false);
+    expect(admittedAtOf({ ...complete(), admittedAt: at(12, 0) }, FREE)).toBeNull();
+  });
+
+  it("sends a touched minute as its start in ISO UTC, the same string on every send", () => {
+    const form = touched(at(12, 15));
+    const first = toBody(form, "11111111-1111-4111-8111-111111111111", { freeSince: FREE }).note.admission_datetime;
+    expect(first).toBe(new Date(2026, 10, 12, 12, 15).toISOString());
+    expect(toBody(form, "11111111-1111-4111-8111-111111111111", { freeSince: FREE }).note.admission_datetime).toBe(first);
+  });
+
+  it("sends the bed's free time as the server wrote it for the minute that holds it", () => {
+    expect(admittedAtOf(touched(at(11, 30)), FREE)).toBe(FREE);
+    expect(toBody(touched(at(11, 30)), null, { freeSince: FREE }).note.admission_datetime).toBe(FREE);
+    expect(admittedAtOf(touched(at(11, 31)), FREE)).toBe(new Date(2026, 10, 12, 11, 31).toISOString());
+  });
+
+  it("names the field past either bound, ahead of the clock or unreadable — and never untouched", () => {
+    expect(missingAt(touched(at(8, 2)))).toEqual([]);
+    expect(missingAt(touched(at(8, 1)))).toEqual(["admittedAt"]);
+    expect(missingAt(touched(at(14, 1)))).toEqual([]);
+    expect(missingAt(touched(at(14, 2)))).toEqual(["admittedAt"]);
+    expect(missingAt(touched(at(11, 30)), FREE)).toEqual([]);
+    expect(missingAt(touched(at(11, 29)), FREE)).toEqual(["admittedAt"]);
+    expect(missingAt(touched(""))).toEqual(["admittedAt"]);
+    expect(missingAt(touched("2026-02-30T10:00"))).toEqual(["admittedAt"]);
+    expect(missingAt({ ...complete(), admittedAt: at(1, 0) })).toEqual([]);
+    expect(missing(touched(at(8, 1)), TODAY, { now: NOW })).toEqual([{ field: "admittedAt", key: "kabul.miss.admittedAt" }]);
+    // In the form's order: after the identity, first in the «Kabul» box.
+    expect(missing({ ...touched(at(8, 1)), fin: "5AB12C", type: "" }, TODAY, { now: NOW }).map((m) => m.field))
+      .toEqual(["fin", "admittedAt", "type"]);
   });
 });
