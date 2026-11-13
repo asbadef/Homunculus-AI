@@ -358,8 +358,8 @@ Two review rounds; the fixes are `7d508d2c`…`9a306d44`.
 Made by `docs/superpowers/plans/2026-11-12-tres-f1a-hasta-yatis.md` (the engine) and
 `docs/superpowers/plans/2026-11-12-tres-f1b-hasta-yatis.md` (the panels) — phase F1: Patient, Practitioner,
 Encounter, vital signs. «A25 (3)» is amendment 25, point (3), of the F1a plan's header, which keeps every amendment's
-full reasons: 1–22 are the plan as written, 23–27 its review rounds of 2026-11-12/13. Where a line above and a line
-here disagree, this section is right.
+full reasons: 1–22 are the plan as written, 23–27 its review rounds of 2026-11-12/13, 28 the final review of the whole
+phase (2026-11-13). Where a line above and a line here disagree, this section is right.
 
 ### 14.1 The engine
 
@@ -430,6 +430,19 @@ here disagree, this section is right.
   the body and the `Retry-After` header (whole seconds, rounded up) when the platform gave a wait; 503
   `tres_platform_unavailable`; any other failure is rolled back, audited `result: "error"` and raised (500). A refused
   precondition asks nothing and writes no audit row.
+- **D9 — a draft stay is not sent by hand** (amendment 28 (2)). A stay whose LAST admission is DRAFT — the admission
+  form not yet signed, often with no attending — is 409 `tres_stay_draft` for «Şimdi gönder» and «Yeniden dene»: after
+  the locks and the stay's lookup, before the platform is asked, no audit row. The preview still shows it.
+- **An Encounter's own skips keep what the platform holds** (amendment 28 (3)). `unit_unmapped`,
+  `organization_missing`, `timezone_unknown` and `discharge_missing` are written with `keep_held`, as `patient_unheld`
+  is: a held Encounter whose unit's mapping is cleared stays `sent` with its id, and the night does not take it.
+- **D21 — a package that raises leaves its stay `failed`** (amendment 28 (5)). An exception nothing else handles (not
+  `LedgerBusy`, not the client's `TresError`) is caught in `StaySource.package` — the one door of the rounds, the night
+  and the hand: the session is rolled back and the stay's Encounter row (`ids.encounter(root)`, keyed to its last
+  admission) reads `failed` with the catalogue reason `package_error` — counted as a refusal is (the 30-minute wait,
+  `stuck` at the fifth), no words of the exception — then the exception is raised again (the round counts it, the hand
+  audits `error`). A held Encounter stays `sent`. Why: such a stay left the rounds' week with no row, and nothing
+  would ever try it again; now «Gönderimler» shows it and the night retries it.
 - **N12 — a person never queues behind a round** (A9, A24 (5)(6)). Each row is taken under `SET LOCAL lock_timeout =
   '2000ms'` → 409 `tres_busy`. The bound covers taking the row only — back to the default once it is held, so the write
   after the HTTP calls is not cut — `forget_skip` included. Not `NOWAIT`: that does not bound a wait on another
@@ -490,6 +503,13 @@ here disagree, this section is right.
 - **A hand's result is told by its rows' statuses** — «İşlendi: Gönderildi 3 · Başarısız 1», never «sent» for a failed
   or skipped row; a failed row makes the toast a warning; a throttled hand says the platform's own wait; after a hand
   with no answer or a refused login the list is read again (`7f012ab6`).
+- **The hand's wait** (amendment 28 (1)). «Şimdi gönder» and «Yeniden dene» wait 180 s (`backendApi.js`
+  `TRES_HAND_TIMEOUT_MS`), the feed's other calls 15 s; nginx gives the two routes a location of their own with
+  `proxy_read_timeout` and `proxy_send_timeout` 180 s (`tests/test_nginx_routes.py` holds it to the constant). A first
+  package of ~35 paced requests could not finish in 15 s, and the panel said «no answer» about a send that landed.
+- **The toast's tone** (amendment 28 (4)): a confirmation only when every row is `sent` or `validated`; a row `failed`,
+  `stuck`, `skipped` or `pending` makes it a warning.
+- **A found stay in DRAFT** is offered no «Şimdi gönder» (amendment 28 (2)); its preview stays.
 - **The list is never stale against the settings**: a save or a successful connection test makes it read again; a
   late answer never overwrites a newer list; one action at a time, the others visibly off (`7f012ab6`, `71956f5e`).
 - **`send_from` on the form** is sent only when the user changed it (it carries microseconds; a minute-precision
@@ -536,6 +556,10 @@ F1 closes O14, O20 and O21 and builds O15 as proposed. **Owner** marks the owner
   every Encounter is skipped `timezone_unknown` and the night runs in UTC. With it: a tenant's zone is written only
   when the tenant is made (`POST /tenants`) and no route changes it, so a tenant made with the default `UTC` sends
   UTC times (D22).
+- **O31 — decide before live: the owner, with F6** (amendment 28). A FİN corrected after its Patient was sent builds a
+  new Patient (the id is the FİN's digest), and the old one — keyed by the wrong FİN's digest, possibly another
+  person's FİN — stays on the platform for good: D19 says a Patient is never deleted. Options for F6: a hand delete
+  of the orphaned Patient, or a longer wait before a hand send of a stay whose FİN was just entered.
 - **The owner's or the controller's call** (A25 (3), A26 (2)): whether `validate` should yield a person to a newer
   stay's `validated` row (today two stays of one person within reach each validate their own version every round);
   whether `reached_to` should advance only to the oldest discharge whose package did not finish (the night now takes
@@ -574,15 +598,15 @@ For whoever merges the branch to main — on the owner's word only («main'e al�
 
 ### 14.5 Native reading (owner item)
 
-The `az`, `ru` and `en` texts F1 added were written without a native speaker (F0's N10 holds for F0's). F1 added 117
+The `az`, `ru` and `en` texts F1 added were written without a native speaker (F0's N10 holds for F0's). F1 added 119
 keys to `strings/tres.js` and 6 to `strings/denetim.js`, each in four languages, and changed no F0 key
-(`git diff f74b474a..5e0d3b5f`):
+(`git diff f74b474a..5e0d3b5f`: 117; amendment 28 added `tres.reason.packageError` and `tres.err.stayDraft`):
 
 - `tres.`: `sendFrom`, `sendFromHint`, `sendFromUnset`, `sendFromZone`, `sendFromCleared`, `liveNote`;
 - `tres.status.` (7): `pending`, `sent`, `validated`, `failed`, `skipped`, `stuck`, `deleted`;
-- `tres.reason.` (15): `finMissing`, `finFormat`, `nameSingle`, `fatherNameMissing`, `sexUnmapped`, `birthDateInvalid`,
+- `tres.reason.` (16): `finMissing`, `finFormat`, `nameSingle`, `fatherNameMissing`, `sexUnmapped`, `birthDateInvalid`,
   `identityMissing`, `nameMissing`, `unitUnmapped`, `organizationMissing`, `timezoneUnknown`, `noReference`,
-  `typeOff`, `dischargeMissing`, `patientUnheld`;
+  `typeOff`, `dischargeMissing`, `patientUnheld`, `packageError`;
 - `tres.deliveries.` (43): `title`, `sub`, `loading`, `readFailed`, `empty`, `emptyFiltered`, `inEnvironment`,
   `parked`, `filterStatus`, `filterType`, `all`, `caption`, `when`, `type`, `key`, `status`, `reason`, `attempts`,
   `actions`, `more`, `retry`, `retried`, `preview`, `findLabel`, `find`, `found`, `discharged`, `stillAdmitted`,
@@ -592,9 +616,9 @@ keys to `strings/tres.js` and 6 to `strings/denetim.js`, each in four languages,
   `closed`, `invalid`, `save`, `saved`;
 - `tres.practitioners.` (16): `title`, `sub`, `loading`, `readFailed`, `empty`, `caption`, `name`, `fin`, `finStored`,
   `finClear`, `family`, `given`, `actions`, `invalid`, `save`, `saved`;
-- `tres.err.` (17): `liveClosed`, `unitUnknown`, `departmentCode`, `departmentDisplay`, `userUnknown`, `finFormat`,
+- `tres.err.` (18): `liveClosed`, `unitUnknown`, `departmentCode`, `departmentDisplay`, `userUnknown`, `finFormat`,
   `name`, `filter`, `cursor`, `stayUnknown`, `off`, `busy`, `loginRefused`, `platformUnavailable`, `throttled`,
-  `otherEnvironment`, `sendFrom`;
+  `otherEnvironment`, `sendFrom`, `stayDraft`;
 - `denetim.type.` (6): `tresPackage`, `tresMap`, `tresIdentity`, `tresSend`, `tresRetry`, `tresPreview`.
 
 Named doubts: `tres.err.liveClosed` tells a hospital administrator, in every language, that the legal basis and the

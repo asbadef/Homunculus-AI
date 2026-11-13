@@ -2497,10 +2497,15 @@ adlar uydurmadır.
     olunca liste kendiliğinden yeniden okunur. Platformun mesajları burada görünmez (bir değeri tekrarlayabilirler);
     yalnız önizlemede.
     - **«Yatışı bul»:** protokol numarasıyla bir yatış bulunur ve durumu yazılır (taburcu ve saati, transfer edildi,
-      taburcu edilmedi…). Yanında «Şimdi gönder» ve «Önizle».
+      taburcu edilmedi…). Yanında «Şimdi gönder» ve «Önizle»; taslak (imzalanmamış) bir yatışta «Şimdi gönder» çıkmaz.
     - **«Şimdi gönder»:** o yatışın paketini hemen gönderir — vakti gelmemiş, geçiş tarihinden önceki ya da hâlâ
-      yatan bir hasta için de (yatan hastanın yatışı «sürüyor» olarak gider). Sonuç, kayıtların durumlarıyla sayılır
-      (ör. «İşlendi: Gönderildi 3 · Başarısız 1»); başarısız bir kayıt varsa uyarı olarak çıkar.
+      yatan bir hasta için de (yatan hastanın yatışı «sürüyor» olarak gider). Taslak (imzalanmamış) bir yatış elle
+      gönderilmez; «Yeniden dene» de reddedilir. Sonuç, kayıtların durumlarıyla sayılır (ör. «İşlendi: Gönderildi 3 ·
+      Başarısız 1»); kayıtların hepsi gönderilmiş ya da doğrulanmış değilse (başarısız, takıldı, atlandı, bekliyor)
+      uyarı olarak çıkar. Gönderim birkaç dakika sürebilir (bir yatışın ilk gönderimi platforma onlarca istektir,
+      aralarında en az 0,3 saniye); sayfa beklerken kapatılmamalıdır. Kapatılırsa ya da sayfa üç dakikada yanıt
+      alamazsa o ana kadar gönderilenler kaybolmaz: her kaydın sonucu gönderildiği anda deftere yazılır ve
+      «Gönderimler» listesinde görünür.
     - **«Yeniden dene»:** yalnız «Başarısız» ya da «Takıldı» bir satırda çıkar; o kaydın yatışını baştan, beklemeden
       gönderir. Değişmemiş ve zaten gönderilmiş kayıtlar için yine bir şey sorulmaz. Seçili olmayan ortama ait bir
       satır yalnız o ortam seçiliyken denenir.
@@ -2525,7 +2530,9 @@ adlar uydurmadır.
   - «Bekliyor» — kayıt açıldı, henüz sonuçlanmadı (ör. platform yanıt vermedi);
   - «Gönderildi» — platform kaydı tutuyor;
   - «Doğrulandı» — «Yalnız doğrula» kipinde platform denetledi, kayıt yazılmadı;
-  - «Başarısız» — platform bu kaydı reddetti; kayıt değişmeden 30 dakika bekler, değişirse hemen denenir;
+  - «Başarısız» — platform bu kaydı reddetti; kayıt değişmeden 30 dakika bekler, değişirse hemen denenir. Yatışın
+    gönderimi beklenmedik bir hatayla durursa yatış kaydı da «Başarısız» olur (neden: «Yatışın gönderimi beklenmedik
+    bir hatayla durdu»): yatış listede görünür ve gece yeniden denenir;
   - «Takıldı» — art arda beş başarısız deneme; yalnız gece, «Yeniden dene» ile ya da kayıt değişince denenir;
   - «Atlandı» — eksik bilgi; nedeni yazılır, platforma bir şey gönderilmedi;
   - «Silindi» — silme F6 ile gelir; bu aşamada kullanılmaz.
