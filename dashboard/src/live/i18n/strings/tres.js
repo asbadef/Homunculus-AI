@@ -70,6 +70,8 @@ export default {
     sendFrom: "Otomatik gönderimin başlangıcı",
     sendFromHint: "Yalnız bu andan sonra taburcu olan yatışlar kendiliğinden gönderilir; daha öncekiler yalnız «Şimdi gönder» ile. «Gönder» ilk kez seçildiğinde o an yazılır.",
     sendFromUnset: "Henüz «Gönder» seçilmedi: otomatik gönderimin başlangıcı yok.",
+    sendFromZone: "Saat dilimi: {zone}",
+    sendFromCleared: "Başlangıç buradan silinemez: alan boş bırakılırsa bunun için sunucuya bir şey gönderilmez, kayıtlı başlangıç olduğu gibi kalır.",
     liveNote: "Canlı platforma hasta verisi gönderimi bu sürümde kapalı: canlı ortam için yalnız «Kapalı» kip kaydedilir.",
     status: {
       pending: "Bekliyor", sent: "Gönderildi", validated: "Doğrulandı", failed: "Başarısız", skipped: "Atlandı",
@@ -224,6 +226,8 @@ export default {
     sendFrom: "Avtomatik göndərişin başlanğıcı",
     sendFromHint: "Yalnız bu andan sonra evə yazılan yatışlar avtomatik göndərilir; daha əvvəlkilər yalnız «İndi göndər» ilə. «Göndər» ilk dəfə seçiləndə o an yazılır.",
     sendFromUnset: "«Göndər» hələ seçilməyib: avtomatik göndərişin başlanğıcı yoxdur.",
+    sendFromZone: "Saat qurşağı: {zone}",
+    sendFromCleared: "Başlanğıc buradan silinə bilməz: sahə boş saxlanılsa, bu sahə üçün serverə heç nə göndərilmir, saxlanılmış başlanğıc olduğu kimi qalır.",
     liveNote: "Canlı platformaya xəstə məlumatlarının göndərilməsi bu versiyada bağlıdır: canlı mühit üçün yalnız «Bağlı» rejimi yadda saxlanılır.",
     status: {
       pending: "Gözləyir", sent: "Göndərildi", validated: "Yoxlanıldı", failed: "Uğursuz", skipped: "Göndərilmədi",
@@ -378,6 +382,8 @@ export default {
     sendFrom: "Начало автоматической отправки",
     sendFromHint: "Автоматически отправляются только госпитализации, выписанные после этого момента; более ранние — только кнопкой «Отправить сейчас». Записывается в момент, когда впервые выбран режим «Отправлять».",
     sendFromUnset: "Режим «Отправлять» ещё не выбирался: начала автоматической отправки нет.",
+    sendFromZone: "Часовой пояс: {zone}",
+    sendFromCleared: "Начало здесь стереть нельзя: если поле оставить пустым, для него ничего не отправляется, сохранённое начало остаётся как есть.",
     liveNote: "Передача данных пациентов на рабочую платформу в этой версии закрыта: для рабочей среды сохраняется только режим «Выключено».",
     status: {
       pending: "Ожидает", sent: "Отправлено", validated: "Проверено", failed: "Ошибка", skipped: "Пропущено",
@@ -532,6 +538,8 @@ export default {
     sendFrom: "Automatic sending starts at",
     sendFromHint: "Only stays discharged after this moment are sent automatically; earlier ones only with «Send now». It is set when «Send» is first chosen.",
     sendFromUnset: "«Send» has not been chosen yet: automatic sending has no start.",
+    sendFromZone: "Time zone: {zone}",
+    sendFromCleared: "The start cannot be cleared here: if the field is left empty, nothing is sent for it and the stored start stays as it is.",
     liveNote: "Sending patient data to the live platform is closed in this version: for the live environment, only the mode «Off» is saved.",
     status: {
       pending: "Pending", sent: "Sent", validated: "Validated", failed: "Failed", skipped: "Skipped",

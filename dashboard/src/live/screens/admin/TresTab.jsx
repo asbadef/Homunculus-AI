@@ -22,20 +22,29 @@
 // lock, that nothing is sent until the account is corrected and saved or a test succeeds; a successful test lifts it.
 //
 // PHASE F1. The automatic rounds' start (`send_from`, open item O15 — a PROPOSED rule, awaiting the owner's word): shown
-// and movable here; left as read it is left OUT of the body, and the server keeps it. The live platform is closed in this
-// version (O5, O11): with the live environment and a mode other than «Kapalı» the form says so before the server
-// refuses it. Under the settings, the three panels of F1: «Gönderimler», «Bölüm eşleme», «Hekim kimlikleri».
+// and movable here; left as read it is left OUT of the body, and the server keeps it. It is a `datetime-local` in the
+// READER's zone, and the field says which (the browser's, by name), is bounded as the server bounds it (2020-01-01 to a
+// year and a day from now) and, emptied, says it cannot be emptied here: nothing is sent for it and the stored start stays.
+// The live platform is closed in this version (O5, O11): with the live environment and a mode other than «Kapalı» the
+// form says so before the server refuses it. Under the settings, the three panels of F1: «Gönderimler», «Bölüm eşleme»,
+// «Hekim kimlikleri».
+//
+// THE LEDGER IS NEVER STALE AGAINST THE SETTINGS (review, 2026-11-13). `ledger` counts the moments the ledger's own answer
+// may have changed under it — a save (the environment may have switched) and a connection test that succeeded (the parked
+// feed was lifted: the panel's note goes with the tab's) — and `<TresDeliveries refresh>` reads again each
+// time, keeping its filters and the number typed. A failed test parks and lifts nothing: no read.
 import React, { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { dayStamp } from "../../i18n/dates.js";
-import { Alert, Box, Button, Field, Input, Note, Select, useToast } from "../../ui/index.js";
+import { Box, Button, Field, Input, Note, Select, useToast } from "../../ui/index.js";
 import { refusedFor } from "./refusal.js";
 import { TYPES } from "./tresWords.js";
 import { TresDeliveries } from "./TresDeliveries.jsx";
 import { TresDepartments } from "./TresDepartments.jsx";
 import { TresPractitioners } from "./TresPractitioners.jsx";
+import { TresReadFailed } from "./TresReadFailed.jsx";
 
 export { TYPES };
 export const MODES = Object.freeze([["off", "tres.modeOff"], ["validate", "tres.modeValidate"], ["send", "tres.modeSend"]]);
@@ -45,6 +54,9 @@ export const ENVIRONMENTS = Object.freeze([
 ]);
 const TEXT_FIELDS = Object.freeze(["base_url", "username", "provider_id", "organization_id", "organization_name"]);
 const SETTLE = /^\d{1,3}$/;
+/** The cut-off's bounds, as the server holds them (`tres_send_from`): 2020-01-01 to a year and a day from now. */
+const SEND_FROM_MIN = "2020-01-01T00:00";
+const SEND_FROM_MAX_DAYS = 366;
 
 const accountForm = (a) => ({
   ...Object.fromEntries(TEXT_FIELDS.map((name) => [name, a?.[name] ?? ""])), password: "", clearPassword: false,
@@ -55,6 +67,14 @@ export function localInput(iso) {
   const at = typeof iso === "string" ? new Date(iso) : null;
   if (!at || Number.isNaN(at.getTime())) return "";
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+/** The browser's time zone by name («Asia/Baku»), or "" when it will not say. */
+function zoneName() {
+  try {
+    return String(Intl.DateTimeFormat().resolvedOptions().timeZone ?? "");
+  } catch {
+    return "";
+  }
 }
 const formOf = (s) => ({
   mode: s?.mode ?? "off", environment: s?.environment ?? "test", settle: String(s?.settle_hours ?? 24),
@@ -141,6 +161,8 @@ export function TresTab() {
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [ledger, setLedger] = useState(0);
+  const staleLedger = () => setLedger((n) => n + 1);
 
   const read = useCallback(async () => {
     try {
@@ -181,6 +203,7 @@ export function TresTab() {
       setSettings(got);
       setForm(formOf(got));
       setTried(false);
+      staleLedger();
       toast(t("tres.saved"));
     } catch (err) {
       toast(refusedFor(t, t("tres.tab"), err), "error");
@@ -198,8 +221,8 @@ export function TresTab() {
         toast(t("tres.testOk"));
         // The server let the rounds go on (it cleared `session_refused_at`): so does the tab.
         setSettings((s) => (s ? { ...s, session_refused_at: null } : s));
-      }
-      else {
+        staleLedger();
+      } else {
         const said = typeof got?.message === "string" && got.message.trim() ? got.message.trim() : t("tres.testNoWords");
         toast(t("tres.testFailed", { reason: said }), "error");
       }
@@ -216,16 +239,17 @@ export function TresTab() {
   if (settings === null) {
     return (
       <div className="grid max-w-[760px] gap-3">
-        <Alert tone="crit">
-          <p className="m-0">{t("tres.readFailed", { reason: readErrorText(t, error) })}</p>
-          <Button size="sm" busy={busy} onClick={retry}>{t("admin.retry")}</Button>
-        </Alert>
+        <TresReadFailed text={t("tres.readFailed", { reason: readErrorText(t, error) })} busy={busy} onRetry={retry} />
       </div>
     );
   }
   const open = settings.egress === true;
   const refusedAt = typeof settings.session_refused_at === "string" ? settings.session_refused_at : null;
   const incomplete = settings.mode !== "off" && !accountWhole(settings[settings.environment]);
+  const zone = zoneName();
+  const sendFromMax = localInput(new Date(Date.now() + SEND_FROM_MAX_DAYS * 86_400_000).toISOString());
+  // A stored cut-off with the field emptied: the body leaves it out and the server keeps what it has — said, not silent.
+  const sendFromCleared = form.sendFromRead !== "" && form.sendFrom === "";
   return (
     <div className="grid max-w-[760px] gap-3">
       {open
@@ -252,8 +276,15 @@ export function TresTab() {
           {incomplete ? <Note tone="warn" icon="alert" className="mb-3">{t("tres.incomplete")}</Note> : null}
           {form.environment === "live" && form.mode !== "off"
             ? <Note tone="warn" icon="lock" className="mb-3">{t("tres.liveNote")}</Note> : null}
-          <Field label={t("tres.sendFrom")} hint={settings.send_from ? t("tres.sendFromHint") : t("tres.sendFromUnset")}>
-            <Input type="datetime-local" value={form.sendFrom} onChange={(e) => set({ sendFrom: e.target.value })} />
+          <Field label={t("tres.sendFrom")} hint={(
+            <>
+              <span>{settings.send_from ? t("tres.sendFromHint") : t("tres.sendFromUnset")}</span>
+              {zone ? <span className="block">{t("tres.sendFromZone", { zone })}</span> : null}
+              {sendFromCleared ? <span className="block font-semibold text-ink">{t("tres.sendFromCleared")}</span> : null}
+            </>
+          )}>
+            <Input type="datetime-local" value={form.sendFrom} min={SEND_FROM_MIN} max={sendFromMax}
+              onChange={(e) => set({ sendFrom: e.target.value })} />
           </Field>
           <Field label={t("tres.settleHours")} hint={t("tres.settleHint")}
             error={tried && bad.settle ? t("tres.invalid.settle") : undefined}>
@@ -284,7 +315,7 @@ export function TresTab() {
           <p className="m-0 mt-2 text-12 text-mute">{open ? t("tres.testHint") : t("tres.testEgressOff")}</p>
         </form>
       </Box>
-      <TresDeliveries />
+      <TresDeliveries refresh={ledger} />
       <TresDepartments />
       <TresPractitioners />
     </div>
