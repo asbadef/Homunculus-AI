@@ -352,3 +352,253 @@ Two review rounds; the fixes are `7d508d2c`…`9a306d44`.
   - whether it adds `search.mode: outcome` entries, which `find` would refuse today;
   - whether it pages, and how;
   - whether it echoes the local-id extension on every entry.
+
+## 14. Amendments (plan F1)
+
+Made by `docs/superpowers/plans/2026-11-12-tres-f1a-hasta-yatis.md` (the engine) and
+`docs/superpowers/plans/2026-11-12-tres-f1b-hasta-yatis.md` (the panels) — phase F1: Patient, Practitioner,
+Encounter, vital signs. «A25 (3)» is amendment 25, point (3), of the F1a plan's header, which keeps every amendment's
+full reasons: 1–22 are the plan as written, 23–27 its review rounds of 2026-11-12/13. Where a line above and a line
+here disagree, this section is right.
+
+### 14.1 The engine
+
+- **O20 — closed: a local id ends with its only dot** (A1, A23 (6)). `hmn-p-{phi_digest(FİN)[:32]}.`,
+  `hmn-pr-{user id}.`, `hmn-e-{root admission id}.`, `hmn-v-{root admission id}-{signal key}-{first|last}.`; F2–F5's
+  follow (`hmn-c-{row}.`…). No id is then a proper prefix of another; each is a FHIR id of at most 64 characters
+  (`ids.is_local_id`). A vital sign is keyed by the signal's stable `id_key` (`heart-rate`, `resp-rate`, `spo2`,
+  `temperature`, `sbp`, `map`, `weight`, `height`), never its LOINC code: a sent local id never changes, so a code
+  change (O7) is a PUT of the same resource, not a second record. Whether the platform takes the dot: O24.
+- **D10 — the readings** (A23 (3)(5)). The first and last non-withdrawn `chart` value of each signal. A `chart` row the
+  bridge's tenant token wrote (`charted_by` `tenant-token`) is a device's sample, not a person's, and is not sent. A
+  `chart_retract` withdraws a row only when its `entry` is an `int` that is not a `bool` (the engine's own guard).
+  Drift tests hold both to `api/clinical.py`, `api/rehydrate.py` and `api/app.py`. A reading timed outside the stay is
+  sent as charted (O27).
+- **N2, N3 — one trail read per stay; the person from the root** (A3, A4, A25 (4)). A transfer keeps the protocol
+  number and the patient row, so a stay's chart rows are all under its last row's board key: one read. The Patient's
+  id is `phi_digest` of the root's FİN, normalised; without a usable FİN (`fin_missing`, `fin_format`) the Patient is
+  skipped under the placeholder `hmn-p-s-{root}.`, whose skip is forgotten once a FİN keys the person.
+- **D20 — ASCII only** (A23 (1)(2)(7), A25 (10)). A FİN that is not ASCII is refused before `upper()` (`ß`→`SS`,
+  `ı`→`I` would be transliteration); a phone takes ASCII digits only, and its nine national digits never begin with
+  `0`. `ids.patient` normalises the FİN itself and never puts it in an error.
+- **D12 — the codes**, checked 2026-11-12 at `tx.fhir.org` (LOINC 2.83, UCUM 2.2) and pinned in `tres/codes.py` (A11):
+  8867-4 `/min`, 9279-1 `/min`, 2708-6 `%` (O7), 8310-5 `Cel`, 8480-6 `mm[Hg]`, 8478-0 `mm[Hg]`, 29463-7 `kg`, 8302-2
+  `cm`. `code.text` is the LOINC display (no reviewed Azerbaijani label exists); `valueQuantity.unit` is the UCUM code.
+  A weight or height must be finite and positive (A23 (9)).
+- **§5, D20 — not sent yet** (A12). `identity-document-type` `15` and `encounter-type` `1` go without a display; the
+  blood group is not sent (O23).
+- **D8, D17, D6 — the Encounter** (A13–A15, A23 (10)). Its Practitioners are the chain's distinct
+  `attending_physician_id`, in chain order (`participant` without `type`); its department the last admission's unit;
+  its period from the root's admission to the last's discharge; `finished` once the last row is DISCHARGED — a finished
+  stay with no `discharge_at` is skipped `discharge_missing`, never sent without `period.end`. The ledger's
+  `admission_id` is the stay's last admission.
+- **D22 — time** (A16, A23 (8)). A zone the server does not know skips the Encounter (`timezone_unknown`), never
+  guessed; a time with no zone is refused, never read as the server's. `UTC`, the tenant's default, is used as UTC.
+- **D16 — a practitioner's identity is keyed (tenant, user)** (A24 (8)), not per user: the engine is multi-tenant.
+- **O14 — closed: validate and references** (A2). In `validate` a resource whose reference has no platform id in the
+  ledger is `skipped` `no_reference`; nothing that points at nothing is sent. A tenant that never sent validates its
+  Patients and Practitioners. F6 checks `$validate` on the sandbox and may relax this.
+- **D9 — the rounds' window** (A5, A25 (3), A26 (3)). A stay is due while `after < key <= now − settle_hours`, its key
+  `greatest(discharge_at, updated_at)` of the last admission: a discharge confirmed late, or an edit after the stay
+  left the rounds, brings it back, its wait counted from then. `after` is the earlier of a week back (`source.REACH`)
+  and `tres_settings.reached_to`, the upper bound of the last round that ran to its end for the tenant (a
+  compare-and-set that never touches `updated_at`; reset by an environment change only); before any round has run to
+  its end, the cut-off alone bounds it (a week back without one). So a tenant parked or closed for more than a week
+  catches up, and a stay a completed round did reach leaves the rounds after its week (D7: an unchanged resource asked
+  nothing meanwhile). A DISCHARGED row with no `discharge_at` is never due on its own. This replaces A5's «an older
+  stay goes only by hand» for a stay no completed round reached.
+- **O15 — PROPOSED, AWAITING THE OWNER'S WORD: the cut-off** (A6, A26 (5)). `tres_settings.send_from`: only a stay
+  whose last `discharge_at` is at or after it goes automatically; the save that first chooses `send` sets it to its own
+  moment; the tab shows and moves it — from 2020-01-01 to 366 days after the save (422 `tres_send_from`) — and cannot
+  clear it. An older stay goes by hand. A `validate` round with no cut-off stored reaches back its week.
+- **D21, O21 — closed: the nightly retry** (A8, A25 (6)(7), A26 (1), A27 (1)(3)). At the first round at or after 04:00
+  in the tenant's zone — never before, a first night included; a zone the server does not know falls back to UTC,
+  said once per tenant per process — marked by a compare-and-set of `tres_settings.retried_at`, the night rebuilds
+  with `force` every UNFINISHED stay: one with a row `stuck`, `failed` or `pending` in the selected environment, and in
+  `send` one whose Encounter is not `sent` (skipped for any reason but F6's `deleted`) — so a FİN added, a unit mapped
+  or a zone set later sends the stay with no hand. Each row is first walked to its stay's last admission (one key with
+  the due set; at most `source.CHAIN_MAX` = 64 steps). Never a stay discharged before `send_from`: judged on that last
+  admission, and again once the stay is read. Only a stay whose key is within 90 days (`source.NIGHT_REACH`): a stay
+  that can never be sent — a newborn or a foreign national with no FİN — is not rebuilt every night for ever; an
+  older one keeps its rows and goes by «Yeniden dene». Why: no stay lost in a gap, none sent across the cut-off.
+- **D9, D21 — the hand** (A9, A20, A26 (4), A27 (1)(7)). «Şimdi gönder» sends one stay now, due or not (an admitted
+  patient as `in-progress`); «Yeniden dene» forces the row's whole stay. Neither is held by the cut-off: a person's
+  deliberate act. Refusals: 409 `egress_off`, `tres_off`, `tres_account_incomplete`, `tres_live_closed`,
+  `tres_host_not_allowed`; 409 `tres_login_refused` at once for a parked tenant, the platform not asked (each click
+  would be one more failed login); 409 `tres_other_environment` for a row of the environment not selected
+  (`tres_environment` was already the settings form's); 409 `tres_busy`; 429 `tres_throttled`, with `retry_after` in
+  the body and the `Retry-After` header (whole seconds, rounded up) when the platform gave a wait; 503
+  `tres_platform_unavailable`; any other failure is rolled back, audited `result: "error"` and raised (500). A refused
+  precondition asks nothing and writes no audit row.
+- **N12 — a person never queues behind a round** (A9, A24 (5)(6)). Each row is taken under `SET LOCAL lock_timeout =
+  '2000ms'` → 409 `tres_busy`. The bound covers taking the row only — back to the default once it is held, so the write
+  after the HTTP calls is not cut — `forget_skip` included. Not `NOWAIT`: that does not bound a wait on another
+  transaction's uncommitted INSERT.
+- **N15 — parking on the round's settings** (A10, A24 (4)). `park` sets `session_refused_at` only while `updated_at`
+  is the version the round (or request) began on; without a version it parks nothing.
+- **A person's one Patient: the newest stay owns it** (A25 (1), A26 (2), A27 (2)(4)). Two stays of one FİN build the
+  same Patient id from different patient rows; its ledger row belongs to the stay whose last admission is newest (the
+  later admission time; a tie, the larger id), judged under the row's lock — else every round PUT one version, then
+  the other. An older stay's SEND yields only to a newer owner whose row holds a platform id (and refers to it);
+  otherwise it sends its own version and holds the row until the newer stay runs. An older stay's SKIP yields to any
+  newer owner, held or not (else the two took the row in turn every night and the newer's refusal never reached
+  `stuck`). A package that stops at its Patient writes, in `send`, its own Encounter `skipped` `patient_unheld` —
+  never over an Encounter the platform holds (`keep_held`).
+- **D24 — `tres.package` once** (A17, A25 (5)): written by the run whose delivery took the Encounter's `remote_id`
+  from None under the row's lock; a run cut short after that moment writes none.
+- **D21 — one pacer per tenant** (A26 (4), A27 (6)): the rounds, the hand routes and the connection test share it —
+  300 ms between any two requests of a tenant.
+- **O5, O11 — the live platform is closed in this version** (A7, A24 (2)(3)). `tres.egress.LIVE_OPEN = False`, pinned
+  by a test: no package to the live environment nor to an address on `ehr.e-health.gov.az` — the rounds pass the
+  tenant over (`tres_live_closed`), the hand routes answer 409, a settings save with a mode other than `off` on such an
+  account 422. The lock is inside the client factory too: `open_client` refuses patient data to a live host by default
+  (`TresLiveClosed`), and only the connection test passes `patient_data=False`. An address it cannot read counts as
+  live (it fails closed); a trailing dot is the same host. Opening it is a reviewed code change with the owner's word;
+  O5 itself is not decided.
+- **§6 — the routes and codes** (A20, A26 (4)(5), A27 (1)(c)). `GET /admin/tres/admissions?key=` finds a stay by its
+  board key. The list's `admission` filter lists the rows of every admission of that stay's chain; a malformed one is
+  422 `tres_filter`, never FastAPI's echo. New codes in `tres/errors.py`: `tres_live_closed`, `tres_unit_unknown`,
+  `tres_department_code`, `tres_department_display`, `tres_user_unknown`, `tres_fin_format`, `tres_name`,
+  `tres_filter`, `tres_cursor`, `tres_stay_unknown`, `tres_off`, `tres_busy`, `tres_login_refused`,
+  `tres_platform_unavailable`, `tres_throttled`, `tres_other_environment`, `tres_send_from`.
+- **D16, D17 — the maps** (A19, A26 (5)). A practitioner's FİN is write-only (`fin_set`; null keeps, `""` clears) and
+  held to D20 at save; an identity the tab holds for a member who left can still be corrected, none is made for one.
+  The department map is saved whole under the tenant's advisory lock: two saves take turns, never merge.
+- **D25 — the preview** (A18, A26 (4)). The ledger's list carries no `last_error`; the audited preview does. The
+  preview judges as a send: a type switched off shows `type_off` and no body; a Patient the person's newer stay holds
+  shows `yielded` and no body; each item's status and last words are its own row's, found by its key.
+- **D24 — the payloads** (A17): `tres.map` `{actor, units}`; `tres.identity` `{actor, user_id, changed}`; `tres.send`
+  `{actor, admission_id, result, counts?}`; `tres.retry` `{actor, delivery_id, admission_id, result, counts?}`;
+  `tres.preview` `{actor, admission_id}`; `tres.package` `{admission_id, environment, counts}`. The row's
+  `patient_id` is the board key.
+- **§9 — the stand-in** holds each profile by `meta.profile[0]` (A21); the tests of §4 send `UNCHECKED_PROFILE`.
+- **§7 — nginx's access log** (A22): the routes with a path parameter join `map $uri $homunculus_log_uri`; `?key=` is
+  a query string, which that log never writes.
+- **D26 — migration 0020, in place** (A24 (1), A25 (2)(3), A26 (4)): four tables (`tres_department_map` and
+  `tres_practitioner_identity` added), `tres_settings.send_from`, `.retried_at`, `.reached_to`, the list's index
+  `ix_tres_deliveries_list` (tenant, environment, updated_at DESC, id DESC); the downgrade drops each object
+  `IF EXISTS` (O19's down-and-up from F0's cut). No audit index (§14.4).
+
+### 14.2 The panels (plan F1b and its review)
+
+- **§8 — three panels under the settings.** «Gönderimler»: the ledger, newest change first, filtered by status and
+  type, saying its environment; a stay found by its protocol number, with «Şimdi gönder» and «Önizle»; «Yeniden dene»
+  on a `failed` or `stuck` row; a parked feed said at the top. «Bölüm eşleme», saved whole. «Hekim kimlikleri», one
+  row at a time, the FİN write-only. A status or reason the panel does not know shows the engine's code, never a key.
+- **The preview** opens in a dialog that says, above the bodies, that it holds patient data and that opening it is
+  audited, and names its environment; it is read afresh on every open with `cache: "no-store"` (`0b8448c9`).
+- **A hand's result is told by its rows' statuses** — «İşlendi: Gönderildi 3 · Başarısız 1», never «sent» for a failed
+  or skipped row; a failed row makes the toast a warning; a throttled hand says the platform's own wait; after a hand
+  with no answer or a refused login the list is read again (`7f012ab6`).
+- **The list is never stale against the settings**: a save or a successful connection test makes it read again; a
+  late answer never overwrites a newer list; one action at a time, the others visibly off (`7f012ab6`, `71956f5e`).
+- **`send_from` on the form** is sent only when the user changed it (it carries microseconds; a minute-precision
+  round-trip would move it on every save); the field says the reader's zone and the server's bounds, and that it
+  cannot be emptied here (`71956f5e`).
+- **The words**: `failed` is «Başarısız» (az «Uğursuz»), a skipped row az «Göndərilmədi»; every state, status, reason,
+  type and environment the screens say has words in all four languages, held by a test (`6b5a8152`, `5e0d3b5f`).
+- **D27 — the build**: the shared i18n chunk (`Toast-*.js`) is 527.77 kB (504.06 kB at F0), over Vite's 500 kB note;
+  not split here — main split the catalogue (§14.4).
+
+### 14.3 Open items
+
+F1 closes O14, O20 and O21 and builds O15 as proposed. **Owner** marks the owner's decisions.
+
+- **O5, O11 — owner.** The legal basis (and `UNCONSCIOUS_LATER`) and the cut-over where another system reports. Until
+  both are answered the live platform stays closed in code (§14.1).
+- **O7 — owner, with the ministry.** SpO2 as `2708-6` or `59408-5`; a change is a PUT of the same resources.
+- **O15 — owner.** The cut-off, built as proposed. Declined: `send_from` leaves `source.due_stays` and the form (the
+  column may stay; null = no cut-off). For the answer (A27): moving `send_from` earlier — or a send→validate→send
+  toggle — makes the NEXT NIGHT send every stay at or after the new cut-off, within its 90 days, whose Encounter is not
+  `sent` (a validate trial's `no_reference` Encounters among them): a one-night, partial catch-up of a validate
+  trial. Validate-era stays that stopped at their Patient have no Encounter row (`validate` writes no
+  `patient_unheld`) and are not caught; nor is a stay no round ever reached (a moved cut-off does not reset
+  `reached_to`, A25 (3)).
+- **O17 — extended; decide before live.** FastAPI's own 422 echoes a body's `input`: besides the settings' account
+  block, the practitioner identity route can return a typed FİN to its sender (A26 (5)). A validation handler for
+  `/admin/tres/*` that names fields without values ends both.
+- **O23 — the ministry's CodeSystem files (F2's loader).** The displays of `identity-document-type` `15` and
+  `encounter-type` `1`; the codes of `az:CodeSystem/blood-group`.
+- **O24 — F6's first POST.** Whether the platform takes a placeholder `id` and a local id ending in `.`; if not, O20's
+  end mark changes before any live send.
+- **O25 — F6 (D19).** A `last` vital sign withdrawn after a hand send while the patient was admitted stays on the
+  platform until F6's deletes.
+- **O26 — F2.** The week's reach bounds how late a correction goes without a hand; F2–F5 write records after the
+  discharge, and F2 decides whether a change to them brings a stay back within reach.
+- **O27 — F6's sandbox.** A reading timed outside the Encounter's period (charting allows 24 h back; `discharge_at`
+  can precede the last reading) is sent as charted; a refusal would leave that row `stuck`.
+- **O28 — answered from main's code; one question for the owner.** On main (`88f6544c`) G3-05's Welch Allyn ward
+  readings arrive at `/ingest` as `ingest` audit rows (`vital_readings.origin` device); TRƏS reads `chart` rows only,
+  so it does not send them, and a withdrawal that names an `ingest` row withdraws nothing TRƏS reads. Values typed at
+  the bedside stay `chart` rows and are sent. **Owner:** should a ward device's spot check count as an admission or
+  discharge value?
+- **O29 — a deployment check before F6.** `ZoneInfo("Asia/Baku")` must resolve inside the API container; otherwise
+  every Encounter is skipped `timezone_unknown` and the night runs in UTC. With it: a tenant's zone is written only
+  when the tenant is made (`POST /tenants`) and no route changes it, so a tenant made with the default `UTC` sends
+  UTC times (D22).
+- **The owner's or the controller's call** (A25 (3), A26 (2)): whether `validate` should yield a person to a newer
+  stay's `validated` row (today two stays of one person within reach each validate their own version every round);
+  whether `reached_to` should advance only to the oldest discharge whose package did not finish (the night now takes
+  `failed` and `pending` stays, A26 (1)).
+- **F6** (A27 (5)): a stay rebuilt for another row (by the night, a round or a hand) sends its `deleted` Encounter
+  again; what a delete does to a later rebuild is F6's.
+- O1–O4, O6, O8–O10, O12, O13, O16, O18, O19 and O22 stand as §12 and §13.3 left them.
+
+### 14.4 Merge notes
+
+For whoever merges the branch to main — on the owner's word only («main'e al»).
+
+- **The migration.** `0020_tres.py` is renumbered onto main's head of that moment. At `origin/main` `88f6544c` the
+  chain is `0020_quality_view` → `0022_workload_view` → `0021_vital_readings`, head revision `0021`, next free file
+  number `0023` — which Lane B's G4-05 also plans: the first to reach main takes it; ask Lane A for the head.
+  `down_revision` = that head; every «0020» in the file's docstrings, in §13–§14 and in the guide's §3.25 follows;
+  `alembic heads` prints one head; a test of «the head» checks ancestry, never the names' order.
+- **No audit index in TRƏS's migration.** Main's `0021_vital_readings` creates `ix_audit_tenant_patient_id` on `audit`
+  (tenant, patient_id, id), the index the per-stay read uses (A25 (2)); a second CREATE INDEX would lock `audit` again,
+  and TRƏS's downgrade must not drop main's. After the renumbering add a test that the index exists by that name.
+- **The permission key.** On the branch `tres.manage` is the 29th key. On main (`88f6544c`) `quality.view` is the 29th
+  and `workload.view` the 30th, so `tres.manage` becomes the 31st (or whatever is next then); the route table's count
+  and the permission tests follow.
+- **The i18n chunk.** Main split the string tables (`746f30a9`): `manualChunks` puts each `strings/*.js` into
+  `i18n-a-k` or `i18n-l-z` by its name — `tres.js` lands in `i18n-l-z`, `denetim.js` in `i18n-a-k`; nothing to move.
+  Rebuild after the merge: no chunk over 500 kB.
+- **Watch: a bulk UPDATE of `admissions`** (A27). The window's key reads `admissions.updated_at`, which the model's
+  `onupdate` moves on every ORM flush and every SQLAlchemy `update()` that does not set it: a bulk UPDATE — a
+  migration's backfill, a script — puts every touched DISCHARGED stay at or after the cut-off back in the rounds'
+  reach for a week, and an unfinished one in the night's 90 days. Check each one when the branches meet (main's
+  `0021` and `0022` at `88f6544c` write no `admissions` row).
+- **Expect conflicts near the readings.** Main changed `api/audit.py`, `api/clinical.py` (a `chart_retract` may now
+  name an `ingest` row, G3-05), `api/rehydrate.py` and `api/app.py`. TRƏS's stay reader leans on `iter_records_of`,
+  `RETRACT`, `retracted_entries` and the device token's literal, and its drift tests read those files: they must pass
+  after the merge.
+
+### 14.5 Native reading (owner item)
+
+The `az`, `ru` and `en` texts F1 added were written without a native speaker (F0's N10 holds for F0's). F1 added 117
+keys to `strings/tres.js` and 6 to `strings/denetim.js`, each in four languages, and changed no F0 key
+(`git diff f74b474a..5e0d3b5f`):
+
+- `tres.`: `sendFrom`, `sendFromHint`, `sendFromUnset`, `sendFromZone`, `sendFromCleared`, `liveNote`;
+- `tres.status.` (7): `pending`, `sent`, `validated`, `failed`, `skipped`, `stuck`, `deleted`;
+- `tres.reason.` (15): `finMissing`, `finFormat`, `nameSingle`, `fatherNameMissing`, `sexUnmapped`, `birthDateInvalid`,
+  `identityMissing`, `nameMissing`, `unitUnmapped`, `organizationMissing`, `timezoneUnknown`, `noReference`,
+  `typeOff`, `dischargeMissing`, `patientUnheld`;
+- `tres.deliveries.` (43): `title`, `sub`, `loading`, `readFailed`, `empty`, `emptyFiltered`, `inEnvironment`,
+  `parked`, `filterStatus`, `filterType`, `all`, `caption`, `when`, `type`, `key`, `status`, `reason`, `attempts`,
+  `actions`, `more`, `retry`, `retried`, `preview`, `findLabel`, `find`, `found`, `discharged`, `stillAdmitted`,
+  `sendNow`, `handled`, `handledNone`, `state.{DRAFT, PENDING_DISCHARGE, PENDING_TRANSFER, TRANSFERRED, DISCHARGED}`,
+  `previewTitle`, `previewNote`, `held`, `notHeld`, `lastError`, `yielded`, `wait`;
+- `tres.departments.` (13): `title`, `sub`, `loading`, `readFailed`, `empty`, `caption`, `unit`, `code`, `display`,
+  `closed`, `invalid`, `save`, `saved`;
+- `tres.practitioners.` (16): `title`, `sub`, `loading`, `readFailed`, `empty`, `caption`, `name`, `fin`, `finStored`,
+  `finClear`, `family`, `given`, `actions`, `invalid`, `save`, `saved`;
+- `tres.err.` (17): `liveClosed`, `unitUnknown`, `departmentCode`, `departmentDisplay`, `userUnknown`, `finFormat`,
+  `name`, `filter`, `cursor`, `stayUnknown`, `off`, `busy`, `loginRefused`, `platformUnavailable`, `throttled`,
+  `otherEnvironment`, `sendFrom`;
+- `denetim.type.` (6): `tresPackage`, `tresMap`, `tresIdentity`, `tresSend`, `tresRetry`, `tresPreview`.
+
+Named doubts: `tres.err.liveClosed` tells a hospital administrator, in every language, that the legal basis and the
+cut-over «are not yet decided» — the project's open items O5 and O11 on a hospital's screen; en and ru
+`tres.deliveries.sub` say «resource» / «ресурса» where tr and az now say record («kaydın», «qeydin»; `6b5a8152`); the
+az `tres.practitioners.*` wording «şəxsiyyət məlumatları» (also in `tres.reason.identityMissing`) was chosen by a
+non-native reader.

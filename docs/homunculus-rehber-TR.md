@@ -2397,15 +2397,17 @@ adlar uydurmadır.
 - **Kaynak:** `docs/superpowers/specs/2026-11-11-g4-yonetici-ozeti-design.md`; plan
   `docs/superpowers/plans/2026-11-11-g4-yonetici-ozeti.md`.
 
-### 3.25 «TRƏS»: ulusal e-sağlık gönderimi (HBYS · TRƏS-01, aşama F0)
+### 3.25 «TRƏS»: ulusal e-sağlık gönderimi (HBYS · TRƏS-01, aşama F0–F1)
 
 - **Ne:** Azerbaycan'da bir hastane bilgi sistemi klinik kayıtlarını bakanlığın e-sağlık platformuna (sahibin
-  deyişiyle TRƏS; bir FHIR sunucusu) bildirir. Bu dilim Homunculus'a o gönderimi ekliyor. **Aşama F0 yalnız
-  altyapıdır:** ayarlar, gönderim defteri, platformun istemcisi, turların iskeleti, yeni yetki ve Yönetim › TRƏS
-  sekmesi. Hasta, yatış, tanı gibi kayıtları FHIR'e çeviren kısım (F1–F6) henüz yok; bu yüzden F0'dan sonra da
-  **hiçbir yere hiçbir şey gönderilmez.**
-- **Durum:** dalda (`feat/tres-esaglik`); main'e ve hastane sunucusuna sahibin sözüyle gelir. Göç 0020 iki tablo
-  ekler (`tres_settings`, `tres_deliveries`).
+  deyişiyle TRƏS; bir FHIR sunucusu) bildirir. Bu dilim Homunculus'a o gönderimi ekliyor. **Aşama F0 altyapıdır:**
+  ayarlar, gönderim defteri, platformun istemcisi, turların iskeleti, yeni yetki ve Yönetim › TRƏS sekmesi. **Aşama
+  F1 ilk gerçek kayıtları kurar:** hasta, hekim, yatış ve yatışın kabul ve taburcu vitalleri; sekmeye üç pano ekler
+  (aşağıda). Tanı, işlem, laboratuvar ve epikriz sonraki aşamalardır (F2–F5). Kilitler kapalıyken (varsayılan)
+  **hiçbir yere hiçbir şey gönderilmez**; canlı platforma ise bu sürümde kilitler açılsa bile hasta verisi gitmez.
+- **Durum:** dalda (`feat/tres-esaglik`); main'e ve hastane sunucusuna sahibin sözüyle gelir. Göç 0020 dört tablo
+  (`tres_settings`, `tres_deliveries`, `tres_department_map`, `tres_practitioner_identity`) ve ayarlara birkaç sütun
+  ekler; main'e alınırken numarası main'deki sıraya göre değişir.
 - **İki kilit (varsayılan: ikisi de kapalı):**
   1. **Kurulumun kilidi** — ortam değişkeni `TRES_EGRESS`. `on` değilse sunucu platforma hiç bağlanmaz: tur
      görevi başlatılmaz, bağlantı sınaması reddedilir (`egress_off`), sekme en üstte «Bu kurulumda dışarıya gönderim
@@ -2426,7 +2428,9 @@ adlar uydurmadır.
   gönderilecek sekiz kayıt türü; her ortam için bir hesap (sunucu adresi, kullanıcı adı, parola, sağlık kuruluşu
   kimliği, kurum kimliği ve adı); «Kaydet» ve «Bağlantıyı sına». Sunucu adresi `https://` ile başlar; içinde
   kullanıcı adı ya da parola, sorgu (`?`), parça (`#`) ya da 443 dışında bir port olamaz. Kapatılan bir kayıt türü
-  gönderilmez; platforma onun için hiçbir şey sorulmaz.
+  gönderilmez; platforma onun için hiçbir şey sorulmaz. F1'den beri ayrıca «Otomatik gönderimin başlangıcı» alanı ve
+  canlı ortam için kapalılık notu (ikisi de aşağıda); ayarların altında üç pano: «Gönderimler», «Bölüm eşleme»,
+  «Hekim kimlikleri».
 - **Parola:** veritabanında şifreli durur (hasta verisinin anahtarıyla) ve hiçbir yanıtta geri gelmez; sekme yalnız
   «kayıtlı» der. Alan boş bırakılırsa kayıtlı parola aynı kalır; «Kayıtlı parolayı sil» onu siler. **Sunucu adresi
   değişirse kayıtlı parola silinir**: yeni parola aynı kayıtta yazılmalıdır. Böylece parola, değiştirilmiş bir
@@ -2448,22 +2452,141 @@ adlar uydurmadır.
   - **Turun durması:** «çok fazla istek» yanıtında o hastanenin turu hemen biter. Üst üste beş hatada da biter.
   - **Süre ve yalıtım:** her istek için 60 saniyelik bir üst süre vardır. Bir hastanenin hatası diğer hastanelerin
     turunu durdurmaz.
-- **Yanlış parola:** platform girişi reddederse o hastanenin otomatik gönderimi durur. Hesap bilgileri düzeltilip
-  kaydedilene ya da «Bağlantıyı sına» başarılı olana kadar giriş bir daha denenmez; sekme bunu bir uyarıyla söyler.
-  Böylece yanlış parola bakanlıkta tek bir başarısız giriş bırakır, 5 dakikada bir yenisini değil; hesap kilitlenmez.
-  Bu durdurma kendiliğinden kalkmaz; bakanlık hesabı kendi açsa bile durur. Şimdilik yalnız sekmede ve tek bir log
-  satırında görünür, başka bir uyarı gönderilmez. Yönetim › TRƏS'e ara ara bakın.
+- **Yanlış parola (durdurulmuş gönderim):** platform girişi reddederse o hastanenin otomatik gönderimi durur. Ayarlarda
+  bir değişiklik kaydedilene (ör. düzeltilmiş parola) ya da «Bağlantıyı sına» başarılı olana kadar giriş bir daha
+  denenmez; sekme bunu ayarların altında ve «Gönderimler» panosunun en üstünde bir uyarıyla söyler. Bu sırada «Şimdi
+  gönder» ve «Yeniden dene» de platforma hiç sormadan reddedilir: her tıklama bakanlıkta bir başarısız giriş daha
+  olurdu. Böylece yanlış parola bakanlıkta tek bir başarısız giriş bırakır, 5 dakikada bir yenisini değil; hesap
+  kilitlenmez. Bu durdurma kendiliğinden kalkmaz; bakanlık hesabı kendi açsa bile durur. Şimdilik yalnız sekmede ve
+  tek bir log satırında görünür, başka bir uyarı gönderilmez. Yönetim › TRƏS'e ara ara bakın.
 - **Kimlikle arama:** platform kayıtları yerel kimliğin başıyla eşleştirir; `hmn-l-12` araması `hmn-l-120`'yi de
   bulur. Sistem yalnız birebir aynı kimliği kabul eder. Yanıt eksik ya da sayfalıysa «kayıt yok» sonucuna varmaz ve
-  yeni kayıt açmaz; böylece ulusal kayıtta aynı kayıt iki kez oluşmaz.
-- **Bilinen sınırlar:**
-  - Bu aşamadaki dört dil metni yerel bir okurun gözünden geçmedi.
-  - Platformla ilgili her bilgi ikinci eldir; F6'da sınama ortamında doğrulanacak.
-  - Gönderim ilk açıldığında geçmişte taburcu olmuş bütün yatışlar gönderilmeye hazır olur. Başka bir sistemin
-    onları zaten bildirdiği bir hastanede (Bona Dea) bu, ulusal kayıtta çift kayıt demektir. Bir tarih sınırı
-    önerildi (spec O15); karar sahibin.
-- **Kaynak:** `docs/superpowers/specs/2026-11-11-tres-esaglik-gonderim-design.md` (§13 bu aşamanın
-  değişiklikleri); plan `docs/superpowers/plans/2026-11-11-tres-f0-altyapi.md`.
+  yeni kayıt açmaz; böylece ulusal kayıtta aynı kayıt iki kez oluşmaz. F1'den beri her kimlik tek bir noktayla biter
+  (`hmn-l-12.`), böylece hiçbir kimlik başka birinin başı olamaz: `hmn-l-12.` araması `hmn-l-120.`'yi bulmaz.
+- **Aşama F1 — ne gider:** taburcu edilmiş bir yatış için
+  - **hasta:** FİN, soyad, ad, baba adı, cinsiyet, doğum tarihi; geçerli bir numarasa telefon (`+994` ve dokuz
+    rakam). Kan grubu henüz gönderilmez. Aynı kişinin (aynı FİN) birden çok yatışı varsa platformdaki tek hasta
+    kaydını kişinin **en yeni** yatışındaki bilgi taşır;
+  - **hekim:** yatışın sorumlu hekimleri, «Hekim kimlikleri»ndeki FİN, soyad ve adla;
+  - **yatış:** başlangıç ve taburcu saati, bölüm (son birimin eşlendiği bölüm), kurum. Transferle birkaç birime
+    yayılan bir yatış tek kayıttır;
+  - **vital bulgular:** nabız, solunum sayısı, SpO2, ateş, sistolik ve ortalama arter basıncı için yatıştaki **ilk ve
+    son elle girilmiş** değer (tek değer varsa yalnız ilki); kabuldeki kilo ve boy. **Cihaz ölçümleri gönderilmez:**
+    ne monitör örnekleri ne de bir cihazın kendi anahtarıyla yazdığı değerler. «Hatalı giriş» olarak geri alınan
+    değerler de gönderilmez.
+- **Ne zaman:**
+  - **Turlarda:** taburcudan sonra bekleme süresi (varsayılan 24 saat) dolunca yatış **bir hafta boyunca** her turda
+    (5 dakikada bir) yeniden kurulur; değişmeyen kayıt için platforma bir şey sorulmaz, değişen kayıt güncellenir.
+    Taburcu sonradan onaylanır ya da yatış kaydı sonradan değiştirilirse bekleme ve hafta o andan başlar. Turlar bir
+    süre durduysa (giriş reddedildi, kilit kapandı, platform yanıt vermedi) yeniden başladıklarında aradaki
+    yatışları da alırlar.
+  - **Gece:** her gece, hastanenin saatiyle 04:00'ten sonraki ilk turda, **bitmemiş** yatışlar yeniden denenir:
+    «Takıldı», «Başarısız» ya da «Bekliyor» bir kaydı olanlar; «Gönder» kipinde yatış kaydı henüz gönderilmemiş
+    olanlar (ör. FİN ya da bölüm eşlemesi sonradan girildi). Yalnız **son 90 gün** içindekiler; daha eskisi defterde
+    kalır ve «Yeniden dene» ile gider.
+  - **Geçiş tarihi** — sekmede «Otomatik gönderimin başlangıcı» (öneri; sahibin onayını bekliyor, spec O15): bu andan
+    önce taburcu olmuş yatışlar turlarda da gecede de **hiç** gönderilmez, yalnız elle. «Gönder» kipi ilk kez
+    kaydedildiği an yazılır; sekmeden ileri ya da geri alınabilir (1 Ocak 2020 ile bugünden en çok 366 gün sonrası
+    arası) ama silinemez; alan, saati hangi dilimde gösterdiğini (tarayıcınızınki) yazar. Böylece başka bir sistemin
+    zaten bildirdiği eski yatışlar ikinci kez gönderilmez.
+  - **Elle:** «Şimdi gönder» ve «Yeniden dene» (aşağıda), her zaman.
+- **Yönetim › TRƏS'in yeni panoları** (ayarların altında):
+  - **«Gönderimler»:** gönderim defteri — her kaydın son durumu, en son değişen en üstte: değişiklik saati, tür,
+    yatışın protokol numarası, durum, neden, deneme sayısı; durum ve türe göre süzgeç; «Daha fazla» sonraki sayfayı
+    okur. Panonun başı hangi ortamın defteri olduğunu yazar; ayarlar kaydedilince ya da bağlantı sınaması başarılı
+    olunca liste kendiliğinden yeniden okunur. Platformun mesajları burada görünmez (bir değeri tekrarlayabilirler);
+    yalnız önizlemede.
+    - **«Yatışı bul»:** protokol numarasıyla bir yatış bulunur ve durumu yazılır (taburcu ve saati, transfer edildi,
+      taburcu edilmedi…). Yanında «Şimdi gönder» ve «Önizle».
+    - **«Şimdi gönder»:** o yatışın paketini hemen gönderir — vakti gelmemiş, geçiş tarihinden önceki ya da hâlâ
+      yatan bir hasta için de (yatan hastanın yatışı «sürüyor» olarak gider). Sonuç, kayıtların durumlarıyla sayılır
+      (ör. «İşlendi: Gönderildi 3 · Başarısız 1»); başarısız bir kayıt varsa uyarı olarak çıkar.
+    - **«Yeniden dene»:** yalnız «Başarısız» ya da «Takıldı» bir satırda çıkar; o kaydın yatışını baştan, beklemeden
+      gönderir. Değişmemiş ve zaten gönderilmiş kayıtlar için yine bir şey sorulmaz. Seçili olmayan ortama ait bir
+      satır yalnız o ortam seçiliyken denenir.
+    - **«Önizle»:** gönderilecek kayıtların kendisini, her birinin defterdeki durumunu ve platformun son mesajını bir
+      pencerede gösterir; platforma bir şey sormaz, deftere bir şey yazmaz. **Hasta verisi içerir:** pencere bunu
+      söyler, her açılış denetime yazılır ve tarayıcı bir kopyasını saklamaz. Kilitler kapalıyken de açılır: eşlemeler
+      gönderim açılmadan denetlenebilir. Kişinin daha yeni bir yatışının platformda tuttuğu hasta kaydı ve kapalı bir
+      kayıt türü içerikleriyle değil, bu durumlarıyla gösterilir.
+    - «Şimdi gönder» ya da «Yeniden dene» sırasında bir tur o yatışı gönderiyorsa düğme en çok iki saniye bekler,
+      sonra «Bu yatış için başka bir gönderim sürüyor; biraz sonra yeniden deneyin» der. Platform «çok fazla istek»
+      derse (429) beklenecek süreyi söyler. Bir seferde bir düğme çalışır; diğerleri o sırada görünür biçimde
+      kapalıdır. Kip «Kapalı»ysa, kurulumun kilidi kapalıysa ya da hesap eksikse ikisi de reddedilir.
+  - **«Bölüm eşleme»:** hastanenin her birimi (kapalı birimler de: geçmiş bir yatış onlarda olabilir) için platformdaki
+    bölüm kodu ve adı (`hospital-departments`). Kod ve ad birlikte yazılır ya da birlikte boş bırakılır; tablo bütün
+    olarak kaydedilir («Eşlemeyi kaydet»). Eşlenmemiş birimin yatışları gönderilmez; varsayılan bir bölümle de
+    gönderilmez. Kodlar şimdilik elle yazılır; bakanlığın listesinde arama F2 ile gelir.
+  - **«Hekim kimlikleri»:** hastanenin hekimleri; her biri için FİN, soyad ve ad. FİN parola gibi yalnız yazılır, geri
+    gösterilmez («kayıtlı»); boş bırakılırsa kayıtlı olan kalır, «Kayıtlı FİN'i sil» siler. FİN 7 Latin büyük harf ya
+    da rakamdır; soyad ve ad gereklidir. Her satır kendi «Kaydet»iyle kaydedilir. Kimliği girilmemiş hekim yatış
+    kaydına eklenmez; yatış yine gider. Ayrılmış bir hekimin kayıtlı kimliği düzeltilebilir.
+- **Durumlar** («Gönderimler»de):
+  - «Bekliyor» — kayıt açıldı, henüz sonuçlanmadı (ör. platform yanıt vermedi);
+  - «Gönderildi» — platform kaydı tutuyor;
+  - «Doğrulandı» — «Yalnız doğrula» kipinde platform denetledi, kayıt yazılmadı;
+  - «Başarısız» — platform bu kaydı reddetti; kayıt değişmeden 30 dakika bekler, değişirse hemen denenir;
+  - «Takıldı» — art arda beş başarısız deneme; yalnız gece, «Yeniden dene» ile ya da kayıt değişince denenir;
+  - «Atlandı» — eksik bilgi; nedeni yazılır, platforma bir şey gönderilmedi;
+  - «Silindi» — silme F6 ile gelir; bu aşamada kullanılmaz.
+- **Atlanan kayıt:** eksik bilgi tahminle doldurulmaz; kayıt «Atlandı» olur ve nedeni yazılır: FİN girilmemiş ya da
+  biçimi geçersiz; ad tek sözcük (soyad ve ad ayrılamıyor); baba adı girilmemiş; cinsiyet platformun kodlarında yok;
+  doğum tarihi okunamıyor; birim bir bölüme eşlenmemiş; hekimin TRƏS kimliği girilmemiş ya da soyadı veya adı eksik;
+  kurum kimliği girilmemiş; hastanenin saat dilimi bilinmiyor; taburcu zamanı girilmemiş; kayıt türü kapalı; «Yalnız
+  doğrula» kipinde başvurduğu kayıt platformda yok. Hasta kaydı gönderilemezse yatış ve vitaller de gönderilmez
+  («Hasta kaydı platformda yok: yatış kaydı onunla birlikte atlandı»). Bilgi tamamlanınca kayıt, bir hafta içindeyse
+  sonraki turda gider. Daha sonra: hasta ya da yatış kaydı atlandıysa gece de dener (son 90 gün); yalnız bir hekim
+  atlandıysa yatış gitmiş sayılır ve hekim «Şimdi gönder» ile eklenir.
+- **Canlı platform bu sürümde kapalı (kodda kilitli):** canlı ortama — ya da canlı sunucunun adresine
+  (`ehr.e-health.gov.az`) — kilitler açık olsa bile hiçbir hasta verisi gönderilmez. Canlı ortam için sekme yalnız
+  «Kapalı» kipi kaydeder (başka bir kip seçilince form bunu kaydetmeden önce söyler); elle gönderim de reddedilir.
+  Yasal dayanak (O5) ve başka sistemden geçiş (O11) kararlarına kadar böyle kalır; açmak sahibin sözüyle yapılan,
+  gözden geçirilmiş bir kod değişikliğidir. «Bağlantıyı sına» hasta verisi taşımaz, canlı hesapla da çalışır. Sınama
+  ortamı da bakanlığındır: oraya gerçek hasta göndermek de bir veri aktarımıdır; F6'da yalnız sentetik yatışlar
+  kullanılır.
+- **Hastanenin hazırlaması gerekenler** (gönderimi açmadan önce):
+  1. **Bölüm eşleme:** her birimin bakanlık bölüm kodu ve adı.
+  2. **Hekim kimlikleri:** her sorumlu hekimin FİN'i, soyadı ve adı.
+  3. **Saat dilimi `Asia/Baku`:** gönderilen her saat hastanenin saat dilimindedir (Bakü için `+04:00`); gece denemesi
+     de bu saate göre çalışır. Kurumun saat dilimi kurum açılırken verilir, varsayılanı `UTC`'dir ve bu sürümde
+     arayüzde onu değiştiren bir yer yoktur: kurulumu yapan, kurumun `Asia/Baku` ile tanımlandığını ve sunucunun bu
+     dilimi tanıdığını doğrulamalıdır. Sunucunun tanımadığı bir dilimde yatış gönderilmez.
+  4. **Hesap** (F0): sunucu adresi, kullanıcı adı, parola, sağlık kuruluşu kimliği, kurum kimliği ve adı; ilk
+     açılışta önce «Yalnız doğrula».
+  5. **Hasta kayıtları:** FİN, «Soyad Ad» biçiminde ad, baba adı, cinsiyet (erkek ya da kadın) ve doğum tarihi
+     kabulde dolu olmalı.
+- **Denetim (F1):** yeni olaylar — «TRƏS bölüm eşlemesi değişti», «TRƏS hekim kimliği değişti», «TRƏS: yatış elle
+  gönderildi», «TRƏS: gönderim yeniden denendi», «TRƏS: gönderim önizlemesi açıldı», «TRƏS: yatış paketi gönderildi»
+  (yatış platforma ilk kez tam ulaştığında, yalnız sayılarla). Hiçbiri hasta adı ya da FİN taşımaz. Tek tek kayıtların
+  gönderimi denetime yazılmaz; onların kaydı gönderim defteridir.
+- **Kodlar:** her LOINC kodu, adı ve UCUM birimi 2026-11-12'de `tx.fhir.org`'da doğrulandı. SpO2'nin kodu (O7)
+  bakanlığa sorulacak. Kimlik belgesi türü ve yatış türü kodları adsız gidiyor, kan grubu gönderilmiyor (bakanlığın
+  kod listeleri gelince, O23).
+- **Bilinen sınırlar ve açık noktalar:**
+  - F0 ve F1'in Azerbaycanca, Rusça ve İngilizce metinleri yerel bir okurun gözünden geçmedi (ör. Azerbaycanca
+    «Hekim kimlikleri» panosunun adı «Həkimlərin şəxsiyyət məlumatları»); okuma sahibin işidir.
+  - Platformla ilgili her bilgi ikinci eldir; F6'da sınama ortamında doğrulanacak (kimliklerin sonundaki nokta,
+    yatış süresinin dışına düşen bir ölçümün kabul edilip edilmediği, «Yalnız doğrula» kipinde başvurular).
+  - Geçiş tarihi kuralı öneridir; karar sahibin (O15). Tarih sonradan geri alınırsa ya da kip «Gönder» → «Yalnız
+    doğrula» → «Gönder» değiştirilirse, sonraki gece yeni tarihten sonraki ve yatış kaydı henüz gönderilmemiş
+    yatışları gönderir (bir doğrulama denemesinin bir kısmı); hasta kaydında durmuş olanları ve hiçbir turun
+    ulaşmadığı yatışları yakalamaz.
+  - Taburcudan bir haftadan sonra girilen ya da geri alınan bir vital değer, yatışın bitmemiş bir kaydı yoksa
+    kendiliğinden gitmez; «Şimdi gönder» ile gider (O26). Hasta yatarken elle gönderilmiş bir «son» değer sonradan
+    geri alınırsa platformda kalabilir; silme F6 ile gelir (O25).
+  - FİN'i olmayan bir hastanın (ör. FİN'siz bir yenidoğan ya da yabancı uyruklu) yatışı gönderilemez; yenidoğan
+    profili bakanlıkla açık bir sorudur (O4). Bu yatışlar defterde «Atlandı» kalır; gece onları 90 gün sonra denemeyi
+    bırakır.
+  - Kurulumun kilidi kapalıyken «Şimdi gönder» ve «Yeniden dene» bağlantı sınaması için yazılmış cümleyle reddedilir
+    («Bu kurulumda dışarıya gönderim kapalı; bağlantı sınanmadı.»); sonraki bir aşamada kendi cümlesini alacak.
+  - Servis cihazlarının (Welch Allyn) ölçümleri main'deki ayrı bir dilimdir; TRƏS onları da göndermez. Böyle bir
+    ölçümün kabul ya da taburcu değeri sayılıp sayılmayacağı sahibin kararıdır (O28).
+  - «Hekim kimlikleri»ne bozuk biçimli bir istek gelirse sunucunun hata yanıtı yazılan FİN'i yazana geri
+    gösterebilir (yalnız ona); canlıdan önce kapatılacak (O17).
+  - Sunucunun `Asia/Baku` dilimini tanıdığı kurulumda doğrulanacak (O29).
+- **Kaynak:** `docs/superpowers/specs/2026-11-11-tres-esaglik-gonderim-design.md` (§13–§14 aşamaların
+  değişiklikleri); planlar `docs/superpowers/plans/2026-11-11-tres-f0-altyapi.md`,
+  `docs/superpowers/plans/2026-11-12-tres-f1a-hasta-yatis.md`, `docs/superpowers/plans/2026-11-12-tres-f1b-hasta-yatis.md`.
 
 ---
 
