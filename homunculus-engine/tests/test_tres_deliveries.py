@@ -490,6 +490,34 @@ async def test_a_stay_still_admitted_is_sent_by_hand_in_progress(desk, db_sessio
 
 # ---------------------------------------------------------------- the re-review of the fixes
 @requires_db
+async def test_a_draft_stay_is_never_sent_by_hand_and_its_preview_still_reads(desk, db_session):
+    """Final review (2026-11-13): a stay whose LAST admission is DRAFT — an unsigned draft, often with no
+    attending — is refused by hand, «Şimdi gönder» and «Yeniden dene» alike: 409 `tres_stay_draft`, before
+    the platform is asked and with no audit row (a refused precondition). The preview writes nothing and
+    still shows it."""
+    ward, fake, stay, client, app = desk
+    draft = await add_stay(db_session, ward, protocol_no="202600000102", number="H2600102", fin="ZZ55YY5", bed="2",
+                           state=AdmissionState.DRAFT, attending=None)
+    draft_id = draft.id
+    r = await client.post(_send(draft), headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]) == (409, {"code": "tres_stay_draft", "message": WORDS["tres_stay_draft"]})
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="encounter",
+                                local_id=ids.encounter(draft_id), status="failed", attempts=1, admission_id=draft_id))
+    await db_session.commit()
+    row_id = (await db_session.execute(select(TresDelivery.id).where(TresDelivery.admission_id == draft_id))).scalar_one()
+    r = await client.post(f"{LIST}/{row_id}/retry", headers=ward.auth["admin"])
+    assert (r.status_code, r.json()["detail"]["code"]) == (409, "tres_stay_draft")
+    assert fake.requests == [] and _audit(app, "tres.send") == [] and _audit(app, "tres.retry") == []
+    row = (await db_session.execute(select(TresDelivery).where(TresDelivery.id == row_id)
+                                    .execution_options(populate_existing=True))).scalar_one()
+    assert (row.status, row.attempts) == ("failed", 1)                          # untouched
+    r = await client.get(_preview(draft_id), headers=ward.auth["admin"])
+    assert r.status_code == 200, r.text
+    assert [i["resource_type"] for i in r.json()["items"]][:1] == ["patient"] and fake.requests == []
+    assert (await client.post(_send(stay), headers=ward.auth["admin"])).status_code == 200   # a stay not in draft goes
+
+
+@requires_db
 async def test_the_lists_admission_filter_takes_every_admission_of_the_stays_chain(desk, db_session):
     """Re-review: a stay's rows may sit on any of its admissions (a hand ran it before a transfer, and no
     run has moved them since) — the list's `admission` filter, given any admission of the chain, lists

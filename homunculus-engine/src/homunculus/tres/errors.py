@@ -40,13 +40,14 @@ TRES_PLATFORM_UNAVAILABLE = "tres_platform_unavailable"   # F1: no answer, an ou
 TRES_THROTTLED = "tres_throttled"                    # F1: the platform answered 429 to a hand (`retry_after` beside it)
 TRES_OTHER_ENVIRONMENT = "tres_other_environment"    # F1: a retried row of the environment not selected (409)
 TRES_SEND_FROM = "tres_send_from"                    # F1: a cut-off before 2020 or more than 366 days ahead
+TRES_STAY_DRAFT = "tres_stay_draft"                  # F1, final review: a hand on a stay whose last admission is a DRAFT
 
 CODES = frozenset({TRES_MODE, TRES_ENVIRONMENT, TRES_SETTLE_HOURS, TRES_TYPES, TRES_BASE_URL,
                    TRES_FIELD_LENGTH, EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_HOST_NOT_ALLOWED,
                    TRES_LIVE_CLOSED, TRES_UNIT_UNKNOWN, TRES_DEPARTMENT_CODE, TRES_DEPARTMENT_DISPLAY,
                    TRES_USER_UNKNOWN, TRES_FIN_FORMAT, TRES_NAME, TRES_FILTER, TRES_CURSOR, TRES_STAY_UNKNOWN,
                    TRES_OFF, TRES_BUSY, TRES_LOGIN_REFUSED, TRES_PLATFORM_UNAVAILABLE, TRES_THROTTLED,
-                   TRES_OTHER_ENVIRONMENT, TRES_SEND_FROM})
+                   TRES_OTHER_ENVIRONMENT, TRES_SEND_FROM, TRES_STAY_DRAFT})
 
 WORDS = {
     TRES_MODE: "The mode is off, validate or send.",
@@ -79,6 +80,7 @@ WORDS = {
     TRES_THROTTLED: "The platform asks to wait before the next request (HTTP 429); nothing more was sent.",
     TRES_OTHER_ENVIRONMENT: "This row belongs to the environment that is not selected; it is retried only there.",
     TRES_SEND_FROM: "The cut-off is a moment from 2020-01-01 to at most 366 days from now.",
+    TRES_STAY_DRAFT: "This stay is still a draft (not signed); it is not sent by hand.",
 }
 
 

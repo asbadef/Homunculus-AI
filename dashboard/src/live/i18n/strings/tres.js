@@ -164,6 +164,7 @@ export default {
       throttled: "Platform beklemeyi istedi (HTTP 429); başka bir şey gönderilmedi. Biraz sonra yeniden deneyin.",
       otherEnvironment: "Bu kayıt seçili olmayan ortama ait; yalnız o ortamda yeniden denenir.",
       sendFrom: "Başlangıç anı 1 Ocak 2020 ile bugünden en çok 366 gün sonrası arasında olmalı.",
+      stayDraft: "Bu yatış henüz taslak (imzalanmamış); elle gönderilmez.",
     },
   },
   az: {
@@ -321,6 +322,7 @@ export default {
       throttled: "Platforma gözləməyi xahiş etdi (HTTP 429); başqa heç nə göndərilmədi. Bir azdan yenidən cəhd edin.",
       otherEnvironment: "Bu qeyd seçilməmiş mühitə aiddir; yalnız həmin mühitdə yenidən cəhd edilir.",
       sendFrom: "Başlanğıc anı 1 yanvar 2020-ci il ilə bu gündən ən çoxu 366 gün sonra arasında olmalıdır.",
+      stayDraft: "Bu yatış hələ qaralamadır (imzalanmayıb); əl ilə göndərilmir.",
     },
   },
   ru: {
@@ -479,6 +481,7 @@ export default {
       throttled: "Платформа просит подождать (HTTP 429); больше ничего не отправлено. Повторите чуть позже.",
       otherEnvironment: "Эта запись относится к невыбранной среде; повторяется только в ней.",
       sendFrom: "Начальный момент — не раньше 1 января 2020 года и не позже чем через 366 дней от сегодняшнего дня.",
+      stayDraft: "Эта госпитализация ещё черновик (не подписана); вручную она не отправляется.",
     },
   },
   en: {
@@ -637,6 +640,7 @@ export default {
       throttled: "The platform asks to wait (HTTP 429); nothing more was sent. Try again in a moment.",
       otherEnvironment: "This record belongs to the environment that is not selected; it is retried only there.",
       sendFrom: "The start moment must be from 1 January 2020 to at most 366 days from today.",
+      stayDraft: "This stay is still a draft (not signed); it is not sent by hand.",
     },
   },
 };

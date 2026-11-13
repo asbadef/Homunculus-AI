@@ -51,6 +51,9 @@ its 30-minute wait) is tried now — a person's Patient row belongs to their new
   the account; a save or a successful connection test clears it, as for the rounds;
 * «Yeniden dene» of a row of the environment NOT selected: 409 `tres_other_environment` (M3) — a
   row is never sent to another environment's platform;
+* a stay whose LAST admission is a DRAFT — the admission form not yet signed, often with no
+  attending — is 409 `tres_stay_draft` (final review, 2026-11-13): it is no stay to report yet.
+  The preview still shows it (it sends and writes nothing);
 * are PACED by the tenant's one pacer, the rounds' (worker.Pacer, `app.state.tres_pacers`; I1:
   300 ms between ANY two requests of a tenant — a hand during a round cannot double the rate);
 * run under a LOCK TIMEOUT (N12): a row another send holds (a round, or another hand) is waited
@@ -91,7 +94,8 @@ from homunculus.tres.client import TresError, TresLoginRefused
 from homunculus.tres.egress import TresEgressRefused, live_closed, open_client
 from homunculus.tres.errors import (
     EGRESS_OFF, TRES_ACCOUNT_INCOMPLETE, TRES_BUSY, TRES_CURSOR, TRES_FILTER, TRES_LIVE_CLOSED, TRES_LOGIN_REFUSED,
-    TRES_OFF, TRES_OTHER_ENVIRONMENT, TRES_PLATFORM_UNAVAILABLE, TRES_STAY_UNKNOWN, TRES_THROTTLED, refusal,
+    TRES_OFF, TRES_OTHER_ENVIRONMENT, TRES_PLATFORM_UNAVAILABLE, TRES_STAY_DRAFT, TRES_STAY_UNKNOWN, TRES_THROTTLED,
+    refusal,
 )
 from homunculus.tres.ledger import HAND_LOCK_TIMEOUT_MS, LedgerBusy
 from homunculus.tres.models import ENVIRONMENTS, RESOURCE_TYPES, STATUSES, TresDelivery, TresSettings, account_of
@@ -341,8 +345,8 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
     """A person's run of one stay's package (`_Attempt`). Raises the refusals that ask nothing — the
     locks, a parked tenant (M2: each click would be one more failed login, and the ministry may lock
     the account), a retried row of the environment not selected (`environment`, M3: a row is never
-    sent to another environment's platform), a stay not the tenant's. The client is paced by the
-    tenant's one pacer, the rounds' (I1)."""
+    sent to another environment's platform), a stay not the tenant's, a stay whose last admission is
+    a DRAFT (final review). The client is paced by the tenant's one pacer, the rounds' (I1)."""
     egress = bool(getattr(request.app.state, "tres_egress", False))
     if not egress:
         raise refusal(409, EGRESS_OFF).http()
@@ -360,6 +364,9 @@ async def _hand(request: Request, db: AsyncSession, tenant_id: uuid.UUID, admiss
     if environment is not None and environment != settings.environment:
         raise refusal(409, TRES_OTHER_ENVIRONMENT).http()
     last = (await _stay(db, tenant_id, admission_id))[-1]
+    if last.state == AdmissionState.DRAFT:
+        # Final review: an unsigned draft (often with no attending yet) is no stay to report.
+        raise refusal(409, TRES_STAY_DRAFT).http()
     # Plain values: a rollback below expires every object this session holds.
     key, last_id = await _key_of(db, last), last.id
     factory = getattr(request.app.state, "tres_client_factory", None) or partial(

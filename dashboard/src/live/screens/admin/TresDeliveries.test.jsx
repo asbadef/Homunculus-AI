@@ -495,6 +495,31 @@ describe("TresDeliveries — the found stay, by its state", () => {
     expect(screen.getByText(`Yatış 202600000101 · ${words}`)).toBeInTheDocument();
   });
 
+  // Final review (2026-11-13): an unsigned draft (often with no attending) is no stay to report — the engine refuses
+  // it by hand (`tres_stay_draft`); the panel does not offer the send. The preview writes nothing and stays.
+  it("offers no «İndi göndər» for a stay in draft, and still offers its preview", async () => {
+    await found({ state: "DRAFT" });
+    expect(screen.getByText("Yatış 202600000101 · qaralama")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "İndi göndər" })).toBeNull();
+    expect(screen.getByRole("button", { name: "İlkin baxış" })).toBeEnabled();
+  });
+
+  it.each(["ACTIVE", "PENDING_DISCHARGE", "PENDING_TRANSFER", "TRANSFERRED", "DISCHARGED", "ARCHIVED"])(
+    "offers «İndi göndər» for a stay %s", async (state) => {
+      await found({ state });
+      expect(screen.getByRole("button", { name: "İndi göndər" })).toBeEnabled();
+    });
+
+  it("says a draft's refusal by its code", async () => {
+    await mounted((a) => {
+      a.tresDeliveries.mockResolvedValue(PAGE);
+      a.retryTresDelivery.mockRejectedValue(refusal(409, "draft", { apiCode: "tres_stay_draft" }));
+    });
+    await click(table().getAllByRole("button", { name: /^Yenidən cəhd et · / })[0]);
+    expect(toasts().getAllByText(/Bu yatış hələ qaralamadır \(imzalanmayıb\); əl ilə göndərilmir\./).length)
+      .toBeGreaterThan(0);
+  });
+
   it("says a state this build does not know by the engine's own word, never an empty line", async () => {
     await found({ state: "ARCHIVED" });
     expect(screen.getByText("Yatış 202600000101 · ARCHIVED")).toBeInTheDocument();

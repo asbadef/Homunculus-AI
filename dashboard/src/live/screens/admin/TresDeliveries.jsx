@@ -13,7 +13,8 @@
 // fazla» keeps the rows already read and says why beside its button.
 //
 // THE HAND. «Yatışı bul» reads one stay by its protocol number (and says its state: discharged with its time, transferred,
-// still admitted …); «Şimdi gönder» sends its package now, «Önizle» shows what would be sent. «Yeniden dene» stands on a
+// still admitted …); «Şimdi gönder» sends its package now — never offered for a stay in DRAFT, which the engine refuses
+// by hand (`tres_stay_draft`, final review 2026-11-13) — and «Önizle» shows what would be sent. «Yeniden dene» stands on a
 // refused or stuck row: the engine forces its stay's package (D21). A refusal is said by its code (apiErrors.js
 // `TRES_CODE_KEYS`) — `tres_busy` when a round holds the stay (N12), `tres_login_refused` at once when the feed is parked
 // (the platform is not asked: the notice at the top stands for it), `tres_other_environment` for a row of the environment
@@ -47,6 +48,9 @@ import { TresReadFailed } from "./TresReadFailed.jsx";
 
 /** The statuses «Yeniden dene» stands on: a refused row, and one the ledger stopped trying (D21). */
 export const RETRYABLE = Object.freeze(["failed", "stuck"]);
+/** A found stay in this state is not offered «Şimdi gönder»: an unsigned draft is no stay to report, and the engine
+ *  refuses it by hand (`tres_stay_draft`, final review 2026-11-13). Its preview stays: it sends and writes nothing. */
+const DRAFT = "DRAFT";
 
 /** A time as the reader's clock; a row with none reads as a dash. */
 const stamp = (iso) => {
@@ -226,9 +230,11 @@ export function TresDeliveries({ refresh = 0 }) {
         {stay ? (
           <>
             <span>{t("tres.deliveries.found", { key: stay.board_key, when: stayWhen(t, stay) })}</span>
-            <Button variant="primary" busy={busy === "send"} disabled={off("send")} onClick={sendNow}>
-              {t("tres.deliveries.sendNow")}
-            </Button>
+            {stay.state === DRAFT ? null : (
+              <Button variant="primary" busy={busy === "send"} disabled={off("send")} onClick={sendNow}>
+                {t("tres.deliveries.sendNow")}
+              </Button>
+            )}
             <Button busy={busy === "preview:stay"} disabled={off("preview:stay")}
               onClick={() => open("preview:stay", stay.admission_id)}>{t("tres.deliveries.preview")}</Button>
           </>
