@@ -286,6 +286,8 @@ BOARD_EXPECTED = {
     # G3-04: «Eczane» (api/pharmacy.py) — the pharmacist's ward page, its own right; the device token passes
     # as on every board route (spec D4, O6).
     ("GET", "/pharmacy"): "pharmacy.view",
+    # G4-05: «Enfeksiyon kontrol» (api/infection.py) — as /pharmacy: its own right, the device token passes (spec D10).
+    ("GET", "/infection"): "infection.view",
     ("POST", "/infinity-shadow/readings"): SHADOW_TOKEN,
     ("GET", "/infinity-shadow/board"): BOARD_OR_DEVICES,
     # Aşama B's «uyarsaydı» list: the board's own right, checked before the stage (409 here).
