@@ -79,7 +79,9 @@ export const API_MESSAGE_KEYS = new Map([
   ["no such active alert", "alarmNoLongerOpen"],
   ["kapsam şu anda okunamıyor", "scopeUnreadable"],
   ["ingest requires a device token", "deviceTokenOnly"],
-  // POST /ingest (G4-05, spec §5 M8): the four isolation flags come from a person, never from a device.
+  // POST /clinical and its preview (G4-05, spec §5 A7): the four isolation flags come from a person, never from a device
+  // — charted with the device token they are refused (api/clinical.py ISOLATION_FROM_DEVICE). POST /ingest drops them
+  // with a 200 and refuses nothing.
   ["izolasyon bir klinisyen kaydıdır; cihazdan alınmaz", "isolationFromDevice"],
   ["malformed identity resource", "badIdentityResource"],
   ["identity source 'kabul' is reserved for the admission", "kabulSourceReserved"],

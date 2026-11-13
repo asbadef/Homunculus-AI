@@ -74,7 +74,8 @@ const APP = py("api/app.py");
 // template (NOT_WHOLE, "{code}: tam sayı olmalı", shown as the engine wrote it), not messages.
 const CLINICAL_MESSAGE_NAMES = new Set(["GCS_NOT_WHOLE", "MAP_NOT_BELOW_SBP", "AT_TOO_OLD", "AT_FUTURE",
   "RETRACT_REASON_SHORT", "RETRACT_REASON_LONG", "RETRACT_NEEDS_PERSON", "RETRACT_UNKNOWN", "RETRACT_ALREADY", "RETRACT_DISCHARGED",
-  "RETRACT_NOT_BEDSIDE"]);
+  "RETRACT_NOT_BEDSIDE",
+  "ISOLATION_FROM_DEVICE"]);   // G4-05 (spec §5 A7): POST /clinical and its preview refuse a device's isolation flag
 const CLINICAL_MESSAGES = new Map([...pyConstants(py("api/clinical.py"))].filter(([name]) => CLINICAL_MESSAGE_NAMES.has(name)));
 const ADMIN_ROUTER = py("admin/router.py");
 const ADMIN_SERVICE = py("admin/service.py");
@@ -267,8 +268,9 @@ describe("apiErrorText", () => {
   const az = createTranslator("az", DICTIONARIES);
   const en = createTranslator("en", DICTIONARIES);
 
-  // G4-05 (spec §5 M8): POST /ingest refuses an isolation flag from a device. Pinned here as well as by the sweep above,
-  // which finds it in api/app.py only once the engine's half of the slice is in the same tree.
+  // G4-05 (spec §5 A7): POST /clinical and its preview refuse an isolation flag charted with the device token (400,
+  // api/clinical.py ISOLATION_FROM_DEVICE); POST /ingest no longer refuses one — it drops it with a 200. Pinned here as
+  // well as by the sweep above, which reads the constant from api/clinical.py by name (CLINICAL_MESSAGE_NAMES).
   it("says the device door's refusal of an isolation flag in the reader's words", () => {
     const sentence = "izolasyon bir klinisyen kaydıdır; cihazdan alınmaz";
     expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.isolationFromDevice", vars: {} });
