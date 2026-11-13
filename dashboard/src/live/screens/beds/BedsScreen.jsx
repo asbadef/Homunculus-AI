@@ -44,6 +44,7 @@ import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
 import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
+import { AttentionTiles } from "./AttentionTiles.jsx";
 import { useStructure, useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
 import { UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
 import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
@@ -105,63 +106,6 @@ const TICK_MS = 30_000;
  *  not at all by a session without `admissions.view` (useAdmissions). */
 const DRAFT = ["DRAFT"];
 const DRAFT_EVERY_MS = 60_000;
-
-/** The alarms screen, when this build has it and this session may open it. Until G1-10 merges, the
- *  attention line states the count without linking anywhere — never a dead link. */
-function alarmsHref(perms) {
-  const route = ROUTES.find((r) => r.id === "alarms");
-  return route && screenOf(route) && canReach(route, perms) ? `#${route.path}` : null;
-}
-
-/** What is waiting, and how sure the board is of it. The three states come from `waitingAlarms`,
- *  which has Wave 2's Decision 18 already applied: only a LIVE board may say "none". */
-function Waiting({ nowMs }) {
-  const { t } = useI18n();
-  const { user } = useSession();
-  const board = useBoard();
-  // G2-B5b (spec D4): a snoozed alarm is not waiting until its `until`: the snooze clock, not this line's 30 s tick.
-  const queueNowMs = useSnoozeClock();
-  const { known, stale, items } = waitingAlarms({ ...board, nowMs: queueNowMs });
-  const waiting = items ?? [];
-  const href = alarmsHref(user?.perms);
-  const oldest = waiting
-    .map((a) => a.firstSeenAtMs)
-    .filter((ms) => Number.isFinite(ms))
-    .sort((a, b) => a - b)[0];
-  let text;
-  if (!known && !stale) text = t("beds.waitingUnknown");
-  else if (waiting.length === 0) text = known ? t("beds.waitingNone") : t("beds.waitingUnknown");
-  else text = t("beds.waiting", { count: waiting.length });
-  // The prototype's attention tile (.att): an icon in a tinted square, the sentence beside it; red
-  // only while something waits, so a calm ward does not wear an alarm colour.
-  const hot = waiting.length > 0;
-  const tile = `flex items-center rounded-box border px-4 py-3.5 ${hot ? `${CRIT_EDGE} bg-crit-soft` : "border-line bg-card"}`;
-  const body = (
-    <span className="flex min-w-0 items-center gap-3">
-      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${hot ? "bg-crit text-white" : "bg-card2 text-mute"}`}>
-        <Icon name="bell" size={19} />
-      </span>
-      <span className="min-w-0">
-        <b className={`block text-14 ${hot ? "text-crit-ink" : ""}`}>{text}</b>
-        {/* How long the oldest unanswered alarm has been open — the server's instant against this
-            browser's clock, so a time that has not arrived yet reads 0:00 (elapsed.js). */}
-        {Number.isFinite(oldest) ? (
-          <small className="block text-11.5 text-mute">
-            {t("beds.waitingOldest", { elapsed: elapsed(oldest, nowMs) })}
-          </small>
-        ) : null}
-        {stale ? <small className="block text-11.5 text-att-ink">{t("board.degraded")}</small> : null}
-      </span>
-    </span>
-  );
-  return href ? (
-    <a href={href} className={`${tile} ${FOCUS_RING}`}>{body}</a>
-  ) : (
-    <div className={tile}>{body}</div>
-  );
-}
-
-const CRIT_EDGE = "border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)]";
 
 /** A unit's beds from the hospital's own structure (Yönetim → Yapı), active ones only, in label
  *  order; [] while the structure is not known — the board never invents a bed. */
@@ -281,6 +225,8 @@ export function BedsScreen() {
   // placeholder while the structure is not known — never «unknown».
   const names = useUnitNames(units);
   const structure = useStructure();
+  const wardBeds = [...structure.index.beds.values()].filter((b) => b.isActive && (!unit || normId(b.unitId) === normId(unit)));
+  const wardUnits = new Set(wardBeds.map((b) => normId(b.unitId))).size;
   const unitName = names.nameOf;
   const drafts = useAdmissions(DRAFT, { every: DRAFT_EVERY_MS });   // G2-B1a: the badge
   const draftNumbers = useMemo(() => new Set((drafts.rows ?? []).map(boardKeyOf)), [drafts.rows]);
@@ -351,6 +297,8 @@ export function BedsScreen() {
           {boardKnown(board.connection) || boardStale(board.connection) ? (
             <p className="m-0 text-13 text-mute">
               {unit ? t("beds.subUnit", { unit: unitName(unit), count: shown.length }) : t("beds.sub", { count: shown.length })}
+              {/* The prototype's «15 birim · 24 / 94 dolu»: from the hospital's own structure, when known. */}
+              {wardBeds.length ? ` · ${t("beds.subUnits", { count: wardUnits })} · ${t("beds.unitFill", { occupied: wardBeds.filter((b) => b.state === "OCCUPIED").length, total: wardBeds.length })}` : null}
             </p>
           ) : unit ? <p className="m-0 text-13 text-mute">{unitName(unit)}</p> : null}
         </div>
@@ -375,20 +323,13 @@ export function BedsScreen() {
       <BoardStrip connection={board.connection} />
       <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
 
-      <div className="grid gap-3 min-[861px]:grid-cols-2">
-        <Waiting nowMs={nowMs} />
-        <div className="flex items-center gap-3 rounded-box border border-line bg-card px-4 py-3.5">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-card2 text-mute">
-            <Icon name="activity" size={19} />
-          </span>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
-            {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
-                unvalidated strip only, and wraps under FeedHealth below 861 px. */}
-            <MonitorFeedChip data={shadow.data} phase={shadow.phase} nowMs={shadow.nowMs}
-              fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
-          </div>
-        </div>
+      <AttentionTiles nowMs={nowMs} />
+      <div data-feed-row="" className="flex min-w-0 flex-wrap items-center gap-2">
+        <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
+        {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
+            unvalidated strip only. */}
+        <MonitorFeedChip data={shadow.data} phase={shadow.phase} nowMs={shadow.nowMs}
+          fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
       </div>
 
       <div>

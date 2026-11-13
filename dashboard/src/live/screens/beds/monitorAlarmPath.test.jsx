@@ -136,7 +136,7 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
     }
     return card.outerHTML;
   });
-  const waitingLine = screen.getByText(/Cavab gözləyən siqnal/).textContent;
+  const waitingLine = document.querySelector('[data-tile="alarm"]').textContent;
   const out = {
     pulses: audio.pulses(),
     audible: audio.audible().length,

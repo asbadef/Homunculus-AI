@@ -62,6 +62,7 @@ afterEach(() => {
 const CARD = { identity: identity(), at: measured(30), vitals: { heart_rate: 96, spo2: 97 } };
 
 describe("the bed board", () => {
+  const alarmTile = () => document.querySelector('[data-tile="alarm"]');
   it("names itself and counts the beds it shows", async () => {
     await open({ payload: board([entry("S-001", [], CARD), entry("S-002", [], { at: measured(30) })]) });
     expect(screen.getByRole("heading", { level: 1, name: "Çarpayılar" })).toBeInTheDocument();
@@ -117,8 +118,8 @@ describe("the bed board", () => {
           entry("S-002", [alarm("acute_change", "moderate")], { at: measured(30), risk: "moderate" }),
         ]),
       });
-      expect(screen.getByText("Cavab gözləyən siqnal: 2")).toBeInTheDocument();
-      expect(screen.getByText("Ən köhnəsi 4:07 əvvəl açılıb")).toBeInTheDocument();
+      expect(alarmTile()).toHaveTextContent(/^2/);
+      expect(screen.getByText("siqnal cavab gözləyir, ən köhnəsi 4:07")).toBeInTheDocument();
     });
 
     // G2-B5b (spec D4; review): a snoozed alarm is not waiting until its until — and is from that moment, by the
@@ -135,9 +136,9 @@ describe("the bed board", () => {
           entry("S-002", [alarm("acute_change", "moderate")], { at: measured(30), risk: "moderate" }),
         ]),
       });
-      expect(screen.getByText("Cavab gözləyən siqnal: 1")).toBeInTheDocument();
+      expect(alarmTile()).toHaveTextContent(/^1/);
       act(() => { vi.advanceTimersByTime(5_100); });
-      expect(screen.getByText("Cavab gözləyən siqnal: 2")).toBeInTheDocument();
+      expect(alarmTile()).toHaveTextContent(/^2/);
     });
 
     it("only a LIVE board says nothing is waiting", async () => {
@@ -333,8 +334,8 @@ describe("the monitor strip (Aşama A)", () => {
     await openStrip(answer, { payload: board([entry("S-001", [], CARD)]) });
     const chip = screen.getByText(/məlumat göndərir/).closest("span");
     expect(chip).toHaveTextContent("Monitor (təsdiqlənməmiş): 1/3 məlumat göndərir · 2 gözləmədə · 1 təyin edilməyib");
-    // the existing feed chip's row: the one beside the attention line, two columns from 861 px
-    expect(chip.closest(".min-\\[861px\\]\\:grid-cols-2")).not.toBeNull();
+    // the existing feed chip's row, under the attention tiles
+    expect(chip.closest("[data-feed-row]")).not.toBeNull();
   });
 
   // Two patient cards (one REA-01, one NICU-01); three assigned monitor beds, one linked to S-001;
