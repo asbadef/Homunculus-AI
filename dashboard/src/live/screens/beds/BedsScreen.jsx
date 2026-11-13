@@ -33,7 +33,7 @@ import { useShell } from "../../shell/ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readPref, writePref } from "../../prefs.js";
-import { Empty, Icon, Input, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
+import { Empty, Icon, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
@@ -42,7 +42,7 @@ import {
 import { elapsed } from "../common/elapsed.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
 import { measuredVitals } from "../common/vitals.js";
-import { ORDERS, VIEWS, bedNameOf, inUnit, matching, norm, orderBeds } from "./order.js";
+import { ORDERS, VIEWS, bedNameOf, inUnit, orderBeds } from "./order.js";
 import { BedCard } from "./BedCard.jsx";
 import { AttentionTiles } from "./AttentionTiles.jsx";
 import { useStructure, useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
@@ -52,12 +52,6 @@ import { boardKeyOf } from "../kabul/boardKey.js";                  // G2-B1d: t
 import { useShadow } from "../../data/ShadowProvider.jsx";
 import { MonitorFeedChip, MonitorStrip, readUnknown, stripOn } from "../common/MonitorStrip.jsx";
 import { linkSentenceKey, maxAgeOf, reasonKey } from "../common/monitor.js";
-
-/** Monitor cards whose bed label or address contains what was typed. */
-const matchingMonitors = (cards, query) => {
-  const q = norm(query);
-  return q ? cards.filter((c) => norm(c.bed_label).includes(q) || norm(c.source).includes(q)) : cards;
-};
 
 /** Aşama A's section: monitors on no patient card of this board — the beds the table places a
  *  monitor on whose patient is not linked here, then the devices on no bed at all. After the
@@ -233,13 +227,12 @@ export function BedsScreen() {
   const nowMs = useBoardNow(TICK_MS);
   const [view, setView] = useState(() => readPref("bedView", VIEWS, "kart"));
   const [order, setOrder] = useState(() => readPref("bedOrder", ORDERS, "yatak"));
-  const [query, setQuery] = useState("");
   useEffect(() => writePref("bedView", view), [view]);
   useEffect(() => writePref("bedOrder", order), [order]);
 
   const all = board.patients;
   const inUnits = useMemo(() => inUnit(all, unit), [all, unit]);
-  const found = useMemo(() => matching(inUnits, query), [inUnits, query]);
+  const found = inUnits;
   const shown = useMemo(() => orderBeds(found, order), [found, order]);
 
   // The strip, when it is on. A bed the API links to a patient of this board goes on that
@@ -266,12 +259,10 @@ export function BedsScreen() {
   const strays = strip?.unassigned ?? [];
   const looseInUnit = unit ? loose.filter((c) => c.unit_id === unit) : loose;
   const straysInUnit = unit ? [] : strays;              // a device on no bed belongs to no unit
-  const looseFound = matchingMonitors(looseInUnit, query);
-  const straysFound = matchingMonitors(straysInUnit, query);
+  const looseFound = looseInUnit;
+  const straysFound = straysInUnit;
 
   const hiddenByUnit = all.length - inUnits.length + (loose.length - looseInUnit.length) + (strays.length - straysInUnit.length);
-  const hiddenBySearch = inUnits.length - found.length + (looseInUnit.length - looseFound.length)
-    + (straysInUnit.length - straysFound.length);
 
   const byPatient = useMemo(() => {
     const map = new Map();
@@ -353,17 +344,9 @@ export function BedsScreen() {
               </select>
             </label>
           ) : null}
-          {/* The prototype's search field: an icon inside, the label kept for screen readers. */}
-          <label className="relative block w-full max-w-[420px]">
-            <span className="sr-only">{t("beds.search")}</span>
-            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} type="search" autoComplete="off"
-              placeholder={t("beds.search")} className="h-10 pl-9" />
-          </label>
         </div>
         {/* A filter is never silent: if something is hidden, the screen says how much. */}
         {hiddenByUnit > 0 ? <p className="m-0 mt-1.5 text-12 text-att-ink">{t("beds.unitHidden", { count: hiddenByUnit })}</p> : null}
-        {hiddenBySearch > 0 ? <p className="m-0 mt-1.5 text-12 text-att-ink">{t("beds.searchHidden", { count: hiddenBySearch })}</p> : null}
       </div>
 
       {shown.length === 0 ? (
@@ -372,8 +355,7 @@ export function BedsScreen() {
               both, directly under a crit strip saying there is no connection to the server and
               the list is not shown — one of the two had to be wrong, and the reassuring one was.
               Each state now says its own sentence. */}
-          {query && inUnits.length > 0 ? t("beds.searchNone", { query })
-            : boardKnown(board.connection) ? t("beds.emptyLive")
+          {boardKnown(board.connection) ? t("beds.emptyLive")
               : boardStale(board.connection) ? t("board.degraded")
                 : board.connection === CONNECTION.UNAVAILABLE ? t("board.unavailable")
                   : t("board.connecting")}
@@ -385,7 +367,7 @@ export function BedsScreen() {
           const beds = unitBeds(structure.index, group.unitId);
           const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
           // A search narrows to what matched: an empty bed matches no patient's name.
-          const empty = query ? [] : beds.filter((b) => b.open && b.state === "AVAILABLE");
+          const empty = beds.filter((b) => b.open && b.state === "AVAILABLE");
           const type = structure.index.units.get(normId(group.unitId))?.unitType;
           return (
             <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")} className="flex flex-col gap-2.5">

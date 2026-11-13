@@ -423,7 +423,7 @@ describe("no screen shows a reader a translation key", () => {
     // that the sweep had screens to sweep: a build whose routes were all unbuilt would otherwise
     // report a clean board having rendered nothing.
     expect(visited.length, `swept: ${visited.join(", ")}`).toBeGreaterThan(1);
-  });
+  }, 60_000);   // mounts every screen of the build: slow on a loaded runner
 
   // The anchor for the sweep above, and the regression test for the six keys the Wave 3 fix-up
   // moved into `board.*`: each is asserted as the reader meets it, so a payload that stopped

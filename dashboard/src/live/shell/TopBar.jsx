@@ -2,9 +2,11 @@
 // chip, the clock, then the tools — language, theme, full screen, shortcuts, the alarm bell — and
 // the account menu.
 //
-// Not here (plan "Not in this plan"): the shift-end chip (no source in Group 1 — a user decision),
-// the patient/bed search (G1-09 brings the board UI it searches), the role preview.
+// Since 2026-11-14 (owner): the search (Ctrl K, GlobalSearch.jsx), the shift-end chip from the
+// server's shift window (ShiftChip.jsx) and «+ Yeni». Not here: the role preview.
 import React, { useEffect, useState } from "react";
+import { GlobalSearch } from "./GlobalSearch.jsx";
+import { ShiftChip } from "./ShiftChip.jsx";
 import { useI18n } from "../i18n/I18nProvider.jsx";
 import { useSession } from "../session/SessionProvider.jsx";
 import { useBoard } from "../data/BoardProvider.jsx";
@@ -279,6 +281,40 @@ function AccountMenu() {
   );
 }
 
+/** The prototype's «+ Yeni» menu: the actions this session may start, each a screen this build has.
+ *  Nothing is offered that leads nowhere. */
+function NewMenu() {
+  const { t } = useI18n();
+  const { user } = useSession();
+  const perms = user?.perms ?? [];
+  const items = [
+    ["kabul", "userPlus", "shell.newAdmission"],
+    ["devir", "swap", "shell.newHandover"],
+    ["gorevler", "clip", "shell.newTask"],
+  ].filter(([id]) => {
+    const route = ROUTES.find((r) => r.id === id);
+    return route && screenOf(route) && canReach(route, perms);
+  }).map(([id, icon, key]) => ({
+    key: id, label: t(key), icon,
+    onSelect: () => { window.location.hash = `#${ROUTES.find((r) => r.id === id).path}`; },
+  }));
+  if (!items.length) return null;
+  return (
+    <MenuButton
+      label={t("shell.new")}
+      buttonClassName={`hidden h-9 shrink-0 items-center gap-1.5 rounded-ctl border border-line bg-card px-3 text-13 font-bold text-ink hover:border-pri min-[641px]:inline-flex ${FOCUS_RING}`}
+      button={(<><Icon name="plus" size={16} />{t("shell.new")}<Icon name="chevD" size={14} className="text-mute" /></>)}
+      header={(
+        <div className="px-2.5 pb-2 pt-1.5">
+          <b className="block text-14">{t("shell.new")}</b>
+          <small className="block text-12 text-mute">{t("shell.newSub")}</small>
+        </div>
+      )}
+      items={["separator", ...items]}
+    />
+  );
+}
+
 /** `title`: the page's name, for the breadcrumb after the hospital's. */
 export function TopBar({ title }) {
   const { user } = useSession();
@@ -291,8 +327,11 @@ export function TopBar({ title }) {
         <span className="truncate">{title}</span>
       </p>
       <UnitChip />
+      {seesBoard ? <GlobalSearch /> : null}
       <span className="ml-auto" />
       <Clock />
+      <ShiftChip />
+      <NewMenu />
       <div className="flex shrink-0 items-center gap-0.5 border-l border-line pl-2 max-[640px]:border-l-0 max-[640px]:pl-0">
         <LanguageMenu />
         <ThemeToggle />

@@ -285,24 +285,6 @@ describe("the bed board", () => {
       expect(screen.queryByRole("combobox")).toBeNull();
     });
 
-    it("searches the bed, the id and the HIS name, and says what it hid", async () => {
-      await open({
-        payload: board([
-          entry("S-001", [], CARD),
-          entry("S-002", [], { identity: identity({ display_name: "Kamran Sentetik", bed_label: "REA-01 · 3" }), at: measured(30) }),
-        ]),
-      });
-      fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "kamran" } });
-      expect(screen.getByText("REA-01 · 3")).toBeInTheDocument();
-      expect(screen.queryByText("REA-01 · 2")).toBeNull();
-      expect(screen.getByText("Axtarış 1 kartı gizlədir.")).toBeInTheDocument();
-    });
-
-    it("a search that matches nothing says so with what was typed", async () => {
-      await open({ payload: board([entry("S-001", [], CARD)]) });
-      fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "zzz" } });
-      expect(screen.getByText("\"zzz\" ilə uyğun gələn kart yoxdur.")).toBeInTheDocument();
-    });
   });
 });
 
@@ -389,14 +371,6 @@ describe("the monitor strip (Aşama A)", () => {
     expect(section()).toHaveTextContent("NICU-01 · 7");
     // S-001's card (with its monitor), REA-01 · 5 and the two unassigned devices
     expect(screen.getByText("Süzgəc 4 kartı gizlədir.")).toBeInTheDocument();
-  });
-
-  it("the search finds a monitor by its bed", async () => {
-    await openStrip(MONITORS(), { payload: WARD });
-    fireEvent.change(screen.getByLabelText("Çarpayı və ya xəstə axtar"), { target: { value: "nicu-01 · 7" } });
-    expect(cards()).toHaveLength(1);
-    expect(section()).toHaveTextContent("NICU-01 · 7");
-    expect(screen.getByText("Axtarış 5 kartı gizlədir.")).toBeInTheDocument();
   });
 
   it("with the forwarder silent says so instead of counting, and shows no number anywhere", async () => {
