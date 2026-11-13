@@ -92,14 +92,16 @@ async def build_ward(db: AsyncSession) -> Ward:
     return Ward(tenant=tenant, site=site, units=units, rooms=rooms, beds=beds, users=users, auth=auth)
 
 
-def ward_app() -> FastAPI:
-    """The app with a device token for the ward's tenant: `BOARD` reads its board."""
-    return create_app({DEVICE: SLUG}, run_escalation_loop=False)
+def ward_app(**extra) -> FastAPI:
+    """The app with a device token for the ward's tenant: `BOARD` reads its board. `extra` goes to
+    `create_app` as it is (G3-07's end-to-end test gives the app a readings store, its policy and a
+    person's credential)."""
+    return create_app({DEVICE: SLUG}, run_escalation_loop=False, **extra)
 
 
 @asynccontextmanager
-async def ward_client(db: AsyncSession) -> AsyncIterator[tuple[AsyncClient, FastAPI]]:
-    app = ward_app()
+async def ward_client(db: AsyncSession, **extra) -> AsyncIterator[tuple[AsyncClient, FastAPI]]:
+    app = ward_app(**extra)
     maker = async_sessionmaker(db.bind, expire_on_commit=False)
 
     async def _db():

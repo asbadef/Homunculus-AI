@@ -16,18 +16,28 @@
 Postgres (`db_session`). Synthetic ward: tests/kabul_world.py."""
 from __future__ import annotations
 
+import importlib.util
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest_asyncio
-from sqlalchemy import func, select, update
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import func, select, text, update
 
 from homunculus.admission import router as admission_router
+from homunculus.admission import transfer
 from homunculus.admission.models import Admission
+from homunculus.api.audit import AuditEvent, InMemoryAuditLog
+from homunculus.api.identity import Caller
+from homunculus.api.readings import POLICY_UNMATCHED, reconcile
+from homunculus.api.readings_postgres import PostgresReadingStore
+from homunculus.api.tasks_postgres import PostgresTaskStore
 from homunculus.tenant.models import Bed
-from tests.conftest import requires_db
+from tests.conftest import ENGINE_ROOT, TEST_DATABASE_URL, requires_db
 from tests.kabul_world import BOARD, FIRST_PROTOCOL, SLUG, build_ward, ward_client
 from tests.test_admission_api import form, person
+from tests.test_ingest_apply import obs
 
 pytestmark = [requires_db]
 
@@ -270,3 +280,178 @@ async def test_a_closed_bed_is_said_before_its_time(ward, db_session):
     await db_session.commit()
     r = await _admit(w, client, "10", at=_ago(hours=2))
     assert _refusal(r) == (409, "bed_closed"), r.text
+
+
+# ---------------------------------------------------------------- the readers of the start (§4, D7, D8)
+async def test_the_stay_start_readers_answer_the_back_dated_time(ward):
+    w, client, _ = ward
+    began = _ago(hours=2)
+    await _admitted(w, client, at=began)
+    readings, tasks = PostgresReadingStore(TEST_DATABASE_URL), PostgresTaskStore(TEST_DATABASE_URL)
+    try:
+        assert readings.stay_start(SLUG, FIRST_PROTOCOL) == began
+        assert readings.open_stays(SLUG) == {FIRST_PROTOCOL: began}
+        assert readings.open_admissions(SLUG) == {FIRST_PROTOCOL: began}
+        assert tasks.admitted_at(SLUG, FIRST_PROTOCOL) == began
+    finally:
+        readings.close()
+        tasks.close()
+
+
+async def test_after_a_move_the_stay_still_began_at_the_back_dated_time(ward, db_session):
+    """D7: the arriving row is the move's record, stamped at the move; every reader of the stay's start
+    walks back to the back-dated kabul. `open_admissions` answers the open ROW: the move (T6)."""
+    w, client, _ = ward
+    began = _ago(hours=2)
+    admission = await _admitted(w, client, at=began)
+    await _signed(w, client, admission)
+    before_move = datetime.now(timezone.utc)
+    arriving = await _moved(w, client, admission, "3")
+    readings, tasks = PostgresReadingStore(TEST_DATABASE_URL), PostgresTaskStore(TEST_DATABASE_URL)
+    try:
+        assert readings.stay_start(SLUG, FIRST_PROTOCOL) == began
+        assert tasks.admitted_at(SLUG, FIRST_PROTOCOL) == began
+        assert readings.open_admissions(SLUG)[FIRST_PROTOCOL] >= before_move
+    finally:
+        readings.close()
+        tasks.close()
+    assert await transfer.stay_began(db_session, uuid.UUID(arriving["id"]), tenant_id=w.tenant.id) == began
+
+
+async def test_a_discharge_between_the_back_dated_start_and_the_save_is_taken(ward):
+    w, client, _ = ward
+    began = _ago(hours=2)
+    admission = await _admitted(w, client, at=began)
+    await _signed(w, client, admission)
+    left = began + timedelta(minutes=30)
+    r = await client.post(f"/admissions/{admission['id']}/discharge/initiate",
+                          json={"disposition": "HOME", "discharge_at": left.isoformat()}, headers=w.auth["doctor"])
+    assert r.status_code == 200, r.text
+    assert datetime.fromisoformat(r.json()["discharge_at"]) == left
+
+
+def _migration_0021():
+    spec = importlib.util.spec_from_file_location(
+        "g307_migration_0021", ENGINE_ROOT / "alembic" / "versions" / "0021_vital_readings.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest_asyncio.fixture
+async def readings_table(db_session):
+    """`vital_readings` as migration 0021 builds it, beside the models' tables `db_session` made (the table
+    has no model). The ward's trail is in memory (`app.state.audit`): there is no `audit` table here, so
+    the migration's audit index is not built. Dropped before `db_session` drops the rest: its foreign key
+    points at `admissions`. The test's session ends its transaction first — a read of the table holds a
+    lock the DROP would wait for, for ever."""
+    migration = _migration_0021()
+    migration._CREATE_AUDIT_INDEX = "SELECT 1"
+
+    def build(conn) -> None:
+        with Operations.context(MigrationContext.configure(conn)):
+            migration.upgrade()
+
+    async with db_session.bind.begin() as conn:
+        await conn.run_sync(build)
+    yield
+    await db_session.rollback()
+    async with db_session.bind.begin() as conn:
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS vital_readings")
+
+
+async def test_reconcile_stamps_a_reading_measured_in_the_back_dated_window(ward, readings_table, db_session):
+    w, client, _ = ward
+    began = _ago(hours=2)
+    admission = await _admitted(w, client, at=began)
+    audit = InMemoryAuditLog()
+    for when in (began - timedelta(minutes=30), began + timedelta(minutes=30)):
+        audit.append(AuditEvent(SLUG, "ingest", FIRST_PROTOCOL, "spo2",
+                                {"value": 96.0, "unit": "%", "obs_ts": when.isoformat(), "device": "CONNEX-3A"}))
+    store = PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        assert reconcile(store, audit, tenant=SLUG, now=datetime.now(timezone.utc))["recorded"] == 2
+    finally:
+        store.close()
+    rows = (await db_session.execute(text(
+        "SELECT observed_at, CAST(admission_id AS text) FROM vital_readings ORDER BY observed_at"))).all()
+    assert [tuple(row) for row in rows] == [(began - timedelta(minutes=30), None),
+                                           (began + timedelta(minutes=30), admission["id"])]
+
+
+# ---------------------------------------------------------------- end to end (G3-05's link, §4.1)
+#: The number a round was typed under before the patient's protocol existed: nobody holds it (G3-05).
+TYPO = "202600000010"
+#: The end-to-end test's one person, a nurse who may chart — the unmatched list's right (G3-05 D10).
+PERSON = {"Authorization": "Bearer kabulz-hem-jwt"}
+CHART = frozenset({"board.view", "clinical.chart"})
+
+
+async def _person(credential: str) -> Caller | None:
+    if credential == PERSON["Authorization"].removeprefix("Bearer "):
+        return Caller(hospital=SLUG, actor="hem.sentetik", groups=("nurse",), perms=CHART)
+    return None
+
+
+@pytest_asyncio.fixture
+async def readings_world(db_session, readings_table, monkeypatch):
+    """The ward's app as the hospital runs it for device readings: the Postgres readings store on the same
+    database, a number nobody holds listed (`unmatched`), and a nurse who may link a set."""
+    monkeypatch.delenv("SCOPE_ENFORCE_UNASSIGNED", raising=False)
+    built = await build_ward(db_session)
+    await _free_since(db_session, _ago(days=1))
+    store = PostgresReadingStore(TEST_DATABASE_URL)
+    try:
+        async with ward_client(db_session, readings=store, unknown_readings=POLICY_UNMATCHED,
+                               resolve_jwt=_person) as (client, app):
+            yield built, client, app
+    finally:
+        store.close()
+
+
+async def _listed(client, when: datetime) -> list[int]:
+    """The ids of the waiting set under TYPO measured at `when`."""
+    r = await client.get("/readings/unmatched", headers=PERSON)
+    assert r.status_code == 200, r.text
+    return [x["id"] for s in r.json()["sets"]
+            if s["received_key"] == TYPO and datetime.fromisoformat(s["observed_at"]) == when
+            for x in s["readings"]]
+
+
+async def _link(client, ids: list[int]):
+    return await client.post("/readings/unmatched/assign", json={"readings": ids, "patient_id": FIRST_PROTOCOL},
+                             headers=PERSON)
+
+
+async def test_a_set_measured_before_the_save_links_to_a_back_dated_stay(readings_world, db_session):
+    """Two rounds typed under a number nobody holds: A an hour before the kabul is saved, B seven hours
+    before. The kabul says the stay began two hours before the save: A is hers — linked, filed with the
+    admission at its own time — and B, measured before the stay, is refused `reading_before_stay`."""
+    w, client, _ = readings_world
+    a_at, b_at = _ago(hours=1), _ago(hours=7)
+    for when in (a_at, b_at):
+        r = await client.post("/ingest", json=obs("heart_rate", 88, TYPO, when), headers=BOARD)
+        assert r.json() == {"patient_id": TYPO, "dropped": "unmatched"}, r.text
+    admission = await _admitted(w, client, at=_ago(hours=2))
+    a_ids, b_ids = await _listed(client, a_at), await _listed(client, b_at)
+    assert len(a_ids) == len(b_ids) == 1
+    r = await _link(client, a_ids)
+    assert r.status_code == 200, r.text
+    row = (await db_session.execute(text(
+        "SELECT state, patient_key, CAST(admission_id AS text), observed_at FROM vital_readings WHERE id = :id"),
+        {"id": a_ids[0]})).one()
+    assert tuple(row) == ("assigned", FIRST_PROTOCOL, admission["id"], a_at)
+    r = await _link(client, b_ids)
+    assert _refusal(r) == (409, "reading_before_stay"), r.text
+
+
+async def test_the_same_set_against_an_untouched_kabul_is_refused(readings_world):
+    """The control: saved with no time, the stay begins at the save, and the round an hour before it is
+    not hers — G3-05's guard, as before this slice."""
+    w, client, _ = readings_world
+    a_at = _ago(hours=1)
+    r = await client.post("/ingest", json=obs("heart_rate", 88, TYPO, a_at), headers=BOARD)
+    assert r.json() == {"patient_id": TYPO, "dropped": "unmatched"}, r.text
+    await _admitted(w, client)
+    r = await _link(client, await _listed(client, a_at))
+    assert _refusal(r) == (409, "reading_before_stay"), r.text
