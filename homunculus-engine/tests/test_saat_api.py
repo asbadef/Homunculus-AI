@@ -197,26 +197,50 @@ class TestAWithdrawal:
             assert c.app.state.board_link._engine("h1").state(PID).latest(SignalCode.TEMPERATURE) is None
         _same_after_a_restart(audit, live)
 
-    # `raises=AssertionError`: only E-6's own failure is expected — the overdue back unacknowledged, or stamped
-    # anew, after the restart. One MISSING after the restart (a KeyError: a silenced alert) is a real failure.
+    # `raises=AssertionError`: only E-6's own failure is expected — the overdue back unacknowledged after the
+    # restart. One MISSING after the restart (a KeyError: a silenced alert) is a real failure.
     @pytest.mark.xfail(strict=True, raises=AssertionError,
-                       reason="plan E-6 (F-1): the replay passes over the first sight and the "
-                       "acknowledgement given while the withdrawn reading's evaluation had the overdue firing")
-    def test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_both_after_a_restart(self):
-        """Live, the overdue the temperature found stays one episode across its withdrawal (D3), acknowledged and
-        first seen at the temperature's request. The restart skips the temperature row, so at the `first_seen` and
-        `ack` rows the replay has no overdue firing and passes both over; the `chart_retract` row's rejudge then
-        raises it unstamped and unacknowledged. Kept red on purpose: the owner decides (plan E-6)."""
+                       reason="plan E-6 (F-1), accepted by the owner: the replay passes over the acknowledgement "
+                       "given while the withdrawn reading's evaluation had the overdue firing")
+    def test_an_acknowledged_overdue_whose_finding_reading_is_withdrawn_keeps_its_acknowledgement_after_a_restart(
+            self):
+        """Live, the overdue the temperature found stays one episode across its withdrawal (D3), acknowledged. The
+        restart skips the temperature row, so at the `ack` row the replay has no overdue firing and passes it over;
+        the `chart_retract` row's rejudge then raises it unacknowledged (its first sight is the withdrawal row's
+        since the final review's I-2: the next test). Kept red on purpose (plan E-6, accepted by the owner)."""
         audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
         with _app(audit) as c:
             _, temperature = _overdue(c, now)
             r = c.post(f"/clinical/{PID}/entries/{temperature}/retract", json={"reason": WHY}, headers=NURSE)
             assert r.status_code == 200, r.text
-            live = _firing(_card(c))["antibiotic_overdue"]
-            assert live["acknowledged"] and live["first_seen_at"] is not None
+            assert _firing(_card(c))["antibiotic_overdue"]["acknowledged"]
         with _app(audit) as again:
             after = _firing(_card(again))["antibiotic_overdue"]
-        assert (after["acknowledged"], after["first_seen_at"]) == (True, live["first_seen_at"])
+        assert after["acknowledged"] is True
+
+    def test_an_unacknowledged_overdue_whose_finding_reading_is_withdrawn_still_escalates_after_a_restart(self):
+        """Final review I-2 (owner, 2026-11-13: «Küçük önlemi ekle»). The restart skips the temperature row, so the
+        overdue's `first_seen` row is passed over and the `chart_retract` row's rejudge raised it with no stamp: no
+        escalation clock until the patient's next reading. The replay now stamps it at the withdrawal row's write
+        time, as the live withdrawal stamps an alert it uncovers — the escalation comes later than live, never not
+        at all. The restart writes no row: it tells nobody."""
+        audit, now = InMemoryAuditLog(), datetime.now(timezone.utc)
+        with _app(audit) as c:
+            _, temperature = _overdue(c, now, ack=False)
+            r = c.post(f"/clinical/{PID}/entries/{temperature}/retract", json={"reason": WHY}, headers=NURSE)
+            assert r.status_code == 200, r.text
+        [withdrawal] = audit.records(tenant="h1", patient_id=PID, event_type="chart_retract", limit=10)
+        withdrawn_at = datetime.fromisoformat(withdrawal.ts)
+        rows, told = len(audit.records(tenant="h1", limit=10_000)), _count(audit, "notification")
+        with _app(audit) as again:
+            after = _firing(_card(again))["antibiotic_overdue"]
+            assert not after["acknowledged"]
+            assert after["first_seen_at"] is not None, "no escalation clock: E-6's silenced escalation"
+            assert datetime.fromisoformat(after["first_seen_at"]) == withdrawn_at
+            assert (len(audit.records(tenant="h1", limit=10_000)), _count(audit, "notification")) == (rows, told)
+            again.portal.call(again.app.state.escalation_cycle, withdrawn_at + timedelta(hours=2))
+        escalated = audit.records(tenant="h1", patient_id=PID, event_type="escalation", limit=10)
+        assert "antibiotic_overdue" in {r.subject for r in escalated}
 
     def test_a_withdrawal_after_the_hour_ran_out_uncovers_the_overdue_and_tells_the_nurse(self):
         """The hour ran out at -30 min with no reading since but a wrong one at -80 min (a respiration rate that

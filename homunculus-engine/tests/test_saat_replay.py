@@ -206,6 +206,59 @@ class TestAWithdrawalRow:
         assert "antibiotic_overdue" in {a.kind for a in rebuilt.active_alerts(PID)}
 
 
+def _first_seen(id_, kind, at, patient=PID) -> AuditRecord:
+    """A `first_seen` row as the doors write it: the alert's first sight, `at`."""
+    return AuditRecord(id=id_, ts=at.isoformat(), tenant="h1", event_type="first_seen", patient_id=patient,
+                       subject=kind, payload={"at": at.isoformat()})
+
+
+class TestAWithdrawalRowStampsWhatItRaises:
+    """Final review I-2 (owner, 2026-11-13: «Küçük önlemi ekle»): an alert a `chart_retract` row's rejudge has firing
+    with no stamp is stamped at the row's write time, as the live withdrawal stamps an alert it uncovers — unless a
+    later `first_seen` row of the trail stamps it, which then wins. Its escalation clock comes later, never not at
+    all."""
+
+    def test_an_overdue_whose_first_seen_row_followed_a_withdrawn_reading_is_stamped_at_the_withdrawal(self):
+        # E-6's trail: the temperature at -5 min found the hour gone and the doors stamped the overdue (row 7); the
+        # temperature is withdrawn (row 8). The replay skips row 6, passes row 7 over (no overdue firing there), and
+        # row 8's rejudge raises the overdue — unstamped, so no escalation until the patient's next reading.
+        then, late, withdrawn_at = NOW - timedelta(minutes=90), NOW - timedelta(minutes=5), NOW - timedelta(minutes=1)
+        rows = [_row(1, "chart", "suspected_infection", 1.0, then, then),
+                _row(2, "chart", "platelets", 120.0, then, then),
+                _row(3, "chart", "map", 60.0, then, then),
+                _first_seen(4, "sepsis", then), _first_seen(5, "antibiotic_due", then),
+                _row(6, "chart", "temperature", 37.0, late, late),
+                _first_seen(7, "antibiotic_overdue", late),
+                _withdrawal(8, 6, withdrawn_at)]
+        engine, store = Engine(), AckStore()
+        rehydrate(engine, store, rows, skip=frozenset({6}), now=NOW)
+        key = (PID, "antibiotic_overdue")
+        assert key in store.firing
+        assert store.first_seen[key] == store.clock_from[key] == withdrawn_at
+        assert store.first_seen[(PID, "sepsis")] == then, "a stamped alert keeps its own stamp"
+        assert (PID, "antibiotic_due") not in store.first_seen, "the ended `due` is pruned as before"
+
+    def test_a_later_first_seen_row_stamps_it_once_with_its_own_time(self):
+        # The live withdrawal uncovered the overdue (the hour ran out since the last reading) and wrote its
+        # `first_seen` row after the `chart_retract` row, at the request's instant — a moment before the row's write
+        # time. The replay stamps the overdue at the withdrawal row, then the `first_seen` row's time replaces it:
+        # one stamp, the live one.
+        then, wrong = NOW - timedelta(minutes=90), NOW - timedelta(minutes=80)
+        withdrawn_at = NOW - timedelta(minutes=1)
+        uncovered = withdrawn_at - timedelta(seconds=2)
+        rows = [_row(1, "chart", "suspected_infection", 1.0, then, then),
+                _row(2, "chart", "platelets", 120.0, then, then),
+                _row(3, "chart", "map", 60.0, then, then),
+                _first_seen(4, "sepsis", then), _first_seen(5, "antibiotic_due", then),
+                _row(6, "chart", "heart_rate", 80.0, wrong, wrong),
+                _withdrawal(7, 6, withdrawn_at),
+                _first_seen(8, "antibiotic_overdue", uncovered)]
+        engine, store = Engine(), AckStore()
+        rehydrate(engine, store, rows, skip=frozenset({6}), now=NOW)
+        key = (PID, "antibiotic_overdue")
+        assert store.first_seen[key] == store.clock_from[key] == uncovered
+
+
 @requires_db
 def test_a_postgres_trail_is_rejudged_at_its_withdrawal_row(pg_log):  # noqa: F811 — the fixture
     """The Postgres audit keeps `ts` as TEXT (migration 0004): the replay reads the withdrawal row's write time from
