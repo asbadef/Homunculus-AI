@@ -33,7 +33,7 @@ import { useShell } from "../../shell/ShellContext.jsx";
 import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readPref, writePref } from "../../prefs.js";
-import { Box, Empty, Field, Icon, Input, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
+import { Empty, Icon, Input, RiskPill, Seg, StatusPill, Table } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
@@ -131,11 +131,17 @@ function Waiting({ nowMs }) {
   if (!known && !stale) text = t("beds.waitingUnknown");
   else if (waiting.length === 0) text = known ? t("beds.waitingNone") : t("beds.waitingUnknown");
   else text = t("beds.waiting", { count: waiting.length });
+  // The prototype's attention tile (.att): an icon in a tinted square, the sentence beside it; red
+  // only while something waits, so a calm ward does not wear an alarm colour.
+  const hot = waiting.length > 0;
+  const tile = `flex items-center rounded-box border px-4 py-3.5 ${hot ? `${CRIT_EDGE} bg-crit-soft` : "border-line bg-card"}`;
   const body = (
-    <span className="flex min-w-0 items-center gap-2">
-      <Icon name="bell" size={16} className={waiting.length ? "text-crit" : "text-mute"} />
+    <span className="flex min-w-0 items-center gap-3">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${hot ? "bg-crit text-white" : "bg-card2 text-mute"}`}>
+        <Icon name="bell" size={19} />
+      </span>
       <span className="min-w-0">
-        <b className="block text-13">{text}</b>
+        <b className={`block text-14 ${hot ? "text-crit-ink" : ""}`}>{text}</b>
         {/* How long the oldest unanswered alarm has been open — the server's instant against this
             browser's clock, so a time that has not arrived yet reads 0:00 (elapsed.js). */}
         {Number.isFinite(oldest) ? (
@@ -148,10 +154,26 @@ function Waiting({ nowMs }) {
     </span>
   );
   return href ? (
-    <a href={href} className={`rounded-box border border-line bg-card px-3 py-2.5 ${FOCUS_RING}`}>{body}</a>
+    <a href={href} className={`${tile} ${FOCUS_RING}`}>{body}</a>
   ) : (
-    <div className="rounded-box border border-line bg-card px-3 py-2.5">{body}</div>
+    <div className={tile}>{body}</div>
   );
+}
+
+const CRIT_EDGE = "border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)]";
+
+/** The cards under one heading per unit (the prototype's .unit-h sections), in the order they
+ *  came: bed order already runs unit by unit, risk order keeps its ranking inside each unit and
+ *  puts first the unit whose card ranks highest. A card with no unit goes in a last group. */
+export function byUnit(list) {
+  const groups = new Map();
+  for (const p of list) {
+    const key = p?.unitId || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  const out = [...groups].map(([unitId, items]) => ({ unitId: unitId || null, items }));
+  return [...out.filter((g) => g.unitId), ...out.filter((g) => !g.unitId)];
 }
 
 /** The list view (the prototype's `table.t`). The numbers are written in `ink`, not in the
@@ -282,6 +304,9 @@ export function BedsScreen() {
     return map;
   }, [board.alerts]);
   const alertsOf = (id) => byPatient.get(id) ?? [];
+  const { user } = useSession();
+  const kabulRoute = ROUTES.find((r) => r.id === "kabul");
+  const kabulHref = kabulRoute && screenOf(kabulRoute) && canReach(kabulRoute, user?.perms) ? `#${kabulRoute.path}` : null;
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
@@ -306,25 +331,36 @@ export function BedsScreen() {
             { value: "yatak", label: t("beds.orderBed"), icon: "bed" },
             { value: "risk", label: t("beds.orderRisk"), icon: "alert" },
           ]} />
+          {/* The prototype's primary action on this screen, for whoever may admit. */}
+          {kabulHref ? (
+            <a href={kabulHref} className={`inline-flex h-9 items-center gap-1.5 rounded-ctl bg-pri px-3.5 text-13 font-bold text-onpri hover:brightness-105 ${FOCUS_RING}`}>
+              <Icon name="plus" size={16} />{t("kabul.nav")}
+            </a>
+          ) : null}
         </div>
       </div>
 
       <BoardStrip connection={board.connection} />
       <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
 
-      <div className="grid gap-2 min-[861px]:grid-cols-2">
+      <div className="grid gap-3 min-[861px]:grid-cols-2">
         <Waiting nowMs={nowMs} />
-        <div className="flex flex-wrap items-center gap-2 rounded-box border border-line bg-card px-3 py-2.5">
-          <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
-          {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
-              unvalidated strip only, and wraps under FeedHealth below 861 px. */}
-          <MonitorFeedChip data={shadow.data} phase={shadow.phase} nowMs={shadow.nowMs}
-            fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
+        <div className="flex items-center gap-3 rounded-box border border-line bg-card px-4 py-3.5">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-card2 text-mute">
+            <Icon name="activity" size={19} />
+          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <FeedHealth connection={board.connection} patients={all} nowMs={nowMs} />
+            {/* The monitors' own chip, beside the board's and separately labelled: it speaks of the
+                unvalidated strip only, and wraps under FeedHealth below 861 px. */}
+            <MonitorFeedChip data={shadow.data} phase={shadow.phase} nowMs={shadow.nowMs}
+              fetchedAtMs={shadow.fetchedAtMs} maxAgeS={maxAgeS} />
+          </div>
         </div>
       </div>
 
-      <Box className="!px-3 !py-2.5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div>
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
           {/* The screen's own unit selector: the top bar's chip is hidden at 640 px and below, so
               on a phone this is the only way to choose a unit. Both write the same choice. */}
           {units.length >= 2 ? (
@@ -344,14 +380,18 @@ export function BedsScreen() {
               </select>
             </label>
           ) : null}
-          <Field label={t("beds.search")} layout="col" className="!mb-0 min-w-[200px] flex-1">
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} type="search" autoComplete="off" />
-          </Field>
+          {/* The prototype's search field: an icon inside, the label kept for screen readers. */}
+          <label className="relative block w-full max-w-[420px]">
+            <span className="sr-only">{t("beds.search")}</span>
+            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} type="search" autoComplete="off"
+              placeholder={t("beds.search")} className="h-10 pl-9" />
+          </label>
         </div>
         {/* A filter is never silent: if something is hidden, the screen says how much. */}
         {hiddenByUnit > 0 ? <p className="m-0 mt-1.5 text-12 text-att-ink">{t("beds.unitHidden", { count: hiddenByUnit })}</p> : null}
         {hiddenBySearch > 0 ? <p className="m-0 mt-1.5 text-12 text-att-ink">{t("beds.searchHidden", { count: hiddenBySearch })}</p> : null}
-      </Box>
+      </div>
 
       {shown.length === 0 ? (
         <Empty icon="bed">
@@ -368,13 +408,22 @@ export function BedsScreen() {
       ) : view === "liste" ? (
         <BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} />
       ) : (
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
-          {shown.map((p) => (
-            <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
-              monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-              draft={draftNumbers.has(p.patient_id)} />
-          ))}
-        </ul>
+        byUnit(shown).map((group, _i, groups) => (
+          <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")} className="flex flex-col gap-2.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 pt-1">
+              <h2 className="m-0 font-display text-15 font-bold">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
+              {/* With one unit the page's own count already says it. */}
+              {groups.length > 1 ? <span className="text-12 text-mute">{t("beds.sub", { count: group.items.length })}</span> : null}
+            </div>
+            <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-2.5 p-0 max-[640px]:grid-cols-1">
+              {group.items.map((p) => (
+                <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
+                  monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
+                  draft={draftNumbers.has(p.patient_id)} />
+              ))}
+            </ul>
+          </section>
+        ))
       )}
       {order === "yatak" ? <p className="m-0 text-11.5 text-mute">{t("beds.orderNote")}</p> : null}
       {strip ? <MonitorSection beds={looseFound} devices={straysFound} view={stripView} /> : null}
