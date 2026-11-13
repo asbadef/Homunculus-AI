@@ -8,6 +8,7 @@
 // legal.js, whose addT never overwrites a key) by a line that says to call IT.
 import { ICONS } from "../ui/icons.js";
 import { flagSvg } from "../ui/Flag.jsx";
+import logoUrl from "../assets/homunculus-logo.png";
 
 const SCRIPT = "/legal/legal.js";
 const LANGS = [["AZ", "Azərbaycan"], ["TR", "Türkçe"], ["RU", "Русский"], ["EN", "English"]];
@@ -72,6 +73,13 @@ function load() {
  *  `setLang` follows a language picked inside the pages. */
 export async function openLegal(key, { lang, hospital, setLang }) {
   const H = shim(hospital);
+  // The prototype drew the new logo over its "h" mark from ek.css; the pages' own mark is .lgl-mk.
+  if (!document.getElementById("lgl-live-mk")) {
+    const s = document.createElement("style");
+    s.id = "lgl-live-mk";
+    s.textContent = `.lgl-root .lgl-mk{background:#fff url("${logoUrl}") no-repeat 20% center!important;background-size:auto 150%!important;color:transparent!important;font-size:0!important}`;
+    document.head.appendChild(s);
+  }
   H.state.lang = String(lang).toUpperCase();
   onLangChange = setLang || (() => {});
   const legal = await load();
