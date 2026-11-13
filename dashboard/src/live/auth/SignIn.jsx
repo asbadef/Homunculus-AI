@@ -112,7 +112,7 @@ export function SignIn() {
       ) : null}
       {failure ? <Alert className="mb-3">{failure}</Alert> : null}
       <form noValidate onSubmit={submit}>
-        <Field layout="col" required label={t("auth.username")} hint={t("auth.usernameHint")} error={errors.login}>
+        <Field layout="col" required label={t("auth.username")} error={errors.login}>
           <Input
             ref={loginRef}
             name="username"
@@ -124,38 +124,57 @@ export function SignIn() {
             className="h-[46px]"
           />
         </Field>
-        <Field layout="col" required label={t("auth.password")} error={errors.password}>
-          <Input
-            ref={passwordRef}
-            name="password"
-            type={show ? "text" : "password"}
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); setErrors({}); }}
-            {...caps.keys}
-            className="h-[46px]"
-          />
-        </Field>
-        <div className="-mt-1 mb-2 flex items-center justify-between gap-2">
+        {/* The prototype's layout: "forgot" on the label's line, the eye inside the field. Both sit
+            over the Field (it takes one control); top offsets = label row (18px) + gap (6px). */}
+        <div className="relative">
+          <button
+            type="button"
+            aria-expanded={helpOpen}
+            aria-controls="sign-in-help"
+            onClick={() => setHelpOpen((v) => !v)}
+            className={`absolute right-0 top-0 z-[1] rounded-lg px-1 text-12.5 font-semibold text-pri ${FOCUS_RING}`}
+          >
+            {t("auth.forgot")}
+          </button>
+          <Field layout="col" required label={t("auth.password")} error={errors.password}>
+            <Input
+              ref={passwordRef}
+              name="password"
+              type={show ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setErrors({}); }}
+              {...caps.keys}
+              className="h-[46px] pr-11"
+            />
+          </Field>
           {/* A toggle: one name, its state in aria-pressed (a name that changes as well would
               say the state twice, and the two can disagree). */}
           <button
             type="button"
             aria-pressed={show}
+            aria-label={t("auth.show")}
+            title={t("auth.show")}
             onClick={() => setShow((v) => !v)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-1 text-12.5 font-semibold text-pri aria-pressed:underline ${FOCUS_RING}`}
+            className={`absolute right-1.5 top-[29px] grid h-9 w-9 place-items-center rounded-lg text-mute hover:text-ink aria-pressed:text-pri ${FOCUS_RING}`}
           >
-            <Icon name="eye" size={15} />
-            {t("auth.show")}
+            <Icon name="eye" size={17} />
           </button>
-          <CapsWarning shown={caps.shown} />
         </div>
+        <div id="sign-in-help" hidden={!helpOpen} className="mb-2">
+          <Note tone="info" icon="key">{t("auth.forgotHelp")}</Note>
+        </div>
+        <CapsWarning shown={caps.shown} />
         <label className="mb-[18px] mt-1.5 flex cursor-pointer select-none items-center gap-2.5 text-13">
           <input
             type="checkbox"
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
-            className={`h-4 w-4 accent-[var(--pri)] ${FOCUS_RING}`}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden="true"
+            className="relative h-5 w-9 shrink-0 rounded-full bg-line2 transition-colors after:absolute after:left-[3px] after:top-[3px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-pri peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-pri"
           />
           {t("auth.remember")}
         </label>
@@ -165,7 +184,7 @@ export function SignIn() {
           size="lg"
           busy={busy}
           disabled={holding}
-          className="w-full justify-center"
+          className="h-12 w-full justify-center rounded-xl font-bold"
         >
           {busy ? t("auth.busy") : t("auth.submit")}
           {busy ? null : <Icon name="chevR" size={16} />}
@@ -173,22 +192,6 @@ export function SignIn() {
         {holding ? <p aria-hidden="true" className="mt-2 text-12.5 text-mute">{t("auth.retryIn", { seconds: wait })}</p> : null}
         <Announce text={heldFor} />
       </form>
-      <div className="mt-4">
-        <button
-          type="button"
-          aria-expanded={helpOpen}
-          aria-controls="sign-in-help"
-          onClick={() => setHelpOpen((v) => !v)}
-          className={`rounded-lg px-1 text-12.5 font-semibold text-pri ${FOCUS_RING}`}
-        >
-          {t("auth.forgot")}
-        </button>
-        {/* On the page while it is closed, `hidden`: a button's aria-controls must name an element
-            that is there, and a disclosure that appears from nowhere names nothing. */}
-        <div id="sign-in-help" hidden={!helpOpen} className="mt-2">
-          <Note tone="info" icon="key">{t("auth.forgotHelp")}</Note>
-        </div>
-      </div>
     </AuthLayout>
   );
 }

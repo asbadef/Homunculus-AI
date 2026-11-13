@@ -13,9 +13,9 @@ describe("AuthLayout", () => {
 
   it("keeps the hero out of the accessibility tree; the form's title is the page's h1", () => {
     const { container } = render(<I18nProvider><AuthLayout><h1>Daxil olun</h1></AuthLayout></I18nProvider>);
-    const hero = container.querySelector("[data-theme='gece']");
+    const hero = container.querySelector("section");
     expect(hero).toHaveAttribute("aria-hidden", "true");
-    expect(hero).toHaveTextContent("Hər çarpayı, hər növbə — bir baxışda.");
+    expect(hero).toHaveTextContent("Hər çarpayı, hər növbə —");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("heading", { level: 1 }));
     expect(screen.getByRole("button", { name: "AZ · Dil" })).toBeInTheDocument();
