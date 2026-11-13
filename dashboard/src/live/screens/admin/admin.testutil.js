@@ -125,6 +125,8 @@ export const PERMISSION_TEXTS = Object.freeze({
   "quality.view": "Open the Kalite göstergeleri page and read per-unit care-process indicators (GET /quality), as counts and times only",
   // G4-04
   "workload.view": "Open the İş yükü page and read each unit's workload for the current shift — patients, nurses, unassigned patients, late and remaining tasks, alarms waiting — as counts, and the shift's nurse–bed assignment (GET /shift-schedule)",
+  // G4-05
+  "infection.view": "Open the Enfeksiyon kontrol page: per patient in one's own units — isolation, suspected infection, the antibiotic clock and open sepsis alarms — and the isolation beds, read-only (GET /infection)",
 });
 export const CATALOGUE = PERMISSION_KEYS.map((key) => ({ key, description: PERMISSION_TEXTS[key] }));
 

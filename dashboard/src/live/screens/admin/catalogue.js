@@ -55,6 +55,10 @@ export const PERMISSION_KEYS = freeze([
   // G4-04 — İş yükü (spec D2): the page and GET /shift-schedule; the default charge-nurse group holds it (migration
   // 0022), the system one by rule
   "workload.view",
+
+  // G4-05 — Enfeksiyon kontrol (spec D2, D9): the page and GET /infection; the default attending, unit-physician,
+  // physician, charge-nurse and nurse groups hold it (migration 0023), the system one by rule
+  "infection.view",
 ]);
 
 /** The backend's DEFAULT_GROUPS, in its order and with its slugs. The screen needs the ORDER (the

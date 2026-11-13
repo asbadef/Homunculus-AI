@@ -61,6 +61,8 @@ export default {
     quality: { view: "Kalite göstergelerini görür" },
     // G4-04 — İş yükü
     workload: { view: "“İş yükü” sayfasını açar: bu nöbet için birim birim hasta, hemşire, atanmamış hasta, geciken ve kalan iş, yanıt bekleyen alarm sayılarını ve nöbetin hemşire–yatak atamasını görür" },
+    // G4-05 — Enfeksiyon kontrol
+    infection: { view: "“Enfeksiyon kontrol” sayfasını açar: kendi birimlerindeki hastaların izolasyonunu, şüpheli enfeksiyonu, antibiyotik süresini, açık sepsis alarmlarını ve izolasyon yataklarını salt okunur görür" },
   },
   az: {
     board: { view: "Canlı paneli, xəstə təfərrüatını və hadisə axınını görür — Mərhələ A açıq olanda «təsdiqlənməmiş» işarəli monitor zolağını da; zolaqdan heç bir qayda, bal, siqnal, bildiriş və ya səs yaranmır" },
@@ -108,6 +110,8 @@ export default {
     quality: { view: "Keyfiyyət göstəricilərini görür" },
     // G4-04 — İş yükü
     workload: { view: "“İş yükü” səhifəsini açır: bu növbə üçün şöbə-şöbə xəstə, tibb bacısı, təyinatsız xəstə, gecikən və qalan iş, cavab gözləyən siqnal saylarını və növbənin tibb bacısı–çarpayı təyinatını görür" },
+    // G4-05 — Enfeksiyon kontrol
+    infection: { view: "“İnfeksiya nəzarəti” səhifəsini açır: öz şöbələrindəki xəstələrin izolyasiyasını, şübhəli infeksiyanı, antibiotik müddətini, açıq sepsis siqnallarını və izolyasiya çarpayılarını yalnız oxumaq üçün görür" },
   },
   ru: {
     board: { view: "Видит живую панель, карточку пациента и ленту событий — а пока включён этап A, и блок монитора с пометкой «не валидировано», который не попадает ни в какие правила, шкалы, тревоги, уведомления или звуки" },
@@ -155,6 +159,8 @@ export default {
     quality: { view: "Видит показатели качества" },
     // G4-04 — İş yükü
     workload: { view: "Открывает страницу «Нагрузка»: видит по отделениям на текущую смену число пациентов, медсестёр, пациентов без медсестры, просроченных и оставшихся задач, тревог без ответа и назначение медсестёр на койки" },
+    // G4-05 — Enfeksiyon kontrol
+    infection: { view: "Открывает страницу «Инфекционный контроль»: только для чтения видит изоляцию пациентов своих отделений, подозрение на инфекцию, срок антибиотика, открытые тревоги сепсиса и изоляционные койки" },
   },
   en: {
     board: { view: "See the live board, a patient's detail and the event stream — and, while Stage A is on, the monitor strip labelled unvalidated, which feeds no rule, score, alert, notification or sound" },
@@ -202,5 +208,7 @@ export default {
     quality: { view: "See the quality indicators" },
     // G4-04 — İş yükü
     workload: { view: "Open the “Workload” page: see, unit by unit for this shift, the counts of patients, nurses, unassigned patients, late and remaining work and alarms waiting, and the shift's nurse–bed assignment" },
+    // G4-05 — Enfeksiyon kontrol
+    infection: { view: "Open the “Infection control” page: see, read-only, the isolation of the patients in one's own units, suspected infection, the antibiotic clock, open sepsis alarms and the isolation beds" },
   },
 };
