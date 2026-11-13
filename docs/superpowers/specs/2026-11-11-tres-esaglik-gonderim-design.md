@@ -443,6 +443,11 @@ phase (2026-11-13). Where a line above and a line here disagree, this section is
   `stuck` at the fifth), no words of the exception — then the exception is raised again (the round counts it, the hand
   audits `error`). A held Encounter stays `sent`. Why: such a stay left the rounds' week with no row, and nothing
   would ever try it again; now «Gönderimler» shows it and the night retries it.
+- **Re-review of amendment 28** (2026-11-13): a refusal clears the row's `reason` (it is no `package_error`) and
+  one count serves a stay's failures — `record_failure` counts on from a `failed` or `stuck` row whatever its
+  reason (a `stuck` row stays `stuck`), a refusal counts on from a package error's attempts; the rollback of a
+  failed package is inside its guard (the package's own exception is what is raised); validate's `no_reference`
+  Encounter skip keeps what the platform holds.
 - **N12 — a person never queues behind a round** (A9, A24 (5)(6)). Each row is taken under `SET LOCAL lock_timeout =
   '2000ms'` → 409 `tres_busy`. The bound covers taking the row only — back to the default once it is held, so the write
   after the HTTP calls is not cut — `forget_skip` included. Not `NOWAIT`: that does not bound a wait on another
