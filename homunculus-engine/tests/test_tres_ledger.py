@@ -344,6 +344,81 @@ async def test_a_package_error_is_counted_as_a_refusal_is_and_leaves_a_held_row(
     assert await _rows(db_session) == 2
 
 
+def _refusing_client(status: int = 422, words: str = "Yanlış resurs") -> TresClient:
+    """A client whose platform refuses every resource (a 4xx about the resource, never an outage)."""
+    def refuse(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/token":
+            return httpx.Response(200, json={"payload": {"sessionId": "S-1"}})
+        return httpx.Response(status, json={"issue": [{"severity": "error", "diagnostics": words}]})
+
+    return TresClient(FakeTres().account, transport=httpx.MockTransport(refuse))
+
+
+async def _refused(db_session, client: TresClient, tenant: Tenant, now: datetime, resource: dict | None = None,
+                   **over) -> TresDelivery:
+    return await deliver(db_session, client, tenant_id=tenant.id, environment="test", mode="send",
+                         resource_type="patient", fhir_type="Patient", local_id=LOCAL,
+                         resource=resource or patient(), now=now, **over)
+
+
+@requires_db
+async def test_a_refusal_after_a_package_error_counts_on_and_never_keeps_the_package_errors_reason(world, db_session):
+    """Re-review (2026-11-13): one count serves a stay's failures, whichever kind came last. A row a package
+    error left `failed` (reason `package_error`, attempts 1) and then a payload the platform refuses reads
+    `failed` with the PLATFORM's words, attempts 2 — and no reason: a refused payload is not a package error.
+    The same payload refused again counts on; a corrected payload starts the count again."""
+    _, _, tenant = world
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "patient", "local_id": LOCAL}
+    first = await record_failure(db_session, **key, reason="package_error", now=T0)
+    assert (first.status, first.reason, first.attempts, first.last_error) == ("failed", "package_error", 1, None)
+    client = _refusing_client()
+    row = await _refused(db_session, client, tenant, T0)
+    assert (row.id, row.status, row.reason, row.attempts, row.last_error, row.next_attempt_at) == (
+        first.id, "failed", None, 2, "Yanlış resurs", T0 + RETRY_AFTER)
+    again = await _refused(db_session, client, tenant, T0 + RETRY_AFTER)           # the wait has run out
+    assert (again.status, again.reason, again.attempts) == ("failed", None, 3)
+    corrected = await _refused(db_session, client, tenant, T0 + 2 * RETRY_AFTER, patient("Leyla"))
+    assert (corrected.status, corrected.reason, corrected.attempts) == ("failed", None, 1)
+    await client.aclose()
+
+
+@requires_db
+async def test_a_package_error_on_a_stuck_row_leaves_it_stuck_and_counts_on(world, db_session):
+    """Re-review (2026-11-13): five refusals in a row (`stuck`, no reason), then a package error: the row is never
+    un-stuck by it — still `stuck`, now saying `package_error`, its count one more (6: every failure is an
+    attempt, as a forced retry's refusal of a stuck row already counts past five); the nightly retry still takes
+    it, and a refusal after it clears the reason again."""
+    _, _, tenant = world
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "patient", "local_id": LOCAL}
+    client = _refusing_client()
+    for n in range(1, MAX_ATTEMPTS + 1):
+        row = await _refused(db_session, client, tenant, T0, force=True)
+        assert (row.status, row.reason, row.attempts) == ("stuck" if n == MAX_ATTEMPTS else "failed", None, n)
+    errored = await record_failure(db_session, **key, reason="package_error", now=T0)
+    assert (errored.id, errored.status, errored.reason, errored.attempts, errored.last_error) == (
+        row.id, "stuck", "package_error", MAX_ATTEMPTS + 1, None)
+    assert errored.next_attempt_at == T0 + RETRY_AFTER and errored.remote_id is None
+    after = await _refused(db_session, client, tenant, T0, force=True)
+    assert (after.status, after.reason, after.attempts, after.last_error) == (
+        "stuck", None, MAX_ATTEMPTS + 2, "Yanlış resurs")
+    await client.aclose()
+
+
+@requires_db
+async def test_a_refusal_never_keeps_an_earlier_skips_reason(world, db_session):
+    """Re-review (2026-11-13): a row that said `skipped`/`unit_unmapped` and is then built and refused reads
+    `failed` with no reason — the stale skip reason does not stand beside the platform's words."""
+    _, _, tenant = world
+    key = {"tenant_id": tenant.id, "environment": "test", "resource_type": "patient", "local_id": LOCAL}
+    skipped = await record_skip(db_session, **key, reason="unit_unmapped")
+    assert (skipped.status, skipped.reason) == ("skipped", "unit_unmapped")
+    client = _refusing_client()
+    row = await _refused(db_session, client, tenant, T0)
+    assert (row.id, row.status, row.reason, row.attempts, row.last_error) == (
+        skipped.id, "failed", None, 1, "Yanlış resurs")
+    await client.aclose()
+
+
 async def _admission(db_session, tenant: Tenant, label: str, at: datetime = T0) -> uuid.UUID:
     """One synthetic stay on its own bed, admitted `at`; only its id (and that time) matter here."""
     site = Site(tenant_id=tenant.id, name=f"Bina {label}")

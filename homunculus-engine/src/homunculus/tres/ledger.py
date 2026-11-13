@@ -15,7 +15,8 @@ committed, so that one key has one writer at a time (`_row`):
 * a failure OF THIS RESOURCE (every status that is not an outage: a 4xx such as 400, 403, 404,
   409 or 422, a 500, a 501 or another 5xx, a `$validate` that holds an error, a search that cannot
   prove an absence) — the row reads `failed`, the attempt is counted, the platform's words are
-  kept (encrypted: they may echo a value), and the same payload is not tried again for 30 minutes;
+  kept (encrypted: they may echo a value), the row's `reason` cleared (a refused payload is no
+  package error, nor any earlier skip), and the same payload is not tried again for 30 minutes;
   the fifth failure in a row makes it `stuck`, which only `force` (the nightly retry, «Yeniden
   dene») or a changed payload tries again (D21). A 5xx among them is also RAISED AGAIN after it is
   recorded, so that the round counts it towards its five in a row (review I2).
@@ -297,9 +298,11 @@ async def deliver(db: AsyncSession, client: TresClient, *, tenant_id: uuid.UUID,
             # `pending`); the commit ends the transaction all the same.
             await db.commit()
             raise
-        # A corrected record starts its count again.
-        row.attempts = (row.attempts if same else 0) + 1
+        # A corrected record starts its count again. A row with no digest has none to correct: whatever
+        # it counted is a package's failures (`record_failure`), which this refusal counts on from.
+        row.attempts = (row.attempts if same or row.payload_digest is None else 0) + 1
         row.status = "stuck" if row.attempts >= MAX_ATTEMPTS else "failed"
+        row.reason = None                  # a refused payload is no package error, nor any earlier skip
         row.payload_digest = digest
         row.last_error = clip_error(exc.message)
         row.next_attempt_at = now + RETRY_AFTER
@@ -350,20 +353,25 @@ async def record_failure(db: AsyncSession, *, tenant_id: uuid.UUID, environment:
     """The stay's package raised before this resource was sent (final review, 2026-11-13: an
     exception nothing else handles — source.StaySource.package): the row reads `failed` with the
     catalogue's reason code (`package.PACKAGE_ERROR`), never the exception's words, COUNTED AS A
-    REFUSAL IS — one attempt more while the row already said this reason (else the count starts
-    again), the 30-minute wait (`next_attempt_at`), `stuck` at the MAX_ATTEMPTS-th — so the ledger's
-    list shows the stay and the nightly retry (which takes `failed` and `stuck` rows) tries it
-    again. A row the platform holds (`remote_id`) is left exactly as it is (`keep_held`): a later
-    failure does not rewrite what was sent. Nothing is asked of the platform.
+    REFUSAL IS — ONE COUNT SERVES A STAY'S FAILURES (re-review): one attempt more whenever the row
+    is `failed` or `stuck`, whatever its reason (a refusal's, an earlier package error's), else the
+    count starts again; the 30-minute wait (`next_attempt_at`); `stuck` at the MAX_ATTEMPTS-th, and
+    a row already `stuck` stays `stuck` (its count goes on) — so the ledger's list shows the stay and
+    the nightly retry (which takes `failed` and `stuck` rows) tries it again. A refusal after it
+    counts on from the same attempts and clears the reason (`deliver`). A row the platform holds
+    (`remote_id`) is left exactly as it is (`keep_held`): a later failure does not rewrite what was
+    sent. Nothing is asked of the platform.
     With `lock_timeout_ms`, `LedgerBusy` rolls back the caller's WHOLE session transaction."""
     row = await _row(db, tenant_id=tenant_id, environment=environment, resource_type=resource_type,
                      local_id=local_id, admission_id=admission_id, lock_timeout_ms=lock_timeout_ms)
     if row.remote_id:
         await db.commit()
         return row
-    again = row.status in ("failed", "stuck") and row.reason == reason
-    row.attempts = (row.attempts if again else 0) + 1
-    row.status = "stuck" if row.attempts >= MAX_ATTEMPTS else "failed"
+    # One count serves a stay's failures, whichever kind came last (re-review of 2026-11-13): on from the
+    # row's attempts whenever it is `failed` or `stuck`, whatever its reason; afresh after anything else.
+    counting = row.status in ("failed", "stuck")
+    row.attempts = (row.attempts if counting else 0) + 1
+    row.status = "stuck" if row.status == "stuck" or row.attempts >= MAX_ATTEMPTS else "failed"
     row.reason, row.last_error, row.next_attempt_at = reason, None, now + RETRY_AFTER
     await db.commit()
     return row

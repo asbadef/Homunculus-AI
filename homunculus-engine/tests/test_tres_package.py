@@ -211,6 +211,16 @@ async def test_validate_with_nothing_sent_before_checks_the_people_and_records_n
     assert outcome.first_complete is False
 
 
+async def test_in_validate_the_no_reference_encounter_skip_keeps_what_the_platform_holds():
+    """Re-review (2026-11-13): the Encounter's `no_reference` skip is written with `keep_held`, as its own skips and
+    `patient_unheld` are — validate mode never relabels an Encounter the platform holds. The vitals' skips
+    are as they were: a vital cannot be held on a platform that holds no Encounter for it to refer to."""
+    sender = Recorder(mode="validate")
+    await run(stay(), sender, organization_id="ORG-0001")
+    assert ("skip", "encounter", ENCOUNTER_ID, NO_REFERENCE) in sender.calls
+    assert sender.kept == {("encounter", ENCOUNTER_ID)}
+
+
 async def test_validate_after_a_send_checks_the_encounter_against_the_ids_the_ledger_holds():
     sender = Recorder(mode="validate", held={("patient", PATIENT_ID): "7001"})
     await run(stay(), sender, organization_id="ORG-0001")
@@ -315,6 +325,32 @@ async def test_the_package_lands_on_the_stand_in_and_a_second_run_asks_nothing(d
     assert fake.requests == asked and again.first_complete is False         # D7: nothing changed, nothing asked
     rows = (await db_session.execute(select(TresDelivery.admission_id).distinct())).scalars().all()
     assert rows == [admission.id]                                           # every row: the stay's last admission
+    await client.aclose()
+
+
+@requires_db
+async def test_validate_never_relabels_an_encounter_the_ledger_holds_when_its_patient_has_no_id(db_session):
+    """Re-review (2026-11-13), through the real ledger: an Encounter sent earlier (`sent`, its platform id) whose
+    person has no platform id now (the validate run only validates the Patient) keeps its row — not
+    `skipped`/`no_reference`; the vitals, which the platform holds none of, are recorded as before."""
+    ward = await build_ward(db_session)
+    admission = await add_stay(db_session, ward)
+    the_stay = stay(root_id=admission.id, last_id=admission.id)
+    encounter_id = ids.encounter(admission.id)
+    db_session.add(TresDelivery(tenant_id=ward.tenant.id, environment="test", resource_type="encounter",
+                                local_id=encounter_id, admission_id=admission.id, status="sent", operation="create",
+                                remote_id="9001", attempts=0, payload_digest="a" * 64))
+    await db_session.commit()
+    fake = FakeTres()
+    fake.seed("Organization", "ORG-0001")
+    client = TresClient(fake.account, transport=fake.transport)
+    sender = Sender(db_session, client, tenant_id=ward.tenant.id, environment="test", mode="validate",
+                    now=the_stay.discharged_at, enabled_types=("patient", "practitioner", "encounter", "vital"))
+    outcome = await run(the_stay, sender, organization_id="ORG-0001")
+    assert ("encounter", encounter_id, "skipped", NO_REFERENCE) not in outcome.rows
+    row = (await db_session.execute(select(TresDelivery).where(TresDelivery.local_id == encounter_id))).scalar_one()
+    assert (row.status, row.reason, row.remote_id, row.operation) == ("sent", None, "9001", "create")
+    assert {r[3] for r in outcome.rows if r[0] == "vital"} == {NO_REFERENCE}
     await client.aclose()
 
 

@@ -112,6 +112,44 @@ def test_the_window_reaches_back_to_the_last_round_that_ran_to_its_end_and_close
     assert window(_settings(settle_hours=0, reached_to=gap), NOW) == (gap, NOW)
 
 
+class _PackageBoom(Exception):
+    """The package's own exception: what the caller must see, whatever the recording does."""
+
+
+class _RollbackBoom(Exception):
+    """The session's own: a rollback that cannot be made."""
+
+
+class _SessionThatCannotRollBack:
+    """No database: a session whose `rollback` raises (the connection is gone)."""
+
+    def __init__(self) -> None:
+        self.rollbacks = 0
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+        raise _RollbackBoom("Sentetikova Leyla")          # words that must reach no log line
+
+
+async def test_a_rollback_that_fails_never_masks_the_packages_own_exception(caplog):
+    """Re-review (2026-11-13): `_package_failed` rolls the session back INSIDE the guard that logs a record it
+    cannot write — a session that cannot even roll back is logged by its class and given up, and the caller
+    still raises the package's ORIGINAL exception (the round counts and logs it, the hand answers 500)."""
+    db = _SessionThatCannotRollBack()
+    source_ = StaySource(InMemoryAuditLog())
+
+    async def unreadable(*_args, **_kwargs):
+        raise _PackageBoom("the stay cannot be read")
+
+    source_.load = unreadable
+    package = source_.package(db, SimpleNamespace(tenant_id=uuid.uuid4(), send_from=None), uuid.uuid4())
+    with caplog.at_level("ERROR"):
+        with pytest.raises(_PackageBoom, match="cannot be read"):
+            await package(SimpleNamespace(environment="test", now=NOW))
+    assert db.rollbacks >= 1
+    assert "_RollbackBoom" in caplog.text and "Sentetik" not in caplog.text
+
+
 # ---------------------------------------------------------------- Postgres
 async def _world(db_session):
     ward = await build_ward(db_session)

@@ -400,9 +400,11 @@ class StaySource:
         which takes `failed` rows, tries it again. An Encounter the platform holds is left `sent`
         (`keep_held`). Nothing of the exception goes into the row. A record that cannot be written
         (the database itself down, a hand's row another sender holds) is logged by its class and
-        given up: the caller raises the package's own exception all the same."""
-        await db.rollback()
+        given up: the caller raises the package's own exception all the same — a session that cannot even
+        roll back (the rollback is INSIDE the guard, re-review of 2026-11-13) is logged by its class and given
+        up too, never raised in the package's place."""
         try:
+            await db.rollback()
             chain = await chain_of(db, tenant_id, admission_id)
             if not chain:
                 return
@@ -411,9 +413,12 @@ class StaySource:
                                  local_id=ids.encounter(root_id), reason=PACKAGE_ERROR, now=sender.now,
                                  admission_id=last_id, lock_timeout_ms=getattr(sender, "lock_timeout_ms", None))
         except Exception as exc:  # noqa: BLE001 — the package's own exception is what the caller raises
-            await db.rollback()
             log.error("TRƏS: the failure of admission %s's package was not recorded (%s)", admission_id,
                       type(exc).__name__)
+            try:
+                await db.rollback()           # what a failed write left behind; a session that cannot is given up
+            except Exception:  # noqa: BLE001 — never in place of the package's own exception
+                pass
 
     async def load(self, db: AsyncSession, tenant_id: uuid.UUID, admission_id: uuid.UUID) -> Stay | None:
         """The stay `admission_id` belongs to, read whole (the module's docstring); None when the

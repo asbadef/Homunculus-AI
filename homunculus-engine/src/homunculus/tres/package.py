@@ -39,7 +39,9 @@ VALIDATE MODE AND REFERENCES (spec O14, decided by plan F1). `$validate` stores 
 round in `validate` has no platform id for what a resource refers to unless an earlier `send` in
 the same environment left one in the ledger. Such a resource is NOT sent for validation with a
 reference to nothing: it is recorded `skipped` with the reason `no_reference` — the Encounter when
-the Patient has no platform id, every vital sign when the Encounter has none. What is true of the
+the Patient has no platform id, every vital sign when the Encounter has none. The Encounter's
+`no_reference` is written with `keep_held` too (re-review of 2026-11-13): an Encounter the platform
+holds from an earlier send keeps its row as it is. What is true of the
 rows (A9): every resource the package REACHED has a row that says what happened to it — sent,
 validated, failed, or skipped with its reason, `no_reference` included. A Patient or an Encounter
 skipped for a reason of its own (`fin_missing`, `unit_unmapped`…) stops the package, and the
@@ -128,7 +130,9 @@ async def run(stay: Stay, sender, *, organization_id: str | None, force: bool = 
     async def unreferenced(*local_ids: tuple[str, str]) -> None:
         if validating:
             for resource_type, local_id in local_ids:
-                await skip(resource_type, local_id, NO_REFERENCE)
+                # The Encounter never over a row the platform holds (`keep_held`, re-review of 2026-11-13: as its
+                # own skips and `patient_unheld`) — a stay sent whole, its person's id gone from this run.
+                await skip(resource_type, local_id, NO_REFERENCE, keep_held=resource_type == "encounter")
 
     def vital_ids() -> list[tuple[str, str]]:
         # The vitals' local ids depend on the stay alone; the references are never sent from here.
