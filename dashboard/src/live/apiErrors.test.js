@@ -267,6 +267,19 @@ describe("apiErrorText", () => {
   const az = createTranslator("az", DICTIONARIES);
   const en = createTranslator("en", DICTIONARIES);
 
+  // G4-05 (spec §5 M8): POST /ingest refuses an isolation flag from a device. Pinned here as well as by the sweep above,
+  // which finds it in api/app.py only once the engine's half of the slice is in the same tree.
+  it("says the device door's refusal of an isolation flag in the reader's words", () => {
+    const sentence = "izolasyon bir klinisyen kaydıdır; cihazdan alınmaz";
+    expect(apiErrorKey(new Error(sentence))).toEqual({ key: "errors.isolationFromDevice", vars: {} });
+    expect(apiErrorText(createTranslator("tr", DICTIONARIES), Object.assign(new Error(sentence), { status: 400 })))
+      .toBe("İzolasyon bir klinisyenin kaydıdır; cihazdan alınmaz.");
+    expect(apiErrorText(az, Object.assign(new Error(sentence), { status: 400 })))
+      .toBe("İzolyasiya klinisistin qeydidir; cihazdan qəbul edilmir.");
+    expect(apiErrorText(en, Object.assign(new Error(sentence), { status: 400 })))
+      .toBe("Isolation is a clinician's record; it is not taken from a device.");
+  });
+
   // G2-B5b: «Ertele»'s refusals (POST /alerts/snooze), pinned here as well as by the sweep above, which finds them in
   // api/app.py only once the engine's half of the slice is in the same tree.
   it("says the snooze refusals in the reader's words", () => {

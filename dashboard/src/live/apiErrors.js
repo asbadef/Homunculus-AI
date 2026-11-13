@@ -79,6 +79,8 @@ export const API_MESSAGE_KEYS = new Map([
   ["no such active alert", "alarmNoLongerOpen"],
   ["kapsam şu anda okunamıyor", "scopeUnreadable"],
   ["ingest requires a device token", "deviceTokenOnly"],
+  // POST /ingest (G4-05, spec §5 M8): the four isolation flags come from a person, never from a device.
+  ["izolasyon bir klinisyen kaydıdır; cihazdan alınmaz", "isolationFromDevice"],
   ["malformed identity resource", "badIdentityResource"],
   ["identity source 'kabul' is reserved for the admission", "kabulSourceReserved"],
   ["denetim kaydının tamamı kapsam dışı; bir patient_id verin", "auditScoped"],
