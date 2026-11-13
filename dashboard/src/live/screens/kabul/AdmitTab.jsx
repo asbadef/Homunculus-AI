@@ -62,9 +62,12 @@
 // «KABUL ZAMANI» (G3-07, spec D1, §5). First in the «Kabul» box; untouched it shows the current minute
 // of the server-corrected clock and sends nothing — the server stamps the save. Touched, the chosen
 // minute goes out (admitForm.js `admittedAtOf`), bounded by six hours, the chosen bed's free time and
-// the clock. A refusal of the time — too old, before the bed was free, before the person's last
-// discharge — is said on the toast after the bed, the beds are read again (the bed's new time moves
-// the bound) and the focus goes to the field from where a press leaves it. Nothing is held. A send with
+// the clock. Cleared and left, it is untouched again (review M-1): the current minute, nothing sent. A
+// refusal of the time — too old, before the bed was free, before the person's last discharge — is said on
+// the toast after the bed, the beds are read again (the bed's new time moves the bound), the refused time
+// stays and the field says the server's words under it until she changes the time (review M-2: the panel
+// cannot name what only the server knows), and the focus goes to the field from where a press leaves it.
+// Nothing is held. A send with
 // no answer near the six-hour edge may find its minute named by the panel a minute later: she moves it,
 // and the send that follows looks for the first send's admission first, as every send does (A-19).
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -314,6 +317,10 @@ export function AdmitTab() {
   const admittedHint = Number.isFinite(freeMs)
     ? `${t("kabul.admittedAtHint")} ${t("kabul.admittedAtBedSince", { time: dayStamp(freeMs, nowMs) })}`
     : t("kabul.admittedAtHint");
+  // The server's refusal of the time (review M-2) stands while the field holds the time it refused.
+  const refused = form.admittedAtRefused;
+  const admittedRefused = refused?.reason && refused.value === (form.admittedAtTouched ? form.admittedAt : null)
+    ? t(refused.reason.key, refused.reason.vars) : undefined;
 
   /** The form's patient admitted — by this send's answer, or found after one that got none. Every
    *  send under that name is done with, and the form is emptied for the next patient. */
@@ -394,7 +401,8 @@ export function AdmitTab() {
 
   // Every step after an `await` first asks whether the draft is still live: a send of a session
   // that has ended says nothing, reads nothing more and writes nothing (admitDraft.js).
-  async function failed(err, sent) {
+  // `sentTime`: «Kabul zamanı» as the send had it — the text, or null when untouched (G3-07, M-2).
+  async function failed(err, sent, sentTime = null) {
     if (err?.apiCode === "bed_reserved") {
       // G2-B3a (X1): the bed was reserved after the picker read it. Nothing was written: read the
       // beds again and ask, as for a bed the picker shows reserved.
@@ -446,10 +454,15 @@ export function AdmitTab() {
     }
     if (TIME_REFUSALS.has(err?.apiCode)) {
       // G3-07 (spec §5): the time was refused and nothing was written. Said after the bed; the beds
-      // are read again (a bed's new `state_since` moves the field's min); the field is marked and
-      // takes the focus from where a press leaves it. Nothing is held: she changes the time and sends.
+      // are read again (a bed's new `state_since` moves the field's min). The refused time is kept
+      // with the server's words, which the field says under it until she changes the time — the
+      // panel cannot name what only the server knows: her last discharge, six hours by its clock
+      // (review M-2). A time she chose while the send was out is not the one refused, and is not
+      // marked. The field takes the focus from where a press leaves it. Nothing is held: she changes
+      // the time and sends.
       toast(refusedFor(t, sent.bed, reasonOf(t, err)), "error");
-      draft.update({ tried: true });
+      draft.update((s) => ({ tried: true,
+        form: { ...s.form, admittedAtRefused: { value: sentTime, reason: apiErrorKey(err) } } }));
       await reload();
       if (!draft.live) return;
       if (focusIsIdle(submitRef.current)) setFocusTo({ field: "admittedAt" });
@@ -511,6 +524,7 @@ export function AdmitTab() {
       return;
     }
     const body = toBody(form, sent.requestId, { confirmReserved: saidYes, freeSince });
+    const sentTime = form.admittedAtTouched ? form.admittedAt : null;        // what a refusal of the time marks (M-2)
     draft.update({ sending: true });
     try {
       if (draft.get().unanswered.length > 0) {
@@ -542,7 +556,7 @@ export function AdmitTab() {
         bed: answeredBed(answer, sent, index), engine: answer.engine }, sent.name);
       reload();
     } catch (err) {
-      if (draft.live) await failed(err, sent);
+      if (draft.live) await failed(err, sent, sentTime);
     } finally {
       draft.update({ sending: false });
     }
@@ -587,12 +601,17 @@ export function AdmitTab() {
         </Box>
 
         <Box title={t("kabul.groupAdmission")} icon="clip" level={2}>
-          {/* G3-07: untouched it shows the current minute and sends nothing; touched, the minute chosen. */}
-          <Field label={t("kabul.f.admittedAt")} error={errorOf("admittedAt")} hint={admittedHint}>
+          {/* G3-07: untouched it shows the current minute and sends nothing; touched, the minute chosen.
+              Left empty it is untouched again — on blur, never on a change: Chrome reports a half-typed
+              time as "" while she types (review M-1). */}
+          <Field label={t("kabul.f.admittedAt")} error={admittedRefused ?? errorOf("admittedAt")} hint={admittedHint}>
             <Input id={idOf("admittedAt")} type="datetime-local"
               value={form.admittedAtTouched ? form.admittedAt : localInput(nowMs)}
               min={localInput(bounds.minMs)} max={localInput(bounds.maxMs)}
-              onChange={(e) => set({ admittedAt: e.target.value, admittedAtTouched: true })} />
+              onChange={(e) => set({ admittedAt: e.target.value, admittedAtTouched: true })}
+              onBlur={(e) => {
+                if (form.admittedAtTouched && e.target.value === "") set({ admittedAt: "", admittedAtTouched: false });
+              }} />
           </Field>
           <Field label={t("kabul.f.type")} required error={errorOf("type")}>
             <Select id={idOf("type")} value={form.type} onChange={(e) => set({ type: e.target.value })}>

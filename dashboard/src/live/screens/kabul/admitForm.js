@@ -55,6 +55,9 @@ export function emptyForm() {
     consent: "", sms: false, bedId: null, unitId: null, bedLabel: null,
     // G3-07: «Kabul zamanı» as typed (a datetime-local text), and whether the nurse touched it.
     admittedAt: "", admittedAtTouched: false,
+    // G3-07 (review M-2): the time the server refused — `{value, reason: {key, vars}}`, `value` the text
+    // sent (null when untouched) — said under the field while it holds that time. Never sent.
+    admittedAtRefused: null,
   };
 }
 

@@ -1593,16 +1593,28 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   const choose = (text) => fireEvent.change(field(), { target: { value: text } });
   const sentAt = (api, call = 0) => api.admit.mock.calls[call][0].note.admission_datetime;
   const TOO_FAR = "Qəbul vaxtı: ən çox 6 saat geriyə, çarpayının boşaldığı andan əvvəl və gələcəkdə ola bilməz.";
+  /** The page woke (a tablet's screen on again): the clock's own re-read, as VitalsForm.test.jsx's. */
+  const woke = () => act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+  /** Bed 1 free since 11:30:40 (`FREE`), bed 5 since 13:00:10. */
+  const bothFree = () => {
+    const tree = withBed(1, { state_since: FREE });
+    tree.sites[0].units[0].rooms[1].beds[0].state_since = new Date(2026, 10, 12, 13, 0, 10).toISOString();
+    return tree;
+  };
 
-  async function open(setup) {
+  async function open(setup, ui = <AdmitTab />) {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
-    return mountKabul(<AdmitTab />, { perms: NURSE, setup: (a) => {
+    return mountKabul(ui, { perms: NURSE, setup: (a) => {
       a.structure.mockResolvedValue(withBed(1, { state_since: FREE }));
       setup?.(a);
     } });
   }
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => {
+    vi.useRealTimers();
+    window.location.hash = "";
+    localStorage.clear();
+  });
 
   it("shows the current minute, bounded by six hours and the clock; a chosen bed moves the bound to its free time and says it", async () => {
     await open();
@@ -1674,6 +1686,64 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
     expect(field().value).toBe(at(14, 0));
   });
 
+  it("is untouched again when left empty — the current minute, nothing named, nothing sent — but not while she types (M-1)", async () => {
+    const { api, store } = await open((a) => a.admit.mockResolvedValue(admitted()));
+    fillRequired();
+    choose(at(12, 15));
+    fireEvent.blur(field());                                                 // left with a time: hers
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: at(12, 15), admittedAtTouched: true });
+    choose("");                                                              // cleared — or Chrome's half-typed value
+    expect(missingNow()).toEqual([TOO_FAR]);                                 // still being typed: still hers
+    fireEvent.blur(field());
+    expect(admitDraftOf(store).get().form).toMatchObject({ admittedAt: "", admittedAtTouched: false });
+    expect(field().value).toBe(at(14, 0));
+    expect(missingNow()).toEqual([]);
+    await press();
+    expect("admission_datetime" in api.admit.mock.calls[0][0].note).toBe(false);
+  });
+
+  it("names a typed time once a bed free since later is chosen, and holds «Qəbul et» (M-3)", async () => {
+    const { api } = await open((a) => a.structure.mockResolvedValue(bothFree()));
+    fillRequired();                                                          // bed 1, free since 11:30
+    choose(at(12, 15));
+    expect(missingNow()).toEqual([]);
+    pickBed5();                                                              // free since 13:00
+    expect(field().value).toBe(at(12, 15));
+    expect(field().getAttribute("min")).toBe(at(13, 0));
+    expect(screen.getByText(/Çarpayı 13:00-dən boşdur: qəbul vaxtı bundan əvvəl ola bilməz\./)).toBeTruthy();
+    expect(missingNow()).toEqual([TOO_FAR]);
+    expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("names a typed time the clock has left behind, and holds «Qəbul et» (M-3)", async () => {
+    const { api } = await open((a) => a.structure.mockResolvedValue(withBed(1, { state_since: null })));
+    fillRequired();                                                          // bed 1, no free time: six hours bind
+    choose(at(8, 3));                                                        // the min is 08:02 at 14:00:30
+    expect(missingNow()).toEqual([]);
+    vi.setSystemTime(NOW + 2 * 60_000);                                      // 14:02:30: the min is 08:04
+    woke();
+    expect(field().getAttribute("min")).toBe(at(8, 4));
+    expect(missingNow()).toEqual([TOO_FAR]);
+    expect(admitButton().getAttribute("aria-disabled")).toBe("true");
+    await press();
+    expect(api.admit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("keeps the typed time across a tab change: the tab mounted again shows it, bounded by the bed (M-3)", async () => {
+    await open(undefined, <KabulScreen />);
+    fillRequired();
+    choose(at(12, 15));
+    await openTab("Köçürmə / Evə yazılma");
+    await openTab("Qəbul");
+    expect(field().value).toBe(at(12, 15));
+    expect(field().getAttribute("min")).toBe(at(11, 30));
+    expect(missingNow()).toEqual([]);
+  });
+
   it.each([
     ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz)."],
     ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
@@ -1695,5 +1765,35 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
     await press();
     expect(api.admit).toHaveBeenCalledTimes(2);
     expect(sentAt(api, 1)).toBe(new Date(2026, 10, 12, 12, 30).toISOString());
+  });
+
+  it.each([
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz)."],
+    ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
+    ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
+  ])("%s: the refused time stays, marked with the server's words, until she changes it (M-2)", async (code, status, words) => {
+    await open((a) => a.admit.mockRejectedValueOnce(refusal(status, "English words", { apiCode: code })));
+    fillRequired();
+    choose(at(12, 0));                                                       // inside every bound the screen knows
+    await press();
+    expect(field().value).toBe(at(12, 0));
+    expect(field().getAttribute("aria-invalid")).toBe("true");
+    expect(errorOf(field())).toBe(words);
+    expect(missingNow()).toEqual([]);                                        // the server's alone: nothing held
+    choose(at(12, 30));
+    expect(field().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("never marks a time she chose while the refused send was out (M-2)", async () => {
+    let answer;
+    await open((a) => a.admit.mockReturnValueOnce(new Promise((_, reject) => { answer = reject; })));
+    fillRequired();
+    choose(at(12, 0));
+    await act(async () => { fireEvent.click(admitButton()); });             // on its way
+    choose(at(12, 30));
+    await act(async () => { answer(refusal(409, "English words", { apiCode: "admitted_before_discharge" })); });
+    await settle();
+    expect(field().value).toBe(at(12, 30));
+    expect(field().getAttribute("aria-invalid")).toBeNull();
   });
 });
