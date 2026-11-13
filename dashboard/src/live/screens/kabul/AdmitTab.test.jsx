@@ -1746,7 +1746,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   });
 
   it.each([
-    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz)."],
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz)."],
     ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
     ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
   ])("%s: said on the toast after the bed, the beds read again, the field focused — and nothing held", async (code, status, words) => {
@@ -1769,7 +1769,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   });
 
   it.each([
-    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz)."],
+    ["field_invalid:admission_datetime", 422, "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz)."],
     ["admitted_before_bed_free", 409, "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz."],
     ["admitted_before_discharge", 409, "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz."],
   ])("%s: the refused time stays, marked with the server's words, until she changes it (M-2)", async (code, status, words) => {
@@ -1803,7 +1803,7 @@ describe("AdmitTab · «Kabul zamanı» (G3-07)", () => {
   describe("the server's words stand only while what was refused is still the form's", () => {
     const BED_WORDS = "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz.";
     const DISCHARGE_WORDS = "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz.";
-    const INVALID_WORDS = "Qəbul vaxtı düzgün deyil (gələcəkdə və ya 6 saatdan köhnə ola bilməz).";
+    const INVALID_WORDS = "Qəbul vaxtı düzgün deyil (gələcəkdə, 6 saatdan köhnə və ya doğum tarixindən əvvəlki gündə ola bilməz).";
     const dobField = () => screen.getByLabelText(/^Doğum tarixi/);
     /** Everything the field is described by — the toast says the words too, and stays. */
     const fieldWords = () => (field().getAttribute("aria-describedby") ?? "").split(" ")

@@ -20,8 +20,8 @@ from sqlalchemy import Enum as SqlEnum, String
 
 from homunculus.admission.errors import CODES, Refusal
 from homunculus.admission.form import (
-    BACKDATE_MAX, CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_admission_time, check_discharge,
-    identity_digest, person_name,
+    BACKDATE_MAX, CLOCK_SLACK, COMORBIDITY_CODES, check_admission, check_admission_not_before_birth,
+    check_admission_time, check_discharge, identity_digest, person_name,
 )
 from homunculus.admission.models import Admission, DischargeDisposition, Patient
 from homunculus.admission.schemas import (
@@ -599,6 +599,27 @@ def test_a_form_that_sent_no_time_passes_the_six_hours():
 def test_the_six_hours_are_judged_by_a_server_clock_that_carries_its_zone():
     with pytest.raises(ValueError, match="time zone"):
         check_admission_time(None, now=datetime(2026, 10, 25, 12, 0))
+
+
+def test_an_admission_time_is_not_on_a_day_before_the_birth():
+    """G3-07 final review (the NICU): the DATE of the time the form sent, in the hospital's own zone
+    (the route reads it with `hospital_today`), is not before the date of birth. The birth day itself
+    passes — a child admitted minutes after the birth — and so does a time that was not sent."""
+    born = date(2026, 3, 2)
+    check_admission_not_before_birth(born, born=born)
+    check_admission_not_before_birth(date(2026, 3, 3), born=born)
+    check_admission_not_before_birth(None, born=born)
+    with pytest.raises(Refusal) as caught:
+        check_admission_not_before_birth(date(2026, 3, 1), born=born)
+    assert (caught.value.status, caught.value.code) == (422, "field_invalid:admission_datetime")
+
+
+def test_the_birth_rule_is_not_check_admissions_rule():
+    """Like the six hours, it runs in the route after the look-up of an earlier send (spec §3.1): a form
+    whose time is on the day before the birth passes `check_admission`."""
+    check_admission(body(patient={"date_of_birth": "2026-10-25"},
+                         note={"admission_datetime": (NOW - timedelta(hours=13)).isoformat()}),
+                    today=TODAY, now=NOW)
 
 
 def test_the_six_hours_are_not_check_admissions_rule():

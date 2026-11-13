@@ -108,8 +108,9 @@ const sameSend = (a, b) => normId(a.bedId) === normId(b.bedId) && sameName(a.nam
 /** The engine parts the number box names when they did not land, in the order it names them. */
 const PARTS = ["board", "weight", "profile"];
 
-/** G3-07: the refusals of «Kabul zamanı» — older than six hours, before the bed was free, before the
- *  person's last discharge. Each is said, the beds read again and the field focused; nothing is held. */
+/** G3-07: the refusals of «Kabul zamanı» — older than six hours (or on a day before the birth), before the
+ *  bed was free, before the person's last discharge. Each is said, the beds read again and the field
+ *  focused; nothing is held. */
 const TIME_REFUSALS = new Set(["field_invalid:admission_datetime", "admitted_before_bed_free",
   "admitted_before_discharge"]);
 /** How often the field's «now» and its bounds are read again: the bedside form's cadence. */

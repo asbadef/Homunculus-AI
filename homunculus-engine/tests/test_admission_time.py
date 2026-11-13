@@ -6,6 +6,8 @@
 - Sent, the time is the row's and the answer's, and the audit row says `backdated`; the card's identity
   stamp stays the save's (D6, §4.2).
 - Six hours back at most (D2): 422 `field_invalid:admission_datetime`, nothing spent.
+- Not on a day before the date of birth (final review, the NICU): the same 422, the time's date read in the
+  hospital's own zone.
 - Not before the bed became free (D3): 409 `admitted_before_bed_free`, for a bed AVAILABLE or RESERVED.
 - Not before this person's last discharge (D4): 409 `admitted_before_discharge`; a moved stay binds by its
   last row; another person and a row without a digest bind nothing.
@@ -20,6 +22,7 @@ import importlib.util
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 import pytest_asyncio
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
@@ -36,7 +39,7 @@ from homunculus.api.tasks_postgres import PostgresTaskStore
 from homunculus.tenant.models import Bed
 from tests.conftest import ENGINE_ROOT, TEST_DATABASE_URL, requires_db
 from tests.kabul_world import BOARD, FIRST_PROTOCOL, SLUG, build_ward, ward_client
-from tests.test_admission_api import form, person
+from tests.test_admission_api import _baku_only, form, person
 from tests.test_ingest_apply import obs
 
 pytestmark = [requires_db]
@@ -175,6 +178,36 @@ async def test_six_hours_less_a_minute_is_taken_and_a_minute_more_is_refused_spe
     assert (await db_session.execute(select(func.count()).select_from(Admission))).scalar_one() == 0
     admission = await _admitted(w, client, at=_ago(hours=5, minutes=59))
     assert (admission["protocol_no"], admission["patient_number"][-5:]) == (FIRST_PROTOCOL, "00001")
+
+
+# ---------------------------------------------------------------- the birth (final review, the NICU)
+BORN_NIGHT = datetime(2026, 3, 1, 21, 30, tzinfo=timezone.utc)   # 01:30 on 2 March in Baku (UTC+4)
+
+
+@pytest.mark.parametrize(("zone", "at", "status"), [
+    ("Asia/Baku", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 201),   # 00:30 on 2 March: the birth day
+    ("Asia/Baku", datetime(2026, 3, 1, 19, 30, tzinfo=timezone.utc), 422),   # 23:30 on 1 March: the day before
+    ("UTC", datetime(2026, 3, 1, 20, 30, tzinfo=timezone.utc), 422),         # the same instant: UTC's date is the 1st
+])
+async def test_a_time_on_a_day_before_the_birth_is_refused_by_the_hospitals_date(
+        ward, db_session, monkeypatch, zone, at, status):
+    """A child born on 2 March, the form sent at 01:30 Baku time with «Kabul zamanı» an hour or two back: the time
+    the form sends is judged by the hospital's own date (`hospital_today`, the tenant's zone), as the date
+    of birth itself is (A-10) — 422 `field_invalid:admission_datetime` when that date is before the
+    birth's, nothing written, nothing spent."""
+    w, client, _ = ward
+    w.tenant.timezone = zone
+    await db_session.commit()
+    await _free_since(db_session, datetime(2026, 2, 1, tzinfo=timezone.utc))
+    monkeypatch.setattr(admission_router, "ZoneInfo", _baku_only)
+    monkeypatch.setattr(admission_router, "_now", lambda: BORN_NIGHT)
+    r = await _admit(w, client, at=at, patient={"date_of_birth": "2026-03-02"}, note={"weight_kg": 3.2})
+    assert r.status_code == status, r.text
+    if status == 422:
+        assert _refusal(r) == (422, "field_invalid:admission_datetime")
+        assert (await db_session.execute(select(func.count()).select_from(Admission))).scalar_one() == 0
+    else:
+        assert datetime.fromisoformat(r.json()["admission_datetime"]) == at
 
 
 # ---------------------------------------------------------------- the bed (D3)

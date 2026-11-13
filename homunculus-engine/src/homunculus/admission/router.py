@@ -504,8 +504,9 @@ async def create_admission(
     G3-07 (Kabul zamanı, spec §3.1): the form may say when the stay began (`admission_datetime`);
     sent nothing, the save is stamped, as before. A time sent is checked where the form is (a zone,
     not ahead of the clock), then — after the look-up of an earlier send, so a resend is answered
-    whatever the clock and the bed say now — at most six hours back (422, `form.BACKDATE_MAX`), not
-    before the bed became free (409 `admitted_before_bed_free`: a bed AVAILABLE or RESERVED, its
+    whatever the clock and the bed say now — at most six hours back (422, `form.BACKDATE_MAX`), not on
+    a day before the date of birth (422, the hospital's own date: `form.check_admission_not_before_birth`),
+    not before the bed became free (409 `admitted_before_bed_free`: a bed AVAILABLE or RESERVED, its
     state's own time, read under the bed's lock) and not before this person's last discharge (409
     `admitted_before_discharge`, `_last_discharge_of`). Each before the protocol is issued. The audit
     row names the row's time, and says `backdated` when the form sent one."""
@@ -553,6 +554,10 @@ async def create_admission(
         # attending's check: a resend of a form that was admitted is answered, never refused
         # because the clock moved on.
         form.check_admission_time(sent_at, now=now)
+        # Final review (the NICU): not on a day before the birth — the day of the time sent, read in the
+        # hospital's own zone as the birth date's `today` is (`hospital_today`, A-10).
+        form.check_admission_not_before_birth(
+            None if sent_at is None else hospital_today(zone, sent_at), born=payload.patient.date_of_birth)
         if identity is not None and \
                 (found := await _open_admission_of(db, caller_tenant, identity)) is not None:
             raise _duplicate(found, reach)

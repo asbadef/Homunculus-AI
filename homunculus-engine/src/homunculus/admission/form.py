@@ -151,6 +151,21 @@ def check_admission_time(at: datetime | None, *, now: datetime) -> None:
                             "The admission time is more than six hours before now.")
 
 
+def check_admission_not_before_birth(admitted_on: date | None, *, born: date) -> None:
+    """G3-07 (final review, the NICU): the time the form sent is not on a day before the patient's date
+    of birth — else 422 `field_invalid:admission_datetime`. `admitted_on` is the DATE of that time in
+    the hospital's own zone, which the route reads as it reads the birth date's `today` — with
+    `router.hospital_today(zone, at)` — so a child born at 00:30 local and admitted at 00:40 is not
+    refused for the UTC date still being the day before; None, a form that sent no time (the save is
+    stamped, on a day she exists), passes. The birth day itself passes.
+
+    Apart from `check_admission` for the same reason as `check_admission_time`: the route runs it after
+    the look-up of an earlier send under the form's id (A-19)."""
+    if admitted_on is not None and admitted_on < born:
+        raise field_invalid("admission_datetime",
+                            "The admission time is on a day before the date of birth.")
+
+
 def check_discharge(payload: DischargeStart, *, now: datetime,
                     admitted_at: datetime | None) -> None:
     """Refuse a discharge decision that is incomplete, impossible, or carries a field that belongs
