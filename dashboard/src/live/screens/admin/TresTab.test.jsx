@@ -8,7 +8,7 @@ import { act, fireEvent, screen, within } from "@testing-library/react";
 import { mount, refusal } from "../../session/mount.testutil.jsx";
 import { profile, token } from "../../session/testTokens.testutil.js";
 import { settle, toasts } from "../kabul/kabul.testutil.js";
-import { TYPES, TresTab, accountBody, bodyOf, invalid } from "./TresTab.jsx";
+import { TYPES, TresTab, accountBody, bodyOf, invalid, localInput } from "./TresTab.jsx";
 
 const PERMS = ["tres.manage"];
 const EMPTY = { base_url: null, username: null, password_set: false, provider_id: null, organization_id: null, organization_name: null };
@@ -281,5 +281,48 @@ describe("TresTab — the body's rules", () => {
 
   it("names the eight types of the engine, in its order", () => {
     expect(ALL).toEqual(["patient", "practitioner", "encounter", "condition", "procedure", "vital", "lab", "composition"]);
+  });
+});
+
+// TRƏS-01 F1: the automatic rounds' start (O15, proposed), the live platform's note, the three panels under the form.
+describe("TresTab — phase F1", () => {
+  it("shows the stored start, sends it only when moved, and says when none is stored", async () => {
+    const stored = { ...SET, mode: "send", send_from: "2026-11-01T06:00:00Z" };
+    const { api } = await mounted((a) => {
+      a.tresSettings.mockResolvedValue(stored);
+      a.saveTresSettings.mockResolvedValue(stored);
+    });
+    const field = screen.getByLabelText(/^Avtomatik göndərişin başlanğıcı/);
+    expect(field.value).toBe(localInput("2026-11-01T06:00:00Z"));
+    await save();
+    expect(api.saveTresSettings.mock.calls[0][0]).not.toHaveProperty("send_from");      // left as read: kept
+    fireEvent.change(field, { target: { value: "2026-10-30T08:15" } });
+    await save();
+    expect(api.saveTresSettings.mock.calls[1][0].send_from).toBe(new Date("2026-10-30T08:15").toISOString());
+  });
+
+  it("says no start is stored before «Göndər» was ever chosen", async () => {
+    await mounted((a) => a.tresSettings.mockResolvedValue(SET));
+    expect(screen.getByText("«Göndər» hələ seçilməyib: avtomatik göndərişin başlanğıcı yoxdur.")).toBeInTheDocument();
+  });
+
+  it("says the live platform is closed when the live environment is chosen with a mode", async () => {
+    await mounted((a) => a.tresSettings.mockResolvedValue(SET));
+    expect(screen.queryByText(/^Canlı platformaya xəstə məlumatlarının göndərilməsi bu versiyada bağlıdır/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/^Mühit/), { target: { value: "live" } });
+    expect(screen.getByText(/^Canlı platformaya xəstə məlumatlarının göndərilməsi bu versiyada bağlıdır/)).toBeInTheDocument();
+  });
+
+  it("draws the three panels under the settings", async () => {
+    await mounted((a) => {
+      a.tresSettings.mockResolvedValue(SET);
+      a.tresDeliveries.mockResolvedValue({ environment: "test", session_refused_at: null, next: null, items: [] });
+      a.tresDepartments.mockResolvedValue([]);
+      a.tresPractitioners.mockResolvedValue([]);
+    });
+    for (const title of ["Göndərişlər", "Şöbə uyğunlaşdırması", "Həkim identifikasiyaları"]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.getByText("Bu mühitdə hələ göndəriş qeydi yoxdur.")).toBeInTheDocument();
   });
 });

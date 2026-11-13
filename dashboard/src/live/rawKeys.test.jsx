@@ -38,6 +38,7 @@ import { LANG_CODES } from "./i18n/langs.js";
 import { ROUTES, hashPath, resetScreens, screenOf } from "./shell/routes.js";
 import { onlyScreens } from "./shell/screens.testutil.js";
 import { Shell } from "./shell/Shell.jsx";
+import { REASONS, STATUSES } from "./screens/admin/tresWords.js";
 import { BedsScreen } from "./screens/beds/BedsScreen.jsx";
 import { AlarmsScreen } from "./screens/alarms/AlarmsScreen.jsx";
 import { PERMISSION_KEYS } from "./screens/admin/catalogue.js";
@@ -234,6 +235,28 @@ const TRES_SETTINGS_SWEEP = { mode: "validate", environment: "test", settle_hour
   live: { base_url: null, username: null, password_set: false, provider_id: null, organization_id: null,
     organization_name: null },
   egress: false, updated_at: "2026-10-08T09:00:00Z" };
+/** TRƏS-01 F1: the three panels — a parked feed, a row of every status the ledger holds with a skip reason of each
+ *  kind the catalogue names, a closed unit, a practitioner with a FİN stored and one without an identity. */
+const TRES_STATUS_SWEEP = ["pending", "sent", "validated", "failed", "skipped", "stuck", "deleted"];
+const TRES_REASON_SWEEP = ["fin_missing", "fin_format", "name_single", "father_name_missing", "sex_unmapped",
+  "birth_date_invalid", "identity_missing", "name_missing", "unit_unmapped", "organization_missing", "timezone_unknown",
+  "discharge_missing", "no_reference", "patient_unheld", "type_off"];
+const TRES_DELIVERIES_SWEEP = { environment: "test", session_refused_at: "2026-10-08T08:00:00Z", next: "c-2",
+  items: [...TRES_STATUS_SWEEP, ...TRES_REASON_SWEEP].map((value, n) => ({
+    id: `r-${n}`, resource_type: "vital", local_id: `hmn-v-${n}.`, status: TRES_STATUS_SWEEP.includes(value) ? value : "skipped",
+    reason: TRES_STATUS_SWEEP.includes(value) ? null : value, attempts: n, operation: null, remote_id: null,
+    next_attempt_at: null, updated_at: "2026-10-08T09:00:00Z", admission_id: "66666666-6666-4666-8666-666666666601",
+    board_key: "202600000101" })) };
+const TRES_DEPARTMENTS_SWEEP = [
+  { unit_id: "33333333-3333-4333-8333-333333333301", unit_name: "Reanimasiya", unit_active: true, code: "RE-01",
+    display: "Reanimasiya", updated_at: "2026-10-08T09:00:00Z" },
+  { unit_id: "33333333-3333-4333-8333-333333333302", unit_name: "Neonatal", unit_active: false, code: null, display: null,
+    updated_at: null }];
+const TRES_PRACTITIONERS_SWEEP = [
+  { user_id: "88888888-8888-4888-8888-888888888801", full_name: "Sentetik Hekim", fin_set: true, family_name: "Sentetikov",
+    given_name: "Elçin", updated_at: "2026-10-08T09:00:00Z" },
+  { user_id: "88888888-8888-4888-8888-888888888802", full_name: "Sentetik İkinci", fin_set: false, family_name: null,
+    given_name: null, updated_at: null }];
 
 // G3-02: one patient with a late vital and one open hand task, so the sweep meets every state word.
 const TASKS_SWEEP = { from: "2026-10-08T04:00:00Z", to: "2026-10-09T04:00:00Z", shift: { start: "2026-10-08T04:00:00Z", end: "2026-10-09T04:00:00Z" }, now: "2026-10-08T10:00:00Z",
@@ -320,6 +343,10 @@ async function openAt(path, extra) {
 
       // TRƏS-01: Yönetim › TRƏS reads its settings — unstubbed the tab would say only that they could not be read.
       api.tresSettings.mockResolvedValue(TRES_SETTINGS_SWEEP);
+      // TRƏS-01 F1: its three panels — unstubbed each would say only that it could not be read.
+      api.tresDeliveries.mockResolvedValue(TRES_DELIVERIES_SWEEP);
+      api.tresDepartments.mockResolvedValue(TRES_DEPARTMENTS_SWEEP);
+      api.tresPractitioners.mockResolvedValue(TRES_PRACTITIONERS_SWEEP);
 
       // G3-02: the task queue and its settings tab — unstubbed the screen reads `undefined` and draws nothing.
       api.tasks.mockResolvedValue(TASKS_SWEEP);
@@ -649,6 +676,12 @@ describe("no screen shows a reader a translation key", () => {
     expect(screen.getByText(/^Seçilmiş mühitin hesabı natamamdır/)).toBeInTheDocument();          // tres.incomplete
     expect(screen.getByText(/^Parol qeyd olunub\./)).toBeInTheDocument();                         // tres.passwordSet
     expect(screen.getByText(/^Son dəyişiklik: /)).toBeInTheDocument();                            // tres.updated
+    // TRƏS-01 F1: the ledger's rows were drawn, with the two reasons of the review rounds (amendments 23, 26) — and the
+    // sweep's lists are the whole vocabulary of tresWords.js, so a status or reason added there is swept here.
+    expect(screen.getByText("Evə yazılma vaxtı daxil edilməyib")).toBeInTheDocument();             // tres.reason.dischargeMissing
+    expect(screen.getByText("Xəstə qeydi platformada yoxdur: yatış qeydi onunla birlikdə ötürüldü")).toBeInTheDocument();   // tres.reason.patientUnheld
+    expect([...TRES_STATUS_SWEEP].sort()).toEqual(STATUSES.map(([status]) => status).sort());
+    expect([...TRES_REASON_SWEEP].sort()).toEqual([...REASONS.keys()].sort());
     expect(rawKeys(document.body)).toEqual([]);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     act(() => { mounted.board.clear(); });

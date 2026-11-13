@@ -20,6 +20,11 @@
 //
 // A REFUSED LOGIN PARKS THE FEED (engine worker.py, review I3): while `session_refused_at` is set the tab says, under the
 // lock, that nothing is sent until the account is corrected and saved or a test succeeds; a successful test lifts it.
+//
+// PHASE F1. The automatic rounds' start (`send_from`, open item O15 — a PROPOSED rule, awaiting the owner's word): shown
+// and movable here; left as read it is left OUT of the body, and the server keeps it. The live platform is closed in this
+// version (O5, O11): with the live environment and a mode other than «Kapalı» the form says so before the server
+// refuses it. Under the settings, the three panels of F1: «Gönderimler», «Bölüm eşleme», «Hekim kimlikleri».
 import React, { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
@@ -28,6 +33,9 @@ import { dayStamp } from "../../i18n/dates.js";
 import { Alert, Box, Button, Field, Input, Note, Select, useToast } from "../../ui/index.js";
 import { refusedFor } from "./refusal.js";
 import { TYPES } from "./tresWords.js";
+import { TresDeliveries } from "./TresDeliveries.jsx";
+import { TresDepartments } from "./TresDepartments.jsx";
+import { TresPractitioners } from "./TresPractitioners.jsx";
 
 export { TYPES };
 export const MODES = Object.freeze([["off", "tres.modeOff"], ["validate", "tres.modeValidate"], ["send", "tres.modeSend"]]);
@@ -41,10 +49,18 @@ const SETTLE = /^\d{1,3}$/;
 const accountForm = (a) => ({
   ...Object.fromEntries(TEXT_FIELDS.map((name) => [name, a?.[name] ?? ""])), password: "", clearPassword: false,
 });
+const pad = (n) => String(n).padStart(2, "0");
+/** An instant as a `datetime-local` value in the reader's own zone ("" for none). */
+export function localInput(iso) {
+  const at = typeof iso === "string" ? new Date(iso) : null;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
 const formOf = (s) => ({
   mode: s?.mode ?? "off", environment: s?.environment ?? "test", settle: String(s?.settle_hours ?? 24),
   types: Array.isArray(s?.enabled_types) ? [...s.enabled_types] : TYPES.map(([key]) => key),
   test: accountForm(s?.test), live: accountForm(s?.live),
+  sendFrom: localInput(s?.send_from), sendFromRead: localInput(s?.send_from),
 });
 
 /** One account as the server takes it: empty text is null; the password is left out unless typed, "" to clear. */
@@ -56,11 +72,15 @@ export function accountBody(account) {
 }
 
 export function bodyOf(form) {
-  return {
+  const body = {
     mode: form.mode, environment: form.environment, settle_hours: Number(form.settle),
     enabled_types: TYPES.map(([key]) => key).filter((key) => form.types.includes(key)),
     test: accountBody(form.test), live: accountBody(form.live),
   };
+  // O15 (proposed): the cut-off goes only when moved — the server keeps the stored one otherwise.
+  const moved = form.sendFrom !== undefined && form.sendFrom !== form.sendFromRead && form.sendFrom !== "";
+  if (moved && !Number.isNaN(new Date(form.sendFrom).getTime())) body.send_from = new Date(form.sendFrom).toISOString();
+  return body;
 }
 
 /** What the form holds that the server would refuse: the wait, and each account's address. */
@@ -230,6 +250,11 @@ export function TresTab() {
             </Select>
           </Field>
           {incomplete ? <Note tone="warn" icon="alert" className="mb-3">{t("tres.incomplete")}</Note> : null}
+          {form.environment === "live" && form.mode !== "off"
+            ? <Note tone="warn" icon="lock" className="mb-3">{t("tres.liveNote")}</Note> : null}
+          <Field label={t("tres.sendFrom")} hint={settings.send_from ? t("tres.sendFromHint") : t("tres.sendFromUnset")}>
+            <Input type="datetime-local" value={form.sendFrom} onChange={(e) => set({ sendFrom: e.target.value })} />
+          </Field>
           <Field label={t("tres.settleHours")} hint={t("tres.settleHint")}
             error={tried && bad.settle ? t("tres.invalid.settle") : undefined}>
             <Input value={form.settle} inputMode="numeric" maxLength={3} onChange={(e) => set({ settle: e.target.value })} />
@@ -259,6 +284,9 @@ export function TresTab() {
           <p className="m-0 mt-2 text-12 text-mute">{open ? t("tres.testHint") : t("tres.testEgressOff")}</p>
         </form>
       </Box>
+      <TresDeliveries />
+      <TresDepartments />
+      <TresPractitioners />
     </div>
   );
 }
