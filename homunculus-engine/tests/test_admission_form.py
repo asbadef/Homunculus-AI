@@ -437,7 +437,9 @@ def test_every_other_refusal_has_a_stable_code():
                      "care_team_conflict", "care_team_not_physician",
                      "care_team_attending_required",
                      # G4-04 (spec §5 A1, A7)
-                     "shift_changed", "assignment_conflict"}
+                     "shift_changed", "assignment_conflict",
+                     # G3-07 (spec D3, D4)
+                     "admitted_before_bed_free", "admitted_before_discharge"}
 
 
 # ---------------------------------------------------------------- the person (A-37)

@@ -84,6 +84,11 @@ SHIFT_CHANGED = "shift_changed"                        # the window the form nam
 ASSIGNMENT_CONFLICT = "assignment_conflict"            # another save of the window won at the unique index (A7)
 CODES = CODES | frozenset({SHIFT_CHANGED, ASSIGNMENT_CONFLICT})
 
+# G3-07 — Kabul zamanı (spec D3, D4). Its own block after G4-04's, which it widens the same way.
+ADMITTED_BEFORE_BED_FREE = "admitted_before_bed_free"    # the time is before the bed's current free state began
+ADMITTED_BEFORE_DISCHARGE = "admitted_before_discharge"  # the time is before this person's last discharge
+CODES = CODES | frozenset({ADMITTED_BEFORE_BED_FREE, ADMITTED_BEFORE_DISCHARGE})
+
 
 class Refusal(Exception):
     """A refusal with its HTTP status, its code and its words — and, for the few refusals a screen

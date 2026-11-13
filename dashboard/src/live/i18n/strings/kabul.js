@@ -186,6 +186,9 @@ export default {
       // caller's units hold its bed.
       duplicateOpenAdmission: "Bu hastanın açık bir kabulü zaten var; önce taburcu edilmeli. Form gönderilmedi.",
       duplicateOpenAdmissionNumber: "Bu hastanın açık bir kabulü zaten var (hasta no {number}); önce taburcu edilmeli. Form gönderilmedi.",
+      // G3-07 (spec §3.2): the form's time before the bed became free, or before this person's last discharge.
+      admittedBeforeBedFree: "Kabul zamanı, yatağın boşaldığı andan önce olamaz.",
+      admittedBeforeDischarge: "Kabul zamanı, bu hastanın son taburcusundan önce olamaz.",
     },
     invalid: {
       displayName: "Soyad ad gerekli.", dateOfBirth: "Doğum tarihi geçerli değil.",   // G2-B3a (R9): surname first, as the field «Soyad ad»
@@ -374,6 +377,8 @@ export default {
       boardNotClearedNumber: "Bu çarpayının son xəstəsinin kartı (xəstə nömrəsi {number}) hələ paneldədir; çarpayı boşaldılmadı. Bir az sonra yenidən cəhd edin; davam edərsə sistem administratoruna bildirin.",
       duplicateOpenAdmission: "Bu xəstənin artıq açıq qəbulu var; əvvəlcə evə yazılmalıdır. Forma göndərilmədi.",
       duplicateOpenAdmissionNumber: "Bu xəstənin artıq açıq qəbulu var (xəstə nömrəsi {number}); əvvəlcə evə yazılmalıdır. Forma göndərilmədi.",
+      admittedBeforeBedFree: "Qəbul vaxtı çarpayının boşaldığı andan əvvəl ola bilməz.",
+      admittedBeforeDischarge: "Qəbul vaxtı bu xəstənin son evə yazılmasından əvvəl ola bilməz.",
     },
     invalid: {
       displayName: "Soyad ad tələb olunur.", dateOfBirth: "Doğum tarixi düzgün deyil.",
@@ -562,6 +567,8 @@ export default {
       boardNotClearedNumber: "Карточка последнего пациента этой койки (номер пациента {number}) всё ещё на панели; койка не освобождена. Повторите чуть позже; если не поможет — сообщите администратору системы.",
       duplicateOpenAdmission: "У этого пациента уже есть открытый приём; сначала его нужно выписать. Форма не отправлена.",
       duplicateOpenAdmissionNumber: "У этого пациента уже есть открытый приём (номер пациента {number}); сначала его нужно выписать. Форма не отправлена.",
+      admittedBeforeBedFree: "Время приёма не может быть раньше, чем освободилась койка.",
+      admittedBeforeDischarge: "Время приёма не может быть раньше последней выписки этого пациента.",
     },
     invalid: {
       displayName: "Нужны фамилия и имя.", dateOfBirth: "Дата рождения неверна.",
@@ -749,6 +756,8 @@ export default {
       boardNotClearedNumber: "This bed's last patient's card (patient number {number}) is still on the board; the bed was not freed. Try again shortly; if it persists, tell the system administrator.",
       duplicateOpenAdmission: "This patient already has an open admission; discharge it first. The form was not sent.",
       duplicateOpenAdmissionNumber: "This patient already has an open admission (patient number {number}); discharge it first. The form was not sent.",
+      admittedBeforeBedFree: "The admission time cannot be before the bed became free.",
+      admittedBeforeDischarge: "The admission time cannot be before this patient's last discharge.",
     },
     invalid: {
       displayName: "The surname and name are required.", dateOfBirth: "The date of birth is not valid.",
