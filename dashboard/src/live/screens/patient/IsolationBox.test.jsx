@@ -209,3 +209,38 @@ describe("no blind overwrite (§5 A1)", () => {
     expect(onChart).toHaveBeenCalledTimes(1);
   });
 });
+
+// Review I1: the buttons a held save swaps never drop the keyboard to <body>, and the hold is said, not only shown.
+describe("the keyboard and the screen reader through a held save", () => {
+  const button = (name) => within(box()).getByRole("button", { name });
+  const wait = (ms) => act(async () => { await new Promise((resolve) => { setTimeout(resolve, ms); }); });
+  const NEWER = `Bu arada yeni izolyasiya qeydi gəldi (${dayStamp(Date.parse(T2), NOW)}); seçiminiz ona baxılaraq edilməyib.`;
+  async function heldOpen() {
+    const opened = await open();
+    fireEvent.click(boxes()[2]);
+    act(() => { Host.set({ patientId: "S-001", isolation: { ...ISOLATED, charted_at: T2 }, known: true, canChart: true }); });
+    button(SAVE).focus();
+    await press(SAVE);
+    return opened;
+  }
+
+  it("moves the focus to «Yenə də yadda saxla» and says why in the live region, then back to the save once it is sent", async () => {
+    const { onChart } = await heldOpen();
+    expect(document.activeElement).toBe(button("Yenə də yadda saxla"));
+    await wait(200);
+    expect(within(box()).getByRole("status").textContent).toBe(NEWER);
+    await press("Yenə də yadda saxla");
+    expect(onChart).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(button(SAVE));
+  });
+
+  it("puts the focus back on the save button when the choice is discarded, held or not", async () => {
+    await heldOpen();
+    await press("Seçimdən imtina et");
+    expect(document.activeElement).toBe(button(SAVE));
+    fireEvent.click(boxes()[2]);                                      // a draft on the newer record: not held
+    button("Seçimdən imtina et").focus();
+    await press("Seçimdən imtina et");
+    expect(document.activeElement).toBe(button(SAVE));
+  });
+});

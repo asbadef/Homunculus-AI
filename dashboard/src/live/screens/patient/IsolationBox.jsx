@@ -47,6 +47,16 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
   const shown = useRef(patientId);
+  // Review I1: a held save, «Yine de kaydet» and «Seçimden vazgeç» each swap the buttons under the keyboard; the focus
+  // goes where the next step is (`focusTo`, read once the new buttons are in place), never to <body>.
+  const saveRef = useRef(null);
+  const anywayRef = useRef(null);
+  const focusTo = useRef(null);                       // "anyway" | "save" | null
+  useEffect(() => {
+    const target = focusTo.current === "anyway" ? anywayRef.current : focusTo.current === "save" ? saveRef.current : null;
+    focusTo.current = null;
+    target?.focus();
+  });
   // The shell keeps the patient screen mounted across a move to another patient: the draft and the busy state are the
   // patient's, not the box's.
   useEffect(() => {
@@ -70,6 +80,7 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
     setHeld(false);
   }
   function discard() {
+    focusTo.current = "save";
     setDraft(null);
     setHeld(false);
   }
@@ -108,9 +119,14 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
   }
   function press() {
     if (draft !== null && chartedAt !== seededAt) {
+      focusTo.current = "anyway";
       setHeld(true);                                     // a newer record came: nothing is sent (§5 A1)
       return;
     }
+    send(boxes);
+  }
+  function sendAnyway() {
+    focusTo.current = "save";
     send(boxes);
   }
 
@@ -155,18 +171,19 @@ export function IsolationBox({ patientId, isolation, bed, canChart, known, nowMs
             <div data-newer className="mt-1.5 grid gap-1.5">
               <p className="m-0 text-12.5 font-semibold text-att-ink">{t("patient.isolation.newer", { time: stamp(chartedAt) })}</p>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" busy={busy} onClick={() => send(boxes)}>{t("patient.isolation.saveAnyway")}</Button>
+                <Button ref={anywayRef} size="sm" busy={busy} onClick={sendAnyway}>{t("patient.isolation.saveAnyway")}</Button>
                 <Button size="sm" variant="ghost" onClick={discard}>{t("patient.isolation.discard")}</Button>
               </div>
             </div>
           ) : (
             <div className="mt-1.5 flex flex-wrap gap-2">
-              <Button size="sm" busy={busy} onClick={press}>{t(recordNone ? "patient.isolation.saveNone" : "patient.isolation.save")}</Button>
+              <Button ref={saveRef} size="sm" busy={busy} onClick={press}>{t(recordNone ? "patient.isolation.saveNone" : "patient.isolation.save")}</Button>
               {draft !== null ? <Button size="sm" variant="ghost" onClick={discard}>{t("patient.isolation.discard")}</Button> : null}
             </div>
           )}
-          {/* A busy Button reads only "unavailable" to a screen reader; the words come from here. */}
-          <Announce text={busy ? t("patient.isolation.saving") : ""} />
+          {/* A busy Button reads only "unavailable" to a screen reader; the words come from here — and a held save's
+              reason (review I1), which the sentence above only shows. */}
+          <Announce text={busy ? t("patient.isolation.saving") : held ? t("patient.isolation.newer", { time: stamp(chartedAt) }) : ""} />
         </div>
       ) : <p className="m-0 mt-2 text-12 text-mute">{t("patient.isolation.noRight")}</p>}
     </Box>
