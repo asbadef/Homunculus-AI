@@ -168,6 +168,10 @@ const STRIP = strip({
   beds: [
     bed("REA-01 · 1", [param("hr", 96), param("spo2", null), param("art_mean", 84), param("respiration", 18, { age_s: 40 }),
       param("nbp", [118, 79, 92])], { link: "one", patient_id: FIXTURE_ID }),
+    // The same states on an unlinked bed: the beds screen draws a strip only in its section (a linked
+    // patient's strip is the patient page's), so these words are reached there too.
+    bed("REA-01 · 6", [param("hr", 96), param("spo2", null), param("respiration", 18, { age_s: 40 }),
+      param("nbp", [118, 79, 92])]),
     bed("REA-01 · 3", [param("temperature", 37.1), param("nbp", null)]),
     bed("REA-01 · 4", [], { link: "ambiguous", link_reason: "two_monitors" }),
     bed("REA-01 · 5", [], { status: "silent" }),
@@ -436,9 +440,8 @@ describe("no screen shows a reader a translation key", () => {
     onlyScreens({ beds: BedsScreen, alarms: AlarmsScreen });
     await openAt("/beds");
     expect(screen.getByText("kimlik gözlənilir")).toBeInTheDocument();      // board.identityPending
-    expect(screen.getByText("NEWS2:")).toBeInTheDocument();                 // board.news2
-    // board.news2Partial — the card's own, not the monitor strip's `monitor.partial` (the same word)
-    expect(screen.getAllByText("qismən").filter((el) => !el.closest("[data-monitor-strip]"))).toHaveLength(1);
+    expect(screen.getAllByText(/^NEWS2 \d/).length).toBeGreaterThan(0);    // board.news2, the card's foot line
+    expect(screen.getAllByText(/^NEWS2 \d+ · qismən/).length).toBeGreaterThan(0); // board.news2Partial
     expect(screen.getByText("Bir parametr 3 bal alıb")).toBeInTheDocument(); // board.news2Red
     cleanup();
     const mounted = await openAt("/alarms");
@@ -730,7 +733,6 @@ describe("no screen shows a reader a translation key", () => {
   it("the monitor strip's keys resolve on the beds screen, on a card, in the section and in the chip", async () => {
     onlyScreens({ beds: BedsScreen });
     const mounted = await openAt("/beds");
-    expect(screen.getByRole("region", { name: "Monitor · təsdiqlənməmiş" })).toBeInTheDocument(); // monitor.title, on S-001's card
     expect(screen.getAllByText("TƏSDİQLƏNMƏMİŞ").length).toBeGreaterThan(1);                      // monitor.tag
     expect(screen.getByRole("heading", { name: "Monitorlar — təsdiqlənməmiş" })).toBeInTheDocument(); // monitor.section
     expect(screen.getAllByText("Bu çarpayıya bağlı xəstə qeydi yoxdur").length).toBeGreaterThan(0); // monitor.noPatient

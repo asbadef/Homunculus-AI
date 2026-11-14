@@ -190,15 +190,6 @@ describe("the bed board", () => {
   });
 
   describe("the view and the order", () => {
-    it("opens every card's details when one is opened", async () => {
-      await open({ payload: board([entry("S-001", [], CARD), entry("S-002", [], { ...CARD, identity: identity({ patient_id: "S-002", bed_label: "REA-01 · 3", bed_id: "REA-01-3" }) })]) });
-      const all = () => [...document.querySelectorAll("details")];
-      expect(all().length).toBeGreaterThan(1);
-      fireEvent.click(all()[0].querySelector("summary"));
-      fireEvent(all()[0], new Event("toggle"));
-      for (const d of all()) expect(d.open).toBe(true);
-    });
-
     it("switches to the list, and the list names every column", async () => {
       await open({ payload: board([entry("S-001", [], CARD)]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
@@ -213,25 +204,27 @@ describe("the bed board", () => {
       expect(screen.getAllByText("Ölçülməyib").length).toBeGreaterThan(0);
     });
 
-    // G2-A1 (O17): the list shows one alarm line under the name; a critical that passed
-    // unacknowledged is drawn on a calm row, so the line carries the badge that says why.
+    // G2-A1 (O17): a critical that passed unacknowledged is drawn on a calm row, so the row carries
+    // the badge that says why.
     it("the list marks a critical that passed unacknowledged beside its line", async () => {
       await open({
         payload: board([entry("S-001", [alarm("septic_shock", "critical", { summary: "Septic shock criteria met", resolved_at: ago(60) })], CARD)]),
       });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
-      const row = screen.getByText("Septic shock criteria met").closest("tr");
+      const row = screen.getByRole("table").querySelector("tbody tr");
       expect(within(row).getByText("keçdi · təsdiqlənməyib")).toBeInTheDocument();
     });
 
-    // G2-A2 (D10): the list's NEWS2 cell says what the card says, against the same clock.
-    it("the list names a stale NEWS2 input with its age", async () => {
+    // The list's score cell is the prototype's one line, as the card's foot line; NEWS2's caveats
+    // (stale, assumed inputs) are the patient page's.
+    it("the list's score cell is one line — the caveats are the patient page's", async () => {
       await open({ payload: board([entry("S-001", [], {
         ...CARD, score: news2({ total: 3, partial: true, stale: ["pulse"], measured_at: { pulse: ago(4000) } }),
       })]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
       const row = screen.getByRole("table").querySelector("tbody tr");
-      expect(within(row).getByText("köhnə məlumat: nəbz · 67 dəq əvvəl")).toBeInTheDocument();
+      expect(row).toHaveTextContent("NEWS2 3 · qismən");
+      expect(row).not.toHaveTextContent("köhnə məlumat");
     });
 
     it("keeps the chosen view in this browser", async () => {
@@ -348,12 +341,11 @@ describe("the monitor strip (Aşama A)", () => {
   const section = () => screen.getByRole("region", { name: "Monitorlar — təsdiqlənməmiş" });
   const cards = () => [...section().querySelectorAll("li[data-monitor]")];
 
-  it("puts the strip of a linked patient on that patient's card, outside its link", async () => {
+  it("a linked patient's card says its monitor is live and draws no strip — the strip is the patient page's", async () => {
     await openStrip(MONITORS(), { payload: WARD });
-    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
-    const strip = within(link.closest("li")).getByRole("region", { name: "Monitor · təsdiqlənməmiş" });
-    expect(strip).toHaveTextContent("72");
-    expect(link.contains(strip)).toBe(false);
+    const li = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" }).closest("li");
+    expect(li.querySelector("[data-monitor-chip]")).not.toBeNull();
+    expect(li.querySelector("[data-monitor-strip]")).toBeNull();
   });
 
   it("lists the unlinked beds and the unassigned devices in their own section, after the patients", async () => {
@@ -397,9 +389,9 @@ describe("the monitor strip (Aşama A)", () => {
     await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await settle(); });
     expect(screen.getAllByRole("note").some((n) => n.textContent === "Monitor zolağı oxunmur")).toBe(true);
     expect(cards()).toHaveLength(4);
-    // …and every strip says so itself: the linked card's and each card in the section.
+    // …and every strip in the section says so itself.
     const strips = [...document.querySelectorAll("[data-monitor-strip]")];
-    expect(strips).toHaveLength(5);
+    expect(strips).toHaveLength(4);
     for (const strip of strips) expect(strip).toHaveTextContent("Monitor zolağı oxunmur");
   });
 

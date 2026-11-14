@@ -26,7 +26,7 @@
 //     and word.
 import React from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { Icon, RiskPill, StatusPill, Tag, riskStyle } from "../../ui/index.js";
+import { Icon, RiskPill, riskStyle } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
@@ -35,11 +35,8 @@ import { VITALS, measuredVitals } from "../common/vitals.js";
 import { useTrends, measuredKeyOf } from "../patient/trends/useTrends.js";
 import { channelsOf } from "../patient/trends/cards.js";
 import { parsePoints } from "../patient/trends/trendGeometry.js";
-import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
-import { MonitorStrip } from "../common/MonitorStrip.jsx";
+import { boardKnown, nameOf, railOf } from "../common/BoardState.jsx";
 import { STATUS_KEY, cellOf } from "../common/monitor.js";
-import { ageText } from "../patient/ageText.js";
-import { newestInputAt } from "../patient/shadow/shadowVitals.js";
 
 /** Where this card's identity came from, and what state the HIS says it is in. */
 function Provenance({ patient }) {
@@ -193,15 +190,6 @@ export function sparkPoints(trend, trail) {
 // last readings' shape (owner, 2026-11-14).
 const SPARK_HOURS = 72;
 
-/** The shadow tag's words: the score with its newest input's age, «none» from a live board only. */
-function shadowTagText(t, shadow, known, nowMs) {
-  if (!shadow.findings?.length) return t(known ? "shadow.cardNone" : "shadow.cardUnknown");
-  const total = shadow.news2?.total ?? "—";
-  const newest = newestInputAt(shadow);
-  const age = newest ? ageText(t, newest, nowMs) : null;
-  return age ? t("shadow.cardTag", { total, age }) : t("shadow.cardTagNoAge", { total });
-}
-
 /**
  * `patient`: one record from `liveAdapters.patientsFromBoard`.
  * `alerts`: that patient's alarms from `boardStore`'s `alerts` (already flattened).
@@ -249,7 +237,7 @@ function monitorLive(monitor) {
 /** The prototype's flag (.flags span), for the list's «Uyarılar» column too. */
 export { Flag as CardFlag };
 
-export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false, lateTasks = 0, trail, detailsOpen, onDetails }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false, lateTasks = 0, trail }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -290,10 +278,14 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
         {spark ? <Spark patient={patient} tone={style.tone} trail={trail} t={t} /> : null}
 
         {/* What waits on this bed, as the prototype's flags: each a count the server gave. */}
-        {draft || open.length > 0 || lateTasks > 0 || stale > 0 ? (
+        {/* G2-A1 (O17): a critical that passed unacknowledged leaves a calm card with an open alarm — the
+            flag says why. NEWS2's red parameter is the engine's fact, stated, never a level of ours. */}
+        {draft || open.length > 0 || lateTasks > 0 || stale > 0 || news2?.red_param ? (
           <div className="mt-[7px] flex flex-wrap gap-1">
             {draft ? <Flag>{t("kabul.badgeDraft")}</Flag> : null}
             {open.length > 0 ? <Flag tone="crit">{t("beds.flagAlarms", { count: open.length })}</Flag> : null}
+            {open.some((a) => a.status === "RESOLVED") ? <Flag>{t("alarms.resolvedUnacked")}</Flag> : null}
+            {news2?.red_param ? <Flag tone="crit">{t("board.news2Red")}</Flag> : null}
             {lateTasks > 0 ? <Flag tone="crit">{t("beds.flagLate", { count: lateTasks })}</Flag> : null}
             {stale > 0 ? <Flag>{t("beds.staleChannels", { count: stale })}</Flag> : null}
           </div>
@@ -322,58 +314,6 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           </p>
         ) : null}
       </a>
-      {/* What the engine adds beyond that — the alarms' own words, the NEWS2 caveats — one click away. */}
-      {/* `detailsOpen`/`onDetails`: the board opens and closes every card's details together (owner, 2026-11-14). */}
-      <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5"
-        open={detailsOpen === undefined ? undefined : detailsOpen}
-        onToggle={onDetails ? (e) => { if (e.currentTarget.open !== detailsOpen) onDetails(e.currentTarget.open); } : undefined}>
-        <summary className={`flex cursor-pointer list-none items-center gap-1 rounded text-11.5 font-semibold text-mute hover:text-ink ${FOCUS_RING}`}>
-          <Icon name="chevR" size={13} className="transition-transform group-open:rotate-90" />
-          {t("beds.details")}
-          {monitor?.entry ? <span data-monitor-value="" className="text-att-ink">{` · ${t("beds.detailsMonitor")}`}</span> : null}
-        </summary>
-        <div className="mt-2 flex flex-col gap-2">
-              {/* The bedside monitor in full — every parameter, its age and its evidence — and the shadow's tag.
-                  Its values are on the card's row (marked M); outside the link, read by nothing above. */}
-          {monitor?.entry || patient?.shadow ? (
-            <div data-monitor-slot="" className="">
-              {monitor?.entry ? (
-                <MonitorStrip variant="screen" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-                  maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
-              ) : null}
-              {patient?.shadow ? (
-                <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
-                  {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
-                  <Tag tone="warn" className="!whitespace-normal">
-                    {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
-                  </Tag>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {open.length > 0 ? (
-            <ul className="m-0 flex list-none flex-col gap-1 p-0">
-              {open.map((a) => (
-                <li key={a.id} className="flex flex-wrap items-start gap-x-2 gap-y-1">
-                  <RiskPill risk={pillRisk(a.severity)} measured />
-                  {/* The engine writes its summaries in English (reco/engine.py); marked so a
-                      screen reader pronounces them as English rather than with Azerbaijani
-                      phonetics. The card says once, under them, that they are English. */}
-                  <span lang="en" className="min-w-0 flex-1 text-12.5 text-ink">{summaryOf(a) ?? t("board.findingUnnamed")}</span>
-                  {/* G2-A1 (O17): a critical whose condition passed waits here, but the card's risk
-                      (computed from the alarms that still fire) is calm — the badge, the alarms
-                      screen's own, says why this line is still red. */}
-                  {a.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
-                  <ChronicExpected alarm={a} />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {open.length > 0 ? <p className="m-0 text-10.5 text-mute">{t("board.engineEnglish")}</p> : null}
-          {/* G2-A2 (D10): the card's clock, so a stale input's age is the server's. */}
-          <News2 news2={patient?.news2} nowMs={nowMs} />
-        </div>
-      </details>
     </li>
   );
 }

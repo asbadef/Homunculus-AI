@@ -161,6 +161,7 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
     waitingLine,
     shadowAsked: view.api.shadowBoard.mock.calls.length,
     strips: document.querySelectorAll("[data-monitor-strip]").length,
+    monitorMarks: document.querySelectorAll("[data-monitor-value]").length,
   };
   cleanup();
   page.undo();
@@ -182,7 +183,10 @@ describe("the monitor strip never reaches the alarm path", () => {
     expect(off.waitingAlarms.known).toBe(true);
     expect(off.waitingAlarms.items).toHaveLength(2);
     expect(on.shadowAsked).toBe(10);
-    expect(on.strips).toBe(4);
+    // The linked beds' monitor values are on their cards (marked M); the unlinked monitors have strips.
+    expect(on.monitorMarks).toBeGreaterThan(0);
+    expect(off.monitorMarks).toBe(0);
+    expect(on.strips).toBe(2);
     expect(off.strips).toBe(0);
     expect(on.boardUntouchedByPolls).toBe(true);
     for (const key of ["pulses", "audible", "notifications", "signals", "alarmsToSignal", "waitingAlarms", "alarmCounts",
@@ -201,7 +205,8 @@ describe("the monitor strip never reaches the alarm path", () => {
     expect(plain.shadowCards).toBe(0);
     expect(shadowed.shadowCards).toBe(2);
     expect(plain.shadowTags).toBe(0);
-    expect(shadowed.shadowTags).toBe(2);
+    // The shadow's tag is the patient page's (owner, 2026-11-14: no details on the board's cards).
+    expect(shadowed.shadowTags).toBe(0);
     expect(shadowed.shadowAsked).toBe(10);
     expect(plain.pulses.length).toBeGreaterThan(0);
     expect(plain.notifications.length).toBeGreaterThan(0);
@@ -306,7 +311,7 @@ describe("the sampler's republishes never bring back a dismissed critical notifi
     expect(state.patients.find((p) => p.patient_id === "S-001").shadow.news2.total).toBe(11 + (5 % 3));
     expect(state.patients.find((p) => p.patient_id === "S-001").vitals.hr).toBe(123);
     expect(state.patients.find((p) => p.patient_id === "S-003").meds.antibiotic_clock.remaining_sec).toBe(2700);
-    expect(document.querySelectorAll("[data-shadow-tag]")).toHaveLength(2);
+    expect(document.querySelectorAll("[data-shadow-tag]")).toHaveLength(0);
     expect(waitingAlarms(state).items.map((a) => a.id)).toEqual(["S-001::septic_shock", "S-002::news2"]);
     // …and the dismissed notification was never raised again.
     expect(notes.shown).toHaveLength(1);

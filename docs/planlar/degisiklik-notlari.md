@@ -20,3 +20,9 @@ Prototipi canlıya taşıma çalışmasının tur tur özeti. Ayrıntı: `docs/s
 - **Karar 14'e bilinçli istisna (sahip isteği):** Ayrıntılar'daki monitör kutusu artık `variant="screen"` — prototipin `.mon`'u gibi koyu panel, kanal renkleri (HR yeşil, KB kırmızı, SpO₂ sarı, RR camgöbeği). DOĞRULANMAMIŞ etiketi, değer yaşları ve not aynen duruyor; panonun kendi vital renkleri (`text-v-*`) kullanılmadı. Uygun görmezsen `BedCard.jsx`'te tek kelime (`screen` → `compact`) ile eski haline döner.
 - **Ayrıntılar** bir kartta açılınca bütün kartlarda açılıyor/kapanıyor.
 - **Tanı:** kartta yaş/cinsiyetin yanına HIS'in gönderdiği tanılar (`diagnoses[].text`, yoksa kod) yazılıyor.
+### Güncelleme — kartta Ayrıntılar kaldırıldı (sahip kararı, 2026-11-14)
+
+- Yatak kartındaki **Ayrıntılar** bölümü tamamen kalktı (yukarıdaki «screen» monitör kutusu ve «hepsini aç» da onunla gitti). İçindekilerin hepsi hasta sayfasında zaten var: monitör kutusu (`variant="full"`), alarm cümleleri, `News2` uyarıları (eski/varsayılan girdi), gölge öneri kutusu. Kartta kalan: satırdaki M işaretli monitör değerleri ve «Monitör · canlı».
+- Kartta kaybolmasın diye iki güvenlik işareti bayrağa taşındı: **«geçti · onaylanmadı»** (G2-A1) ve **NEWS2 kırmızı parametre** (`board.news2Red`).
+- **Liste** prototipin `screens.js` `beds` satırından birebir: tüm satır tıklanır, sayılar sağa yaslı ve kanal renginde, skor tek satır, boş yatakta yalnız durum. Listedeki alarm cümlesi ve NEWS2 uyarıları da hasta sayfasında.
+- Testler buna göre değişti (`BedCard.test`, `BedsScreen.test`, `monitorAlarmPath.test`, `rawKeys.test` — bu sonuncusunda bölüme bağlanmamış bir yatak eklendi ki monitör anahtarları yine ekranda denensin).

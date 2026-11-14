@@ -37,7 +37,7 @@ import { Empty, Icon, RiskPill, Seg, StatusPill, riskStyle } from "../../ui/inde
 import { FOCUS_RING } from "../../ui/focus.js";
 import { ddmm, hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, FeedHealth, News2, ScopeNote, boardKnown, boardStale, nameOf, summaryOf, useBoardNow,
+  BoardStrip, FeedHealth, ScopeNote, boardKnown, boardStale, nameOf, useBoardNow,
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 import { hasMeasurement, lastMeasuredAt } from "../common/freshness.js";
@@ -187,44 +187,49 @@ const LIST_COLS = [
   ["resp_rate", "RR", "resp_rate"], ["temperature", null, "temperature"],
 ];
 
-/** One unit's list (the prototype's `table.t`): bed, patient, state, HR, KB, SpO₂, RR, temperature,
- *  score, flags — then the beds with no patient. A channel the validated record lacks takes the
+/** One unit's list — the prototype's `table.t` row for row (screens.js `beds`, app.css `table.t`):
+ *  bed (td.n, the risk colour), patient (name; age, sex · diagnoses), state, HR, KB, SpO₂, RR, Isı
+ *  (td.n, right-aligned, the channel colour), score (scoreLabel), flags; then each empty bed with
+ *  its state alone. The whole row opens the patient. A channel the validated record lacks takes the
  *  monitor's value, marked M and kept out of what the row says (as on the card). */
-function BedList({ patients, free, alertsOf, monitorOf, lateOf, draftOf, nowMs }) {
+function BedList({ patients, free, alertsOf, monitorOf, lateOf, draftOf }) {
   const { t } = useI18n();
   const meta = new Map(VITALS.map((v) => [v.at, v]));
-  const th = "whitespace-nowrap bg-card2 px-3 py-2.5 text-left text-10.5 font-bold uppercase leading-[normal] tracking-[.08em] text-mute";
+  const th = "whitespace-nowrap border-b border-line bg-card2 px-3 py-2.5 text-left text-10.5 font-bold uppercase leading-[normal] tracking-[.08em] text-mute";
+  const td = "border-b border-line px-3 py-[9px] align-middle group-last:border-b-0";
+  const num = `${td} whitespace-nowrap text-right font-data text-13.5 font-bold`;
   const heads = [t("beds.colBed"), t("beds.colPatient"), t("beds.colRisk"), "HR", t("beds.colBp"), "SpO₂", "RR", t("beds.tempShort"), t("beds.colNews2"), t("beds.colAlarms")];
+  const open = (id) => { window.location.hash = `#/patients/${encodeURIComponent(id)}`; };
   return (
     <div className="overflow-x-auto rounded-[14px] border border-line bg-card">
       <table aria-label={t("beds.caption")} className="w-full border-collapse text-13">
-        <thead><tr>{heads.map((h) => <th key={h} scope="col" className={th}>{h}</th>)}</tr></thead>
+        <thead><tr>{heads.map((h, i) => <th key={h} scope="col" className={`${th} ${i >= 3 && i <= 7 ? "!text-right" : ""}`}>{h}</th>)}</tr></thead>
         <tbody>
           {patients.map((p) => {
             const measured = hasMeasurement(p.measuredAt);
             const tone = riskStyle(p.risk, { measured }).tone;
             const shown = new Map(measuredVitals(p).map((v) => [v.at, v.value]));
             const mon = monitorValues(monitorOf(p.patient_id));
-            const open = alertsOf(p.patient_id).filter((a) => a.status !== "ACKNOWLEDGED");
+            const alarms = alertsOf(p.patient_id).filter((a) => a.status !== "ACKNOWLEDGED");
             const late = lateOf(p.patient_id);
-            const last = lastMeasuredAt(p.measuredAt);
+            const news2 = typeof p.news2?.total === "number" ? p.news2 : null;
+            const score = [news2 ? `${t("board.news2")} ${news2.total}` : null, Number.isFinite(p.sofa) ? `SOFA ${p.sofa}` : null].filter(Boolean).join(" · ");
             return (
-              <tr key={p.patient_id} className="border-t border-line">
-                <th scope="row" className="px-3 py-[9px] text-left">
-                  <a href={`#/patients/${encodeURIComponent(p.patient_id)}`} className={`rounded-md font-data text-13.5 font-bold ${toneText(tone)} ${FOCUS_RING}`}>
+              <tr key={p.patient_id} className="group cursor-pointer hover:[&>*]:bg-card2" onClick={() => open(p.patient_id)}>
+                <th scope="row" className={`${num} ${toneText(tone)}`}>
+                  <a href={`#/patients/${encodeURIComponent(p.patient_id)}`} className={`rounded-md ${FOCUS_RING}`} onClick={(e) => e.stopPropagation()}>
                     {bedNameOf(p)}
                   </a>
                 </th>
-                <td className="px-3 py-[9px]">
-                  <b className={`block ${p.display_name ? "text-ink" : "italic text-mute"}`}>{nameOf(p, t)}</b>
-                  <AgeSex patient={p} />
-                  {open.length ? <small lang="en" className="block text-11 text-mute">{summaryOf(open[0]) ?? t("board.findingUnnamed")}</small> : null}
+                <td className={td}>
+                  <b className={p.display_name ? "text-ink" : "italic text-mute"}>{nameOf(p, t)}</b>
+                  <div className="text-11.5 text-mute [&>span]:!text-11.5 [&>span]:!leading-normal"><AgeSex patient={p} /></div>
                   {/* G2-A1 (O17): a critical that passed unacknowledged is drawn on a calm row; the badge says why. */}
-                  {open[0]?.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
+                  {alarms[0]?.status === "RESOLVED" ? <StatusPill tone="att">{t("alarms.resolvedUnacked")}</StatusPill> : null}
                 </td>
-                <td className="px-3 py-[9px]"><RiskPill risk={p.risk} measured={measured} /></td>
+                <td className={td}><RiskPill risk={p.risk} measured={measured} /></td>
                 {LIST_COLS.map(([key, , monKey]) => (
-                  <td key={key} className={`whitespace-nowrap px-3 py-[9px] font-data text-13.5 font-bold ${meta.get(key)?.color ?? "text-ink"}`}>
+                  <td key={key} className={`${num} ${meta.get(key)?.color ?? "text-ink"}`}>
                     {shown.has(key) ? shown.get(key) : (
                       <>
                         {mon[monKey] ? <MonitorValue value={mon[monKey]} t={t} /> : null}
@@ -233,15 +238,13 @@ function BedList({ patients, free, alertsOf, monitorOf, lateOf, draftOf, nowMs }
                     )}
                   </td>
                 ))}
-                <td className="px-3 py-[9px]">
-                  <News2 news2={p.news2} nowMs={nowMs} />
-                  {Number.isFinite(p.sofa) ? <span className="block">SOFA {p.sofa}</span> : null}
-                  <small className="block whitespace-nowrap font-data text-11 text-mute">{t("beds.colMeasured")} {last === null ? "—" : hhmm(last)}</small>
+                <td className={`${td} whitespace-nowrap`}>
+                  {score || t("beds.noScore")}{news2?.partial ? ` · ${t("board.news2Partial").toLocaleLowerCase()}` : ""}
                 </td>
-                <td className="px-3 py-[9px]">
+                <td className={td}>
                   <span className="flex flex-wrap gap-1">
                     {draftOf(p.patient_id) ? <CardFlag>{t("kabul.badgeDraft")}</CardFlag> : null}
-                    {open.length ? <CardFlag tone="crit">{t("beds.flagAlarms", { count: open.length })}</CardFlag> : null}
+                    {alarms.length ? <CardFlag tone="crit">{t("beds.flagAlarms", { count: alarms.length })}</CardFlag> : null}
                     {late ? <CardFlag tone="crit">{t("beds.flagLate", { count: late })}</CardFlag> : null}
                   </span>
                 </td>
@@ -249,11 +252,9 @@ function BedList({ patients, free, alertsOf, monitorOf, lateOf, draftOf, nowMs }
             );
           })}
           {free.map((b) => (
-            <tr key={b.id} className="border-t border-line">
-              <th scope="row" className="px-3 py-[9px] text-left font-data text-13.5 font-bold text-mute">{b.label}</th>
-              <td colSpan={9} className="px-3 py-[9px] text-mute">
-                {t(BED_STATE_KEYS[b.state] ?? "kabul.bedOther")}{b.roomName ? ` · ${b.roomName}` : ""}
-              </td>
+            <tr key={b.id} className="group">
+              <th scope="row" className={`${num} font-normal text-mute`}>{b.label}</th>
+              <td colSpan={9} className={`${td} text-mute`}>{t(BED_STATE_KEYS[b.state] ?? "kabul.bedOther")}</td>
             </tr>
           ))}
         </tbody>
@@ -314,7 +315,6 @@ export function BedsScreen() {
   // The monitor's heart rate per linked patient, one point per strip read while the board is
   // open: the card's line when the engine has no trend yet. Kept here only, never sent or read.
   const [trails, setTrails] = useState(() => new Map());
-  const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     if (!stripView || !shadow.fetchedAtMs) return;
     setTrails((prev) => {
@@ -476,13 +476,13 @@ export function BedsScreen() {
               {view === "liste" ? (
                 <BedList patients={group.items} free={free} alertsOf={alertsOf}
                   monitorOf={(id) => (linked.has(id) ? { entry: linked.get(id), ...stripView } : undefined)}
-                  lateOf={(id) => lateBy.get(id) ?? 0} draftOf={(id) => draftNumbers.has(id)} nowMs={nowMs} />
+                  lateOf={(id) => lateBy.get(id) ?? 0} draftOf={(id) => draftNumbers.has(id)} />
               ) : (
                 <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3 p-0 max-[640px]:grid-cols-1">
                   {group.items.map((p) => (
                     <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
                       monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-                      draft={draftNumbers.has(p.patient_id)} spark lateTasks={lateBy.get(p.patient_id) ?? 0} trail={trails.get(p.patient_id)} detailsOpen={detailsOpen} onDetails={setDetailsOpen} />
+                      draft={draftNumbers.has(p.patient_id)} spark lateTasks={lateBy.get(p.patient_id) ?? 0} trail={trails.get(p.patient_id)} />
                   ))}
                   {free.map((b) => <FreeBed key={b.id} bed={b} kabulHref={kabulHref} />)}
                 </ul>
