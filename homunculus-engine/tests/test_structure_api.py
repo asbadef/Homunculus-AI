@@ -615,3 +615,47 @@ async def test_a_physician_does_not_release_beds(ward, db_session):
     await _set_state(db_session, w.beds["2"], BedState.HOUSEKEEPING)
     r = await client.post(f"/tenant/beds/{w.beds['2'].id}/release", headers=w.auth["doctor"])
     assert r.status_code == 403 and r.json()["detail"] == "permission required: beds.release"
+
+
+# ---------------------------------------------------------------- Tur 1: the unit's kind and profile
+async def test_a_unit_is_created_with_a_non_icu_kind_and_its_profile_and_the_tree_carries_it(ward):
+    w, client, _ = ward
+    admin = w.auth["admin"]
+    site = (await client.post(f"/tenant/tenants/{w.tenant.id}/sites", json={"name": "1. Blok"}, headers=admin)).json()
+    r = await client.post(f"/tenant/sites/{site['id']}/units", headers=admin, json={
+        "name": "Dahiliye Servisi", "unit_type": "WARD", "floor": 2, "care_tier": "VITAL",
+        "score_rule": " NEWS2 ", "code": "2201", "age_group": "ADULT"})
+    assert r.status_code == 201, r.text
+    unit = r.json()
+    assert {k: unit[k] for k in ("unit_type", "floor", "care_tier", "score_rule", "code", "age_group")} == {
+        "unit_type": "WARD", "floor": 2, "care_tier": "VITAL", "score_rule": "NEWS2", "code": "2201", "age_group": "ADULT"}
+    tree = (await client.get("/tenant/structure", headers=admin)).json()
+    shown = next(u for s in tree["sites"] for u in s["units"] if u["id"] == unit["id"])
+    assert shown["floor"] == 2 and shown["care_tier"] == "VITAL" and shown["score_rule"] == "NEWS2"
+
+
+async def test_an_old_unit_has_no_profile_and_a_patch_sets_and_clears_it_audited(ward):
+    w, client, app = ward
+    admin = w.auth["admin"]
+    rea = str(w.units["rea"].id)
+    tree = (await client.get("/tenant/structure", headers=admin)).json()
+    shown = next(u for s in tree["sites"] for u in s["units"] if u["id"] == rea)
+    assert shown["floor"] is None and shown["care_tier"] is None
+    r = await client.patch(f"/tenant/units/{rea}", headers=admin,
+                           json={"floor": 4, "care_tier": "FULL", "score_rule": "SOFA + NEWS2"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["floor"], r.json()["care_tier"], r.json()["name"]) == (4, "FULL", "Reanimasiya")
+    r = await client.patch(f"/tenant/units/{rea}", headers=admin, json={"score_rule": "  ", "care_tier": None})
+    assert (r.json()["score_rule"], r.json()["care_tier"], r.json()["floor"]) == (None, None, 4)
+    rows = _rows(app, "structure.update")
+    assert rows[0].payload["floor"] == {"old": None, "new": 4}
+    assert rows[1].payload["care_tier"] == {"old": "FULL", "new": None}
+    assert {r.patient_id for r in rows} == {""}
+
+
+async def test_a_profile_value_outside_its_list_is_refused(ward):
+    w, client, _ = ward
+    rea = str(w.units["rea"].id)
+    for body in ({"care_tier": "SOME"}, {"age_group": "OLD"}, {"floor": 120}, {"unit_type": "SPA"}):
+        r = await client.patch(f"/tenant/units/{rea}", headers=w.auth["admin"], json=body)
+        assert r.status_code == 422, (body, r.text)

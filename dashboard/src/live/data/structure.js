@@ -29,7 +29,10 @@ export function indexStructure(structure) {
   for (const site of Array.isArray(structure?.sites) ? structure.sites : []) {
     for (const unit of site.units ?? []) {
       units.set(normId(unit.id), { id: unit.id, name: unit.name, unitType: unit.unit_type,
-        isActive: unit.is_active !== false, siteName: site.name });
+        isActive: unit.is_active !== false, siteName: site.name,
+        // Tur 1: the unit's profile; null when the hospital has not set it.
+        floor: Number.isInteger(unit.floor) ? unit.floor : null, careTier: unit.care_tier ?? null,
+        scoreRule: unit.score_rule ?? null, code: unit.code ?? null, ageGroup: unit.age_group ?? null });
       for (const room of unit.rooms ?? []) {
         rooms.set(normId(room.id), { id: room.id, name: room.name, unitId: unit.id,
           isActive: room.is_active !== false });
@@ -195,4 +198,26 @@ export const UNIT_TYPE_KEYS = Object.freeze({
   PICU: "kabul.unitType.picu",
   CVICU: "kabul.unitType.cvicu",
   BMT_ICU: "kabul.unitType.bmtIcu",
+  // Tur 1 (engine migration 0023): the rest of the hospital, the prototype's kinds.
+  WARD: "kabul.unitType.ward",
+  ER: "kabul.unitType.er",
+  CATH_LAB: "kabul.unitType.cathLab",
+  CHEMO_DAY: "kabul.unitType.chemoDay",
+  DAY_CARE: "kabul.unitType.dayCare",
+  IVF_DAY: "kabul.unitType.ivfDay",
+  NURSERY: "kabul.unitType.nursery",
+  CLINIC: "kabul.unitType.clinic",
+});
+
+/** Tur 1: a floor in words — «Zemin kat» for 0, «2. kat» otherwise (the prototype's H.floorText). */
+export const floorText = (t, floor) => (floor === 0 ? t("kabul.groundFloor") : t("kabul.floorText", { floor }));
+
+/** Tur 1: what a unit is followed for (engine CareTier) — the prototype's H.TIER, its label. */
+export const CARE_TIER_KEYS = Object.freeze({
+  FULL: "kabul.tier.FULL", VITAL: "kabul.tier.VITAL", OPERATIONAL: "kabul.tier.OPERATIONAL",
+});
+
+/** Tur 1: the unit's patients' age group (engine AgeGroup). */
+export const AGE_GROUP_KEYS = Object.freeze({
+  ADULT: "kabul.ageGroup.ADULT", CHILD: "kabul.ageGroup.CHILD", NEONATE: "kabul.ageGroup.NEONATE",
 });

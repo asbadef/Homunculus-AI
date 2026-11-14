@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum, ForeignKey,
-    Integer, String, Text, UniqueConstraint,
+    Integer, SmallInteger, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,6 +29,31 @@ class UnitType(str, enum.Enum):
     PICU = "PICU"              # Phase 2
     CVICU = "CVICU"            # Phase 2
     BMT_ICU = "BMT_ICU"        # Phase 2
+    # Tur 1 (migration 0023): the rest of the hospital, as the prototype has it. Stored and shown
+    # only — no engine rule reads `unit_type`.
+    WARD = "WARD"
+    ER = "ER"
+    CATH_LAB = "CATH_LAB"
+    CHEMO_DAY = "CHEMO_DAY"
+    DAY_CARE = "DAY_CARE"
+    IVF_DAY = "IVF_DAY"
+    NURSERY = "NURSERY"
+    CLINIC = "CLINIC"
+
+
+class CareTier(str, enum.Enum):
+    """Tur 1 (0023): what the unit is followed for — the prototype's «Tam izlem» (scores,
+    escalation, recommendations), «Vital izlem» (vitals + an early-warning score), «Operasyonel»
+    (beds, admission/discharge, devices; no clinical recommendation). A label today."""
+    FULL = "FULL"
+    VITAL = "VITAL"
+    OPERATIONAL = "OPERATIONAL"
+
+
+class AgeGroup(str, enum.Enum):
+    ADULT = "ADULT"
+    CHILD = "CHILD"
+    NEONATE = "NEONATE"
 
 
 class BedState(str, enum.Enum):
@@ -125,6 +150,12 @@ class Unit(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # Tur 1 (migration 0023): the unit's profile, every field optional. The site is its building.
+    floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    care_tier: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    score_rule: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    age_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     site: Mapped[Site] = relationship("Site", back_populates="units")
     rooms: Mapped[list[Room]] = relationship("Room", back_populates="unit", cascade="all, delete-orphan")

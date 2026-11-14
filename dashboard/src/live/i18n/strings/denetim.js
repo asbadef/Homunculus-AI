@@ -60,7 +60,7 @@ export default {
       // follow-up 2026-11-11 D3: every other type the engine writes — Yapı's four in the Yapı tab's words (kabul.js),
       // the label in Protokol ve etiket's (protokol.js), the board retry in the discharge's (kabul.retryBoard), the
       // monitor table in Monitör–yatak eşleme's (esleme.js), «Görevlerim» in its own (gorevler.js)
-      structureCreate: "Yapı: eklendi", structureRename: "Yapı: adı değişti",
+      structureCreate: "Yapı: eklendi", structureRename: "Yapı: adı değişti", structureUpdate: "Yapı: birim bilgileri değişti",
       structureClose: "Yapı: kapatıldı", structureReopen: "Yapı: yeniden açıldı",
       labelPrint: "Etiket yazdırıldı", dischargeBoardRetry: "Kart panodan yeniden kaldırılmaya çalışıldı",
       deviceRelabel: "Monitör eşlemesi yatağın yeni adını aldı", deviceImport: "Monitör–yatak eşlemesi içe aktarıldı",
@@ -138,7 +138,7 @@ export default {
       bedOutOfService: "Çarpayı istifadədən çıxarıldı", bedReturnToService: "Çarpayı istifadəyə verildi",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Təhvil açıldı", handoverSign: "Təhvil imzalandı", handoverCountersign: "Təhvilə əks-imza atıldı",
-      structureCreate: "Struktur: əlavə edildi", structureRename: "Struktur: adı dəyişdi",
+      structureCreate: "Struktur: əlavə edildi", structureRename: "Struktur: adı dəyişdi", structureUpdate: "Struktur: şöbə məlumatları dəyişdi",
       structureClose: "Struktur: bağlandı", structureReopen: "Struktur: yenidən açıldı",
       labelPrint: "Etiket çap edildi", dischargeBoardRetry: "Kartın paneldən yenidən götürülməsinə cəhd edildi",
       deviceRelabel: "Monitorun uyğunlaşdırması çarpayının yeni adını aldı", deviceImport: "Monitor–çarpayı uyğunlaşdırması idxal edildi",
@@ -216,7 +216,7 @@ export default {
       bedOutOfService: "Койка выведена из использования", bedReturnToService: "Койка возвращена в использование",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Передача открыта", handoverSign: "Передача подписана", handoverCountersign: "Передача подписана принимающим",
-      structureCreate: "Структура: добавлено", structureRename: "Структура: переименовано",
+      structureCreate: "Структура: добавлено", structureRename: "Структура: переименовано", structureUpdate: "Структура: данные отделения изменены",
       structureClose: "Структура: закрыто", structureReopen: "Структура: открыто снова",
       labelPrint: "Этикетка напечатана", dischargeBoardRetry: "Повторная попытка снять карточку с панели",
       deviceRelabel: "Привязка монитора получила новое название койки", deviceImport: "Привязка мониторов к койкам импортирована",
@@ -294,7 +294,7 @@ export default {
       bedOutOfService: "Bed taken out of service", bedReturnToService: "Bed returned to service",
       // G2-B3b (spec D8): the handover's three events
       handoverOpen: "Handover opened", handoverSign: "Handover signed", handoverCountersign: "Handover countersigned",
-      structureCreate: "Structure: added", structureRename: "Structure: renamed",
+      structureCreate: "Structure: added", structureRename: "Structure: renamed", structureUpdate: "Structure: unit details changed",
       structureClose: "Structure: closed", structureReopen: "Structure: reopened",
       labelPrint: "Label printed", dischargeBoardRetry: "Card removal from the board retried",
       deviceRelabel: "Monitor mapping took the bed's new label", deviceImport: "Monitor–bed mapping imported",

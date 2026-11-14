@@ -8,7 +8,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 # G2-B3a (M-4): a bed's note is checked as the admission form's texts are (`FormText`).
 from homunculus.admission.schemas import _form_text
-from homunculus.tenant.models import BedState, BedStateReason, UnitType
+from homunculus.tenant.models import AgeGroup, BedState, BedStateReason, CareTier, UnitType
 
 # G2-B1a (amendment A-13): a new site's, unit's, room's or bed's name is trimmed, never blank, and
 # never longer than its column (a longer one was a 500 from the database).
@@ -23,6 +23,9 @@ _Number20 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2
 _Rename200 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 _Rename100 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
 _Relabel50 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)]
+# Tur 1: the unit profile's two short texts; blank is "none" (None, at the route).
+_Text40 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)]
+_Text20 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)]
 
 
 class TenantCreate(BaseModel):
@@ -62,6 +65,11 @@ class UnitCreate(BaseModel):
     name: _Name200
     unit_type: UnitType
     max_beds_per_nurse: int = 2
+    floor: int | None = Field(default=None, ge=-5, le=99)
+    care_tier: CareTier | None = None
+    score_rule: _Text40 | None = None
+    code: _Text20 | None = None
+    age_group: AgeGroup | None = None
 
 
 class UnitResponse(BaseModel):
@@ -72,6 +80,11 @@ class UnitResponse(BaseModel):
     max_beds_per_nurse: int
     is_active: bool
     created_at: datetime
+    floor: int | None = None
+    care_tier: CareTier | None = None
+    score_rule: str | None = None
+    code: str | None = None
+    age_group: AgeGroup | None = None
     model_config = {"from_attributes": True}
 
 
@@ -115,9 +128,17 @@ class BedStateTransitionRequest(BaseModel):
 
 # ---------------------------------------------------------------- G2-B1a (Hasta Kabul)
 class UnitPatch(BaseModel):
-    """Rename, close (`is_active: false`) or reopen a unit. Nothing is ever deleted."""
+    """Rename, close (`is_active: false`) or reopen a unit. Nothing is ever deleted.
+    Tur 1: and its kind and profile — a field left out stays; a profile field sent as null (or a
+    blank text) is cleared."""
     name: _Rename200 | None = None
     is_active: bool | None = None
+    unit_type: UnitType | None = None
+    floor: int | None = Field(default=None, ge=-5, le=99)
+    care_tier: CareTier | None = None
+    score_rule: _Text40 | None = None
+    code: _Text20 | None = None
+    age_group: AgeGroup | None = None
 
 
 class RoomPatch(BaseModel):
@@ -154,6 +175,11 @@ class StructureUnit(BaseModel):
     name: str
     unit_type: UnitType
     is_active: bool
+    floor: int | None = None
+    care_tier: CareTier | None = None
+    score_rule: str | None = None
+    code: str | None = None
+    age_group: AgeGroup | None = None
     rooms: list[StructureRoom]
 
 

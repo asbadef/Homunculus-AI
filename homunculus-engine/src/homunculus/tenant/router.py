@@ -60,6 +60,7 @@ spec R1, R8) two kinds of route here touch it, and nothing else does:
 (`defer(..., raiseload=True)`), and the tree names no patient.
 """
 from __future__ import annotations
+import enum
 import re
 import uuid
 
@@ -303,6 +304,7 @@ async def create_unit(
     unit = Unit(
         site_id=site_id, name=body.name,
         unit_type=body.unit_type, max_beds_per_nurse=body.max_beds_per_nurse,
+        **_profile(body, body.model_fields_set),
     )
     db.add(unit)
     await db.commit()
@@ -468,11 +470,30 @@ async def structure(
                         is_isolation=room.is_isolation, is_active=room.is_active, beds=room_beds))
             if whole or out_rooms:
                 out_units.append(StructureUnit(id=unit.id, name=unit.name, unit_type=unit.unit_type,
-                                               is_active=unit.is_active, rooms=out_rooms))
+                                               is_active=unit.is_active, rooms=out_rooms,
+                                               **{k: getattr(unit, k) for k in PROFILE_FIELDS}))
         if everything or out_units:
             out_sites.append(StructureSite(id=site.id, name=site.name, is_active=site.is_active,
                                            units=out_units))
     return StructureResponse(tenant_id=caller_tenant, sites=out_sites)
+
+
+#: Tur 1 (migration 0023): the unit's profile, as the model, the schemas and the tree name it.
+PROFILE_FIELDS = ("floor", "care_tier", "score_rule", "code", "age_group")
+
+
+def _plain(value):
+    return value.value if isinstance(value, enum.Enum) else value
+
+
+def _profile(body, sent: set[str]) -> dict:
+    """The profile fields the body SENT, stored plain; a blank text is "none"."""
+    out = {}
+    for key in PROFILE_FIELDS:
+        if key in sent:
+            value = _plain(getattr(body, key))
+            out[key] = value if value != "" else None
+    return out
 
 
 async def _has_open_bed(db: AsyncSession, *conditions) -> bool:
@@ -499,12 +520,23 @@ async def patch_unit(
     changes = _changes(old_name=unit.name, new_name=name, was_active=unit.is_active,
                        is_active=is_active)
     hospital = await trail.hospital_of(db, caller_tenant)
+    profile = _profile(body, body.model_fields_set)
+    if body.unit_type is not None:
+        profile["unit_type"] = body.unit_type
+    # Tur 1: what the profile changed, audited as one "structure.update" with the old and new value.
+    moved = {k: {"old": _plain(getattr(unit, k)), "new": _plain(v)}
+             for k, v in profile.items() if _plain(getattr(unit, k)) != _plain(v)}
     unit.name, unit.is_active = name, is_active
+    for key, value in profile.items():
+        setattr(unit, key, value)
     await db.commit()
     await db.refresh(unit)
     for event_type, change in changes:
         _audit(request, hospital, event_type, user, kind="unit", obj_id=unit.id, unit_id=unit.id,
                change=change)
+    if moved:
+        _audit(request, hospital, "structure.update", user, kind="unit", obj_id=unit.id, unit_id=unit.id,
+               change=moved)
     return UnitResponse.model_validate(unit)
 
 

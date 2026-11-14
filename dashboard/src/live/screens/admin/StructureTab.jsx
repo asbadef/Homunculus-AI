@@ -28,7 +28,7 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
 import { Alert, Announce, Box, Button, Input, Select, Tag, useToast } from "../../ui/index.js";
-import { BED_STATE_KEYS, UNIT_TYPE_KEYS, isUuid } from "../../data/structure.js";
+import { AGE_GROUP_KEYS, BED_STATE_KEYS, CARE_TIER_KEYS, UNIT_TYPE_KEYS, floorText, isUuid } from "../../data/structure.js";
 import { doneFor, reasonOf, refusedFor } from "./refusal.js";
 
 // G2-B3a: the keys moved to structure.js, which Doluluk's unit header reads too.
@@ -111,6 +111,60 @@ function UnitAdd({ site, busy, held, onAdd }) {
         {UNIT_TYPES.map((o) => <option key={o.value} value={o.value}>{t(o.key)}</option>)}
       </Select>
     </Line>
+  );
+}
+
+/** Tur 1: a unit's kind and profile — the prototype's unit: kind, floor, what it is followed for,
+ *  its score rule, its code and its patients' age group. One Save sends what changed; an emptied
+ *  box clears its field. Held while any write of the unit is out. */
+function UnitProfile({ unit, subject, busy, held, onSave }) {
+  const { t } = useI18n();
+  const start = {
+    unit_type: unit.unit_type ?? "", floor: Number.isInteger(unit.floor) ? String(unit.floor) : "",
+    care_tier: unit.care_tier ?? "", score_rule: unit.score_rule ?? "", code: unit.code ?? "", age_group: unit.age_group ?? "",
+  };
+  const [form, setForm] = useState(start);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const changed = Object.keys(start).filter((k) => form[k] !== start[k]);
+  const floorOk = form.floor.trim() === "" || /^-?\d{1,2}$/.test(form.floor.trim());
+  const save = (e) => {
+    e.preventDefault();
+    if (!changed.length || !floorOk) return;
+    const body = {};
+    for (const k of changed) {
+      const v = form[k].trim();
+      body[k] = k === "floor" ? (v === "" ? null : Number(v)) : (v === "" ? null : v);
+    }
+    onSave(body);
+  };
+  const field = "flex min-w-0 flex-col gap-1 text-11.5 font-semibold text-mute";
+  const choose = (key, keys, label) => (
+    <label className={field}>{t(label)}
+      <Select aria-label={`${t(label)}: ${subject}`} value={form[key]} onChange={set(key)} disabled={held}>
+        {key !== "unit_type" ? <option value="">{t("kabul.none")}</option> : null}
+        {Object.entries(keys).map(([v, k]) => <option key={v} value={v}>{t(k)}</option>)}
+      </Select>
+    </label>
+  );
+  const text = (key, label, max, extra = {}) => (
+    <label className={field}>{t(label)}
+      <Input aria-label={`${t(label)}: ${subject}`} value={form[key]} onChange={set(key)} maxLength={max} disabled={held} {...extra} />
+    </label>
+  );
+  return (
+    <form onSubmit={save} aria-label={t("kabul.profileOf", { unit: subject })} data-unit-profile=""
+      className="grid grid-cols-2 gap-2 rounded-ctl border border-line bg-card2 p-2.5 min-[641px]:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
+      {choose("unit_type", UNIT_TYPE_KEYS, "kabul.kindLabel")}
+      {text("floor", "kabul.floorLabel", 3, { inputMode: "numeric", "aria-invalid": floorOk ? undefined : true })}
+      {choose("care_tier", CARE_TIER_KEYS, "kabul.tierLabel")}
+      {text("score_rule", "kabul.scoreRuleLabel", 40)}
+      {text("code", "kabul.codeLabel", 20)}
+      {choose("age_group", AGE_GROUP_KEYS, "kabul.ageGroupLabel")}
+      <div className="col-span-full flex items-center gap-2">
+        <Button type="submit" size="sm" aria-label={`${t("kabul.saveProfile")}: ${subject}`} disabled={held || busy || !changed.length || !floorOk}>{t("kabul.saveProfile")}</Button>
+        {Number.isInteger(unit.floor) ? <span className="text-11.5 text-mute">{floorText(t, unit.floor)}</span> : null}
+      </div>
+    </form>
   );
 }
 
@@ -288,10 +342,19 @@ export function StructureTab() {
               const unitName = manySites ? `${unit.name} · ${site.name}` : unit.name;
               return (
                 <Node key={unit.id} kind="unit" item={unit} name={unit.name} subject={unitName} maxLength={MAX.unit}
-                  tags={UNIT_TYPE_KEYS[unit.unit_type] ? <Tag>{t(UNIT_TYPE_KEYS[unit.unit_type])}</Tag> : null}
+                  tags={(
+                    <>
+                      {UNIT_TYPE_KEYS[unit.unit_type] ? <Tag>{t(UNIT_TYPE_KEYS[unit.unit_type])}</Tag> : null}
+                      {Number.isInteger(unit.floor) ? <Tag>{floorText(t, unit.floor)}</Tag> : null}
+                      {CARE_TIER_KEYS[unit.care_tier] ? <Tag>{[t(CARE_TIER_KEYS[unit.care_tier]), unit.score_rule].filter(Boolean).join(" · ")}</Tag> : null}
+                    </>
+                  )}
                   busy={isBusy(unit.id)} held={holdFor(unit.id)}
                   onRename={(name) => write(unit.id, unitName, () => api.patchUnit(unit.id, { name }), "kabul.renamed")}
                   onToggle={() => toggle(unit, api.patchUnit, unitName)}>
+                  <UnitProfile key={`${unit.unit_type}|${unit.floor}|${unit.care_tier}|${unit.score_rule}|${unit.code}|${unit.age_group}`}
+                    unit={unit} subject={unitName} busy={isBusy(`${unit.id}~`)} held={holdFor(`${unit.id}~`)}
+                    onSave={(body) => write(`${unit.id}~`, unitName, () => api.patchUnit(unit.id, body), "kabul.profileSaved")} />
                   <RoomAdd unit={unitName} busy={isBusy(`${unit.id}+`)} held={holdFor(`${unit.id}+`)} savingId={heldId}
                     onAdd={(body) => write(`${unit.id}+`, `${body.name} · ${unitName}`, () => api.createRoom(unit.id, body), "kabul.added")} />
                   <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 ps-4">

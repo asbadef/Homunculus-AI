@@ -26,3 +26,11 @@ Prototipi canlıya taşıma çalışmasının tur tur özeti. Ayrıntı: `docs/s
 - Kartta kaybolmasın diye iki güvenlik işareti bayrağa taşındı: **«geçti · onaylanmadı»** (G2-A1) ve **NEWS2 kırmızı parametre** (`board.news2Red`).
 - **Liste** prototipin `screens.js` `beds` satırından birebir: tüm satır tıklanır, sayılar sağa yaslı ve kanal renginde, skor tek satır, boş yatakta yalnız durum. Listedeki alarm cümlesi ve NEWS2 uyarıları da hasta sayfasında.
 - Testler buna göre değişti (`BedCard.test`, `BedsScreen.test`, `monitorAlarmPath.test`, `rawKeys.test` — bu sonuncusunda bölüme bağlanmamış bir yatak eklendi ki monitör anahtarları yine ekranda denensin).
+## Tur 1 — Hastane yapısı: birim türleri, kat, izlem düzeyi (2026-11-14)
+
+- **Göç 0023** (`0023_unit_profile.py`, 0021'in ardından): `unittype` enum'una prototipin yoğun bakım dışı türleri eklendi (WARD, ER, CATH_LAB, CHEMO_DAY, DAY_CARE, IVF_DAY, NURSERY, CLINIC). `unit_type`'ı hiçbir motor kuralı okumuyor (yalnız `tenant/`), yani alarm/skor/öneri değişmez. Enum değeri geri alınamaz; downgrade yalnız kolonları siler.
+- **`units` yeni kolonlar** (hepsi isteğe bağlı): `floor` (0 = zemin), `care_tier` (FULL «Tam izlem» · VITAL «Vital izlem» · OPERATIONAL «Operasyonel»), `score_rule` («SOFA + NEWS2», «PEWS»…), `code`, `age_group` (ADULT/CHILD/NEONATE). `care_tier` ve `score_rule` bugün yalnız **etiket**: motor kurallarını açıp kapatmaz.
+- **API:** `POST /tenant/sites/{id}/units` ve `PATCH /tenant/units/{id}` bu alanları ve (PATCH) `unit_type`'ı alır; gönderilmeyen alan aynen kalır, null/boş metin temizler. Değişiklik `structure.update` olarak denetime düşer (eski/yeni değer). `GET /tenant/structure` birimde bu alanları döner.
+- **Bina:** prototipin «Blok»u canlıdaki `site`. Birimi başka binaya taşıyan uç yok; bu turda bütün birimler mevcut binada kaldı.
+- **Arayüz:** Yataklar birim başlığında prototipin etiketleri (tür · kat · izlem · skor kuralı); Yönetim › Yapı'da her birimin altında «Birim bilgileri» formu; birim türü adları prototipin kelimeleri (`H.KIND`/`KN`).
+- **Testler:** motor `test_structure_api.py` (+3), arayüz StructureTab (+2). Motor testleri VM'de canlıdan ayrı geçici bir PostgreSQL'de koşuldu: `.claude/vm/test-calistir.sh`.

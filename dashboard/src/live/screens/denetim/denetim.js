@@ -92,7 +92,7 @@ export const EVENT_TYPES = Object.freeze([
   ["handover.open", "handoverOpen"], ["handover.sign_outgoing", "handoverSign"], ["handover.countersign", "handoverCountersign"],
   // Follow-up 2026-11-11 D3: every other type the engine writes (engineTypes.test.js reads the engine and fails on
   // one this list does not name). Yapı's four (tenant/router.py), in the Yapı tab's own words:
-  ["structure.create", "structureCreate"], ["structure.rename", "structureRename"],
+  ["structure.create", "structureCreate"], ["structure.rename", "structureRename"], ["structure.update", "structureUpdate"],
   ["structure.close", "structureClose"], ["structure.reopen", "structureReopen"],
   // the admission's label and its board retry (admission/router.py, tenant/router.py):
   ["admission.label_print", "labelPrint"], ["admission.discharge_board_retry", "dischargeBoardRetry"],

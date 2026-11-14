@@ -43,7 +43,7 @@ describe("StructureTab", () => {
   it("shows the tree by name, a closed place marked, and no UUID — in its text or its labels", async () => {
     await mountKabul(<StructureTab />, { perms: ADMIN });
     expect(screen.getByRole("heading", { name: "Ana bina" })).toBeTruthy();
-    for (const name of ["Reanimasiya", "Neonatal", "Otaq 1", "Otaq 2"]) expect(screen.getByText(name)).toBeTruthy();
+    for (const name of ["Reanimasiya", "Neonatal", "Otaq 1", "Otaq 2"]) expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Bağlıdır").length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toMatch(UUID_TEXT);
     const labelled = [...document.querySelectorAll("[aria-label], [title], [placeholder]")];
@@ -108,8 +108,8 @@ describe("StructureTab", () => {
     const tree = structure();
     Object.assign(tree.sites[0].units[0].rooms[1], { room_number: "12", is_isolation: true });
     await mountKabul(<StructureTab />, { perms: ADMIN, setup: (a) => a.structure.mockResolvedValue(tree) });
-    expect(within(line("Reanimasiya")).getByText("Böyüklər reanimasiyası")).toBeTruthy();
-    expect(within(line("Neonatal")).getByText("Yenidoğulmuşlar reanimasiyası")).toBeTruthy();
+    expect(within(line("Reanimasiya")).getAllByText("Reanimasiya").some((el) => el.tagName !== "B")).toBe(true);   // its kind, in the prototype's word
+    expect(within(line("Neonatal")).getAllByText("Yenidoğulmuş reanimasiyası").length).toBeGreaterThan(0);
     expect(within(line("Otaq 2")).getByText("Otaq nömrəsi: 12")).toBeTruthy();
     expect(within(line("Otaq 2")).getByText("İzolyasiya otağı")).toBeTruthy();
     expect(within(line("Otaq 1")).queryByText(/Otaq nömrəsi|İzolyasiya/)).toBeNull();
@@ -155,6 +155,22 @@ describe("StructureTab", () => {
     await settle();
     expect(isolation.getAttribute("aria-disabled")).toBeNull();
     expect(isolation.checked).toBe(false);                               // the add landed: a fresh form
+  });
+
+  it("saves a unit's kind and profile — only what changed, an emptied box as none (Tur 1)", async () => {
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN });
+    fireEvent.change(screen.getByRole("textbox", { name: "Mərtəbə (0 = zirzəmi): Reanimasiya" }), { target: { value: " 4 " } });
+    fireEvent.change(screen.getByRole("combobox", { name: "İzləmə: Reanimasiya" }), { target: { value: "FULL" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Bal qaydası: Reanimasiya" }), { target: { value: "SOFA + NEWS2" } });
+    await press("Yadda saxla: Reanimasiya");
+    expect(api.patchUnit).toHaveBeenCalledWith(REA, { floor: 4, care_tier: "FULL", score_rule: "SOFA + NEWS2" });
+  });
+
+  it("does not send a floor that is not a whole number", async () => {
+    const { api } = await mountKabul(<StructureTab />, { perms: ADMIN });
+    fireEvent.change(screen.getByRole("textbox", { name: "Mərtəbə (0 = zirzəmi): Reanimasiya" }), { target: { value: "dörd" } });
+    expect(button("Yadda saxla: Reanimasiya")).toBeDisabled();
+    expect(api.patchUnit).not.toHaveBeenCalled();
   });
 
   it("keeps each site's unit type to itself", async () => {

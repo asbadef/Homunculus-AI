@@ -47,7 +47,7 @@ import { AgeSex, BedCard, CardFlag, MonitorValue, monitorValues, toneText } from
 import { AttentionTiles, lateByPatient, useTaskQueue } from "./AttentionTiles.jsx";
 import { ageText } from "../patient/ageText.js";
 import { useStructure, useUnitNames } from "../../data/StructureProvider.jsx";   // G2-B1a
-import { BED_STATE_KEYS, UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
+import { BED_STATE_KEYS, CARE_TIER_KEYS, UNIT_TYPE_KEYS, floorText, normId } from "../../data/structure.js";
 import { useAdmissions } from "../kabul/useAdmissions.js";          // G2-B1a
 import { boardKeyOf } from "../kabul/boardKey.js";                  // G2-B1d: the card key
 import { useShadow } from "../../data/ShadowProvider.jsx";
@@ -455,14 +455,20 @@ export function BedsScreen() {
           // Every bed of the unit that holds no patient: free ones first, then the others by label.
           const free = beds.filter((b) => b.state !== "OCCUPIED")
             .sort((x, y) => Number(y.open && y.state === "AVAILABLE") - Number(x.open && x.state === "AVAILABLE"));
-          const type = structure.index.units.get(normId(group.unitId))?.unitType;
+          const info = structure.index.units.get(normId(group.unitId));
+          // The prototype's pills: the kind, the floor, what the unit is followed for and its score rule.
+          const pills = info ? [
+            UNIT_TYPE_KEYS[info.unitType] ? t(UNIT_TYPE_KEYS[info.unitType]) : null,
+            info.floor === null ? null : floorText(t, info.floor),
+            [info.careTier && CARE_TIER_KEYS[info.careTier] ? t(CARE_TIER_KEYS[info.careTier]) : null, info.scoreRule].filter(Boolean).join(" · ") || null,
+          ].filter(Boolean) : [];
           return (
             <section key={group.unitId ?? "-"} aria-label={group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}>
               {/* The prototype's .sec: the unit 14 px, its pills, and at the right how full it is and
                   the order — which is the order switch itself (bed order / risk order, G1-09). */}
               <div className="mb-2.5 mt-[18px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <h2 className="m-0 font-display text-14 font-bold leading-[normal]">{group.unitId ? unitName(group.unitId) : t("beds.noUnitGroup")}</h2>
-                {UNIT_TYPE_KEYS[type] ? <span className="rounded-full bg-card2 px-2 py-[3px] text-11.5 font-semibold leading-[normal] text-mute">{t(UNIT_TYPE_KEYS[type])}</span> : null}
+                {pills.map((p) => <span key={p} className="rounded-full bg-card2 px-2 py-[3px] text-11.5 font-semibold leading-[normal] text-mute">{p}</span>)}
                 <small className="ml-auto text-12 font-medium leading-[normal] text-mute">
                   {beds.length ? `${t("beds.unitFill", { occupied, total: beds.length })} · `
                     : groups.length > 1 ? `${t("beds.sub", { count: group.items.length })} · ` : null}
