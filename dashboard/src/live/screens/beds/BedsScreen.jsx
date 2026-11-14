@@ -175,7 +175,19 @@ export function withEmptyUnits(groups, index, scope = [], chosen = null) {
     .filter((u) => u.isActive && !seen.has(normId(u.id)))
     .filter((u) => (chosen ? normId(u.id) === normId(chosen) : allowed.size === 0 || allowed.has(normId(u.id))))
     .map((u) => ({ unitId: u.id, items: [] }));
-  return [...groups.filter((g) => g.unitId), ...extra, ...groups.filter((g) => !g.unitId)];
+  // Tur 1: the hospital's order, as the prototype walks it (building → floor → unit): by the unit's
+  // code, then its floor, then its name; a unit with none of them keeps the order it came in, after.
+  const info = (g) => index.units.get(normId(g.unitId)) ?? {};
+  const rank = (g) => [info(g).code ?? "￿", info(g).floor ?? 999];
+  const units = [...groups.filter((g) => g.unitId), ...extra]
+    .map((g, i) => ({ g, i }))
+    .sort((a, b) => {
+      const [ca, fa] = rank(a.g);
+      const [cb, fb] = rank(b.g);
+      return ca.localeCompare(cb, "en", { numeric: true }) || fa - fb || a.i - b.i;
+    })
+    .map(({ g }) => g);
+  return [...units, ...groups.filter((g) => !g.unitId)];
 }
 
 // The list's numeric columns: the board's channel, the prototype's header, the monitor's value
