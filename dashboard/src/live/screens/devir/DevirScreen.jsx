@@ -30,7 +30,7 @@ import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText, readErrorText } from "../../apiErrors.js";
-import { Alert, Announce, Box, Button, Empty, Note, StatusPill, riskStyle, useToast } from "../../ui/index.js";
+import { Alert, Announce, Button, Empty, Note, StatusPill, riskStyle, useToast } from "../../ui/index.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { dayStamp } from "../../i18n/dates.js";
 import { boardKnown, useBoardNow } from "../common/BoardState.jsx";
@@ -96,18 +96,19 @@ function useHandovers() {
   return { ...state, reading, reload };
 }
 
-/** The bed and the unit, linked to the patient (`#/patients/{board_key}`), then the name. */
+/** The bed and the name as the prototype's card heads them: the bed in the brand colour (linked to the
+ *  patient, `#/patients/{board_key}`), the name beside it. */
 function PatientLine({ row }) {
   const p = patientOf(row);
   const subject = subjectOf(row);
   return (
-    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-14">
+    <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 leading-[normal]">
       {p?.board_key ? (
-        <a href={`#/patients/${encodeURIComponent(p.board_key)}`} className={`rounded-md font-data font-bold text-ink ${FOCUS_RING}`}>
+        <a href={`#/patients/${encodeURIComponent(p.board_key)}`} className={`rounded-md font-data text-15 font-bold text-pri hover:underline ${FOCUS_RING}`}>
           {subject}
         </a>
-      ) : <span className="font-data font-bold">{subject}</span>}
-      {p?.display_name ? <span className="font-semibold">{p.display_name}</span> : null}
+      ) : <span className="font-data text-15 font-bold text-pri">{subject}</span>}
+      {p?.display_name ? <span className="font-display text-15 font-bold text-ink">{p.display_name}</span> : null}
     </p>
   );
 }
@@ -120,15 +121,13 @@ function Meta({ row, nowMs, pill = true }) {
   const signed = msOf(row.outgoing_signed_at);
   const countersigned = msOf(row.incoming_signed_at);
   return (
-    <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-12.5 text-mute">
+    <p className="m-0 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-12.5 text-mute">
       {pill ? (
         <StatusPill tone={STATUS_TONES[status] ?? "att"}>
           {STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : <span className="font-data">{String(status ?? "—")}</span>}
         </StatusPill>
       ) : null}
-      <span className="font-semibold text-ink">
-        {t("devir.fromTo", { from: row.outgoing?.name || "—", to: row.incoming?.name || "—" })}
-      </span>
+      <span>{t("devir.fromTo", { from: row.outgoing?.name || "—", to: row.incoming?.name || "—" })}</span>
       {row.status === "COMPLETED" && countersigned !== null ? (
         <span>{t("devir.countersignedAt", { time: dayStamp(countersigned, nowMs) })}</span>
       ) : row.status === "OUTGOING_SIGNED" && signed !== null ? (
@@ -138,34 +137,34 @@ function Meta({ row, nowMs, pill = true }) {
   );
 }
 
-/** The sealed D-Ö-D-Ö note: each written part under its own label (D5). */
+/** The sealed D-Ö-D-Ö note as the prototype prints it: one line per written part, its initial in front
+ *  (the page's foot says what the letters stand for), the full word kept for a screen reader (D5). */
 function NoteView({ note }) {
   const { t } = useI18n();
   const parts = NOTE_PARTS.filter((part) => typeof note?.[part] === "string" && note[part].trim() !== "");
+  if (parts.length === 0) return <p className="m-0 text-13 text-mute">{t("devir.noNote")}</p>;
   return (
-    <section className="min-w-0 rounded-ctl border border-line bg-card2 px-3 py-2">
-      <h3 className="m-0 mb-1.5 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("devir.noteLegend")}</h3>
-      {parts.length === 0 ? <p className="m-0 text-13 text-mute">{t("devir.noNote")}</p> : (
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-13">
-          {parts.map((part) => (
-            <React.Fragment key={part}>
-              <dt className="whitespace-nowrap font-semibold text-mute">{t(`devir.part.${part}`)}</dt>
-              <dd className="m-0 whitespace-pre-wrap break-words text-ink">{note[part]}</dd>
-            </React.Fragment>
-          ))}
-        </dl>
-      )}
-    </section>
+    <dl aria-label={t("devir.noteLegend")} className="m-0 grid grid-cols-[18px_minmax(0,1fr)] gap-x-2.5 gap-y-1 text-13">
+      {parts.map((part) => (
+        <React.Fragment key={part}>
+          <dt className="font-bold text-ink" title={t(`devir.part.${part}`)}>
+            <span aria-hidden="true">{t(`devir.part.${part}`).charAt(0)}</span>
+            <span className="sr-only">{t(`devir.part.${part}`)}</span>
+          </dt>
+          <dd className="m-0 whitespace-pre-wrap break-words text-ink">{note[part]}</dd>
+        </React.Fragment>
+      ))}
+    </dl>
   );
 }
 
-/** One term of the summary and its value. */
+/** One term of the summary and its value, laid side by side (the prototype prints the summary as one line). */
 function Item({ label, children }) {
   return (
-    <>
+    <div className="flex items-baseline gap-1">
       <dt className="whitespace-nowrap text-mute">{label}</dt>
       <dd className="m-0 text-ink">{children}</dd>
-    </>
+    </div>
   );
 }
 
@@ -175,7 +174,8 @@ function Reading({ value, unit }) {
   return <><b className="font-data">{value}</b> {unit}</>;
 }
 
-/** What the board showed at the outgoing signature (D6): plain values with their units, and the way to the present. */
+/** What the board showed at the outgoing signature (D6): each value under its own name — laid out as the
+ *  prototype's one line, read as a list of terms — with the moment it was taken, and the way to the present. */
 function SummaryView({ summary, boardKey, nowMs }) {
   const { t } = useI18n();
   if (!isObject(summary)) return null;
@@ -189,13 +189,13 @@ function SummaryView({ summary, boardKey, nowMs }) {
   const news2 = isObject(s.news2) ? s.news2 : {};
   const alerts = Array.isArray(s.open_alerts) ? s.open_alerts.filter(isObject) : [];
   return (
-    <section className="min-w-0 rounded-ctl border border-line px-3 py-2">
-      <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2">
-        <h3 className="m-0 font-text text-11 font-bold uppercase tracking-[.08em] text-mute">{t("devir.summaryTitle")}</h3>
-        {at !== null ? <span className="ml-auto text-11.5 text-mute">{t("devir.summaryAt", { time: dayStamp(at, nowMs) })}</span> : null}
+    <section className="min-w-0 text-13">
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+        <h3 className="m-0 text-11 font-bold uppercase tracking-[.06em] text-mute">{t("devir.summaryTitle")}</h3>
+        {at !== null ? <span className="text-11.5 text-mute">{t("devir.summaryAt", { time: dayStamp(at, nowMs) })}</span> : null}
       </div>
       {!measured ? <p className="m-0 text-13 text-mute">{t("devir.summaryNone")}</p> : (
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-13">
+        <dl className="m-0 flex flex-wrap gap-x-3.5 gap-y-1">
           <Item label={t("devir.sum.risk")}>
             <StatusPill tone={risk.tone} icon={risk.icon}>{t(risk.labelKey, risk.labelVars)}</StatusPill>
           </Item>
@@ -226,11 +226,36 @@ function SummaryView({ summary, boardKey, nowMs }) {
       )}
       {boardKey ? (
         <a href={`#/patients/${encodeURIComponent(boardKey)}`}
-          className={`mt-1.5 inline-block rounded-md text-12.5 font-semibold text-pri underline ${FOCUS_RING}`}>
+          className={`mt-1 inline-block rounded-md text-12.5 font-semibold text-pri underline ${FOCUS_RING}`}>
           {t("devir.summaryNow")}
         </a>
       ) : null}
     </section>
+  );
+}
+
+/** «Hastayı aç»: the patient now (the summary above is the seal's moment). */
+function OpenPatient({ boardKey }) {
+  const { t } = useI18n();
+  if (!boardKey) return null;
+  return (
+    <a href={`#/patients/${encodeURIComponent(boardKey)}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-line2 bg-card px-[9px] py-[5px] text-12 font-semibold leading-[normal] text-ink hover:border-pri ${FOCUS_RING}`}>
+      {t("devir.openPatient")}
+    </a>
+  );
+}
+
+/** The prototype's handover card: the patient and, at the right, who hands over; then what is handed. */
+function Card({ head, meta, children }) {
+  return (
+    <li className="rounded-[14px] border border-line bg-card px-3.5 py-3">
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div className="min-w-0">{head}</div>
+        {meta}
+      </div>
+      <div className="grid gap-2">{children}</div>
+    </li>
   );
 }
 
@@ -239,22 +264,16 @@ function ToCountersignRow({ row, nowMs, busy, onCountersign }) {
   const { t } = useI18n();
   const p = patientOf(row);
   return (
-    <li className="grid gap-2.5 border-t border-line py-3 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1">
-          <PatientLine row={row} />
-          <Meta row={row} nowMs={nowMs} pill={false} />
-        </div>
-        <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onCountersign(row)}
+    <Card head={<PatientLine row={row} />} meta={<Meta row={row} nowMs={nowMs} pill={false} />}>
+      <SummaryView summary={row.summary} boardKey={p?.board_key} nowMs={nowMs} />
+      <NoteView note={row.note} />
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <Button variant="primary" size="sm" busy={busy} onClick={() => onCountersign(row)}
           aria-label={t("devir.countersignLabel", { subject: subjectOf(row) })}>
           {t("devir.countersign")}
         </Button>
       </div>
-      <div className="grid gap-2.5 min-[861px]:grid-cols-2">
-        <NoteView note={row.note} />
-        <SummaryView summary={row.summary} boardKey={p?.board_key} nowMs={nowMs} />
-      </div>
-    </li>
+    </Card>
   );
 }
 
@@ -267,21 +286,7 @@ function MineRow({ row, nowMs, board, busy, onSign }) {
   const signable = row.status === "OPEN" && !expired;
   const locked = signable && openCriticalOnBoard(board, p?.board_key) > 0;
   return (
-    <li className="grid gap-2 border-t border-line py-3 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1">
-          <PatientLine row={row} />
-          <Meta row={row} nowMs={nowMs} />
-        </div>
-        {signable ? (
-          <Button variant="primary" size="sm" icon="edit" busy={busy}
-            aria-disabled={locked ? "true" : undefined} aria-describedby={locked ? lockId : undefined}
-            aria-label={t("devir.signLabel", { subject: subjectOf(row) })}
-            onClick={() => { if (!locked) onSign(row); }}>
-            {t("devir.sign")}
-          </Button>
-        ) : null}
-      </div>
+    <Card head={<PatientLine row={row} />} meta={<Meta row={row} nowMs={nowMs} />}>
       {expired ? <p className="m-0 text-13 font-semibold text-att-ink">{t("devir.expiredOpen")}</p> : null}
       {locked ? (
         <Note icon="lock">
@@ -291,34 +296,49 @@ function MineRow({ row, nowMs, board, busy, onSign }) {
       ) : null}
       {/* A note the server already holds for an OPEN one is what «İmzala» will sign: she sees it first. */}
       {signable && noteValid(row.note) ? <NoteView note={row.note} /> : null}
-    </li>
+      {signable || p?.board_key ? (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {signable ? (
+            <Button variant="primary" size="sm" busy={busy}
+              aria-disabled={locked ? "true" : undefined} aria-describedby={locked ? lockId : undefined}
+              aria-label={t("devir.signLabel", { subject: subjectOf(row) })}
+              onClick={() => { if (!locked) onSign(row); }}>
+              {t("devir.sign")}
+            </Button>
+          ) : null}
+          <OpenPatient boardKey={p?.board_key} />
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
 /** Completed or expired, in the last 24 hours. */
 function RecentRow({ row, nowMs }) {
-  return (
-    <li className="grid gap-1 border-t border-line py-2.5 first:border-t-0 first:pt-0">
-      <PatientLine row={row} />
-      <Meta row={row} nowMs={nowMs} />
-    </li>
-  );
+  return <Card head={<PatientLine row={row} />} meta={<Meta row={row} nowMs={nowMs} />}>{null}</Card>;
 }
 
-/** One list under its own heading, named by it for a screen reader's landmarks. `items` null: not read yet.
- *  `sectionRef`: where the focus goes when a write took away the button it was on (it shows the ring, as Taburcu's
- *  list does). `note`: a line above the list. */
-function Section({ titleKey, icon, items, emptyKey, renderRow, sectionRef, note = null }) {
+/** One list under the prototype's .sec heading — the title at the left, how many at the right — named by
+ *  it for a screen reader's landmarks. `items` null: not read yet. `sectionRef`: where the focus goes when
+ *  a write took away the button it was on (it shows the ring, as Taburcu's list does). `note`: a line above
+ *  the list. */
+function Section({ titleKey, icon, items, emptyKey, renderRow, sectionRef, note = null, aside = null }) {
   const { t } = useI18n();
   const titleId = useId();
   let body;
   if (items === null) body = <p className="m-0 text-13 text-mute">{t("devir.loading")}</p>;
   else if (items.length === 0) body = <Empty icon={icon}>{t(emptyKey)}</Empty>;
-  else body = <ul className="m-0 list-none p-0">{items.map(renderRow)}</ul>;
+  else body = <ul className="m-0 flex list-none flex-col gap-3 p-0">{items.map(renderRow)}</ul>;
   return (
     <section ref={sectionRef} tabIndex={sectionRef ? -1 : undefined} aria-labelledby={titleId}
-      className={sectionRef ? `rounded-box ${FOCUS_RING}` : undefined}>
-      <Box title={<span id={titleId}>{t(titleKey)}</span>} icon={icon} level={2}>{note}{body}</Box>
+      className={`min-w-0 ${sectionRef ? `rounded-box ${FOCUS_RING}` : ""}`}>
+      <div className="mb-2.5 flex items-baseline justify-between gap-2">
+        <h2 id={titleId} className="m-0 font-display text-14 font-bold leading-[normal]">{t(titleKey)}</h2>
+        <small className="text-12 font-medium text-mute">
+          {aside ?? (Array.isArray(items) && items.length ? t("devir.patientCount", { count: items.length }) : null)}
+        </small>
+      </div>
+      {note}{body}
     </section>
   );
 }
@@ -392,13 +412,19 @@ export function DevirScreen() {
 
   const rowBusy = (row) => busyId === row.id;
   return (
-    <div className="flex min-h-0 max-w-[1000px] flex-col gap-3">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="m-0 font-display text-23 font-bold">{t("devir.title")}</h1>
-          <p className="m-0 text-13 text-mute">{t("devir.intro")}</p>
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* The prototype's .ph. */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("devir.title")}</h1>
+          <p className="m-0 mt-1 text-13 text-mute">{t("devir.intro")}</p>
         </div>
-        <Button variant="primary" icon="plus" onClick={() => setDialog({ handover: null })}>{t("devir.newHandover")}</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* A refresh by hand, and when the lists were read: nothing reads them on a timer (no rail badge, D9). */}
+          {readAt !== null ? <span className="text-12.5 text-mute">{t("devir.readAt", { time: dayStamp(readAt, nowMs) })}</span> : null}
+          {readAt !== null ? <Button busy={reading} onClick={reload}>{t("devir.refresh")}</Button> : null}
+          <Button variant="primary" icon="plus" onClick={() => setDialog({ handover: null })}>{t("devir.newHandover")}</Button>
+        </div>
       </div>
 
       {error ? (
@@ -408,17 +434,12 @@ export function DevirScreen() {
         </Alert>
       ) : null}
 
-      {/* A refresh by hand, and when the lists were read: nothing reads them on a timer (no rail badge, D9). */}
-      {readAt !== null ? (
-        <div className="flex flex-wrap items-center justify-end gap-2.5 text-12.5 text-mute">
-          <span>{t("devir.readAt", { time: dayStamp(readAt, nowMs) })}</span>
-          <Button size="sm" busy={reading} onClick={reload}>{t("devir.refresh")}</Button>
-        </div>
-      ) : null}
 
       {/* An unread list is not an empty one: after a failed first read there are no lists at all, only the alert. */}
       {phase === "failed" ? null : (
         <>
+          {/* The prototype's two columns: what waits for me at the left, what I handed over at the right. */}
+          <div className="mt-1 grid items-start gap-3 min-[1100px]:grid-cols-2">
           <Section
             titleKey="devir.toCountersignTitle" icon="clip" items={groups?.toCountersign ?? null} emptyKey="devir.toCountersignEmpty"
             sectionRef={toCountersignRef}
@@ -432,10 +453,15 @@ export function DevirScreen() {
               ? <Note tone="info" icon="eye" className="mb-2">{t("devir.boardNotLive")}</Note> : null}
             renderRow={(row) => <MineRow key={row.id} row={row} nowMs={nowMs} board={board} busy={rowBusy(row)} onSign={sign} />}
           />
+          </div>
           <Section
             titleKey="devir.recentTitle" icon="clock" items={groups?.recent ?? null} emptyKey="devir.recentEmpty"
             renderRow={(row) => <RecentRow key={row.id} row={row} nowMs={nowMs} />}
           />
+          {/* The prototype's legend for the note's letters. */}
+          <p className="m-0 text-12 text-mute">
+            {`${NOTE_PARTS.map((part) => t(`devir.part.${part}`).charAt(0)).join("-")}: ${NOTE_PARTS.map((part) => t(`devir.part.${part}`)).join(" · ")}`}
+          </p>
         </>
       )}
 
