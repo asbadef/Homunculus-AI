@@ -258,8 +258,26 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           </p>
         ) : null}
       </a>
-      {/* Everything the engine adds beyond the prototype's card — the alarms' own words, the NEWS2
-          caveats, the monitor's unvalidated strip, the shadow — kept one click away, never dropped. */}
+      {/* The bedside monitor, in sight on the card (owner, 2026-11-14): its unvalidated values and the
+          shadow's tag, after the card's link and outside it — what opening the patient reads out never
+          includes a monitor value, and nothing above (risk, alarms, NEWS2) reads it. */}
+      {monitor?.entry || patient?.shadow ? (
+        <div data-monitor-slot="" className="pb-2.5 pl-[18px] pr-3.5">
+          {monitor?.entry ? (
+            <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+              maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
+          ) : null}
+          {patient?.shadow ? (
+            <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
+              {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
+              <Tag tone="warn" className="!whitespace-normal">
+                {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
+              </Tag>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {/* What the engine adds beyond that — the alarms' own words, the NEWS2 caveats — one click away. */}
       <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5">
         <summary className={`flex cursor-pointer list-none items-center gap-1 rounded text-11.5 font-semibold text-mute hover:text-ink ${FOCUS_RING}`}>
           <Icon name="chevR" size={13} className="transition-transform group-open:rotate-90" />
@@ -287,22 +305,6 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           {open.length > 0 ? <p className="m-0 text-10.5 text-mute">{t("board.engineEnglish")}</p> : null}
           {/* G2-A2 (D10): the card's clock, so a stale input's age is the server's. */}
           <News2 news2={patient?.news2} nowMs={nowMs} />
-          {monitor?.entry || patient?.shadow ? (
-            <div data-monitor-slot="">
-              {monitor?.entry ? (
-                <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-                  maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
-              ) : null}
-              {patient?.shadow ? (
-                <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
-                  {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
-                  <Tag tone="warn" className="!whitespace-normal">
-                    {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
-                  </Tag>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </details>
     </li>
