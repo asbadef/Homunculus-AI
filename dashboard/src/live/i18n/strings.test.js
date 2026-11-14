@@ -75,6 +75,8 @@ const NEUTRAL = new Set([
 // is therefore reviewed and listed here, key by key; a new one fails until someone has checked it,
 // and an entry whose texts have since diverged fails until it is removed.
 const AZ_SAME_AS_TR = new Set([
+  "doluluk.legend.free", //  «Boş» — the same word in Azerbaijani
+  "doluluk.legend.occupied", // «Dolu» — the same word in Azerbaijani
   "gorevler.itemCount", //  «{n} iş» — "iş" (task) is the Azerbaijani word too
   "shell.new", //           «Yeni» (new) — the same word in Azerbaijani
   "beds.emptyBed", //       «Boş» — the same word in Azerbaijani

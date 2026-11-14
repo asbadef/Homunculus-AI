@@ -313,10 +313,11 @@ describe("DolulukScreen", () => {
 
   it("chooses one unit or all of them", async () => {
     await mountScreen(DOCTOR);
-    fireEvent.click(within(screen.getByRole("group", { name: "Şöbə" })).getByRole("button", { name: "Neonatal" }));
+    const chooser = screen.getByRole("combobox", { name: "Şöbə" });
+    fireEvent.change(chooser, { target: { value: [...chooser.options].find((o) => o.textContent === "Neonatal").value } });
     expect(screen.queryByRole("region", { name: "Reanimasiya · Otaq 1" })).toBeNull();
     expect(screen.getByRole("region", { name: "Neonatal · N-1" })).toBeTruthy();
-    fireEvent.click(within(screen.getByRole("group", { name: "Şöbə" })).getByRole("button", { name: "Hamısı" }));
+    fireEvent.change(chooser, { target: { value: "all" } });
     expect(screen.getByRole("region", { name: "Reanimasiya · Otaq 1" })).toBeTruthy();
   });
 

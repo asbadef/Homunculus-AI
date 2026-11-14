@@ -26,7 +26,8 @@ import { useSession } from "../../session/SessionProvider.jsx";
 import { useStructure } from "../../data/StructureProvider.jsx";
 import { BED_STATE_KEYS, UNIT_TYPE_KEYS, normId } from "../../data/structure.js";
 import { readErrorText } from "../../apiErrors.js";
-import { Alert, Announce, Box, Button, Empty, Seg, Tag, useToast } from "../../ui/index.js";
+import { Alert, Announce, Button, Empty, Icon, Tag, useToast } from "../../ui/index.js";
+import { ROUTES, canReach, screenOf } from "../../shell/routes.js";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { useNow } from "../common/useNow.js";
 import { msOf } from "../common/elapsed.js";
@@ -45,6 +46,34 @@ const EDGE = {
   RESERVED: "border-l-4 border-l-pri", BLOCKED: "border-l-4 border-l-line2", MAINTENANCE: "border-l-4 border-l-line2",
 };
 const COUNT_TONE = { free: "ok", cleaning: "warn" };
+// The tile's own fill, the prototype's small bed boxes (.oc-bed): the state's tint, the edge above
+// kept as the second signal and the tag as the words.
+const FILL = {
+  AVAILABLE: "bg-[color:color-mix(in_srgb,var(--ok)_9%,var(--card))]",
+  OCCUPIED: "bg-[color:color-mix(in_srgb,var(--crit)_7%,var(--card))]",
+  HOUSEKEEPING: "bg-att", PENDING_DISCHARGE: "bg-att", PENDING_TRANSFER_OUT: "bg-att",
+  RESERVED: "bg-[color:color-mix(in_srgb,var(--low)_10%,var(--card))]",
+  BLOCKED: "bg-card2", MAINTENANCE: "bg-card2",
+};
+// The prototype's four tiles over the board: free, cleaning, reserved, out of use — each the sum of the
+// units on screen (occupancy.js unitCounts), the hospital's own beds.
+const TILES = [
+  ["free", "bed", "doluluk.tile.free"], ["cleaning", "clock", "doluluk.tile.cleaning"],
+  ["reserved", "star", "doluluk.tile.reserved"], ["out", "x", "doluluk.tile.out"],
+];
+const TILE_LOOK = {
+  free: ["border-line bg-card", "bg-card2 text-ok"],
+  cleaning: ["border-att-line bg-att", "bg-att-ico text-att-ink"],
+  reserved: ["border-att-line bg-att", "bg-att-ico text-att-ink"],
+  out: ["border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)] bg-crit-soft", "bg-[color:color-mix(in_srgb,var(--crit)_18%,transparent)] text-crit"],
+};
+const LEGEND = [
+  ["doluluk.legend.free", "border-[color:var(--ok)] bg-[color:color-mix(in_srgb,var(--ok)_20%,transparent)]"],
+  ["doluluk.legend.occupied", "border-[color:var(--crit)] bg-[color:color-mix(in_srgb,var(--crit)_18%,transparent)]"],
+  ["doluluk.legend.cleaning", "border-att-line bg-att"],
+  ["doluluk.legend.out", "border-line2 bg-card2"],
+  ["doluluk.legend.reserved", "border-[color:var(--low)] bg-[color:color-mix(in_srgb,var(--low)_20%,transparent)]"],
+];
 const ICON = { admit: "userPlus", reserve: "clock", outOfService: "x", unreserve: "x", returnToService: "ok", release: "ok" };
 const COUNT_KEYS = ["free", "cleaning", "reserved", "outOfService", "maintenance"];
 const NO_NAMES = new Map();
@@ -201,13 +230,21 @@ export function DolulukScreen() {
   }
 
   const saying = working ? t("doluluk.working", { bed: working.subject }) : "";
-  const options = [{ value: "all", label: t("doluluk.all") }, ...units.map((u) => ({ value: u.id, label: u.name }))];
+  const totals = shown.reduce((sum, unit) => {
+    const c = unitCounts(unit);
+    return { free: sum.free + c.free, cleaning: sum.cleaning + c.cleaning, reserved: sum.reserved + c.reserved,
+      out: sum.out + c.outOfService + c.maintenance };
+  }, { free: 0, cleaning: 0, reserved: 0, out: 0 });
+  const kabulRoute = ROUTES.find((r) => r.id === "kabul");
+  const kabulHref = kabulRoute && screenOf(kabulRoute) && canReach(kabulRoute, perms) ? `#${kabulRoute.path}` : null;
 
   return (
-    <div className="flex min-h-0 max-w-[1200px] flex-col gap-3">
-      <div>
-        <h1 className="m-0 font-display text-23 font-bold">{t("doluluk.title")}</h1>
-        <p className="m-0 text-13 text-mute">{t("doluluk.sub")}</p>
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* The prototype's .ph: the title, its line, «Doluluğu yazdır» and «Hasta kabul» at the right. */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("doluluk.title")}</h1>
+        <p className="m-0 mt-1 text-13 text-mute">{t("doluluk.sub")}</p>
         {/* G2-B3a (§3): the last move's result, on the screen as well as on the toast. Mounted with
             its text — keyed on it, so a new result is a new line — and so the toast alone says it
             aloud (Alert.jsx: a region mounted with its text is not announced); it stays to be read
@@ -219,6 +256,30 @@ export function DolulukScreen() {
           </p>
         ) : null}
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button icon="print" onClick={() => window.print()}>{t("doluluk.print")}</Button>
+        {kabulHref ? (
+          <a href={kabulHref} className={`inline-flex h-[34px] items-center gap-1.5 rounded-[10px] bg-pri px-[13px] text-13 font-semibold leading-[normal] text-onpri hover:brightness-105 ${FOCUS_RING}`}>
+            <Icon name="userPlus" size={16} />{t("doluluk.admit")}
+          </a>
+        ) : null}
+      </div>
+      </div>
+      {structure !== null && units.length > 0 ? (
+        <div className="grid gap-3 min-[861px]:grid-cols-2 min-[1180px]:grid-cols-4">
+          {TILES.map(([key, icon, label]) => {
+            const n = totals[key];
+            const [box, ico] = n || key === "free" ? TILE_LOOK[key] : ["border-line bg-card", "bg-card2 text-mute"];
+            return (
+              <div key={key} data-tile={key} className={`grid min-w-0 grid-cols-[40px_minmax(0,1fr)] gap-x-3 gap-y-[3px] rounded-[14px] border px-[13px] py-3 ${box}`}>
+                <span className={`row-span-2 grid h-10 w-10 place-items-center rounded-[10px] ${ico}`}><Icon name={icon} size={20} /></span>
+                <b className="font-display text-[calc(24px*var(--fs))] font-bold leading-none text-ink">{n}</b>
+                <span className="min-w-0 text-12.5 text-mute">{t(label)}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {error ? (
         <div className="grid justify-items-start gap-2">
           <Alert tone="crit">{t("doluluk.readFailed", { reason: readErrorText(t, error) })}</Alert>
@@ -228,27 +289,56 @@ export function DolulukScreen() {
       {names.error ? <Alert tone="warn">{t("doluluk.namesFailed", { reason: readErrorText(t, names.error) })}</Alert> : null}
       {structure === null && !error ? <p role="status" className="m-0 text-13 text-mute">{t("doluluk.loading")}</p> : null}
       {structure !== null && units.length === 0 ? <Empty icon="bed">{t("doluluk.noUnits")}</Empty> : null}
-      {units.length > 1 ? <Seg label={t("doluluk.unitChooser")} options={options} value={chosen} onChange={setChosen} /> : null}
+      {units.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {units.length > 1 ? (
+            <label className="flex items-center gap-2">
+              <span className="sr-only">{t("doluluk.unitChooser")}</span>
+              {/* The options carry their place in the list, never a unit's UUID: no id is written into the page. */}
+              <select value={chosen === "all" ? "all" : String(units.findIndex((u) => u.id === chosen))}
+                onChange={(e) => setChosen(e.target.value === "all" ? "all" : units[Number(e.target.value)]?.id ?? "all")}
+                className={`h-10 min-w-[240px] rounded-xl border border-line bg-card px-3 text-14 text-ink ${FOCUS_RING}`}>
+                <option value="all">{t("doluluk.allUnits", { count: units.length })}</option>
+                {units.map((u, i) => <option key={u.id} value={String(i)}>{u.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {/* The prototype's legend: the state's colour beside its word. */}
+          <ul aria-label={t("doluluk.legendTitle")} className="m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-1 p-0 text-12.5 text-mute">
+            {LEGEND.map(([key, look]) => (
+              <li key={key} className="flex items-center gap-1.5"><i aria-hidden="true" className={`h-3 w-3 rounded-[3px] border ${look}`} />{t(key)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {shown.map((unit, unitIndex) => {
         const counts = unitCounts(unit);
         // G2-B3a (§3): the unit's type beside its name, in words — never the raw key.
         const typeKey = UNIT_TYPE_KEYS[unit.unit_type];
         return (
-          <Box key={unit.id} title={unit.is_active === false ? `${unit.name} · ${t("doluluk.unitClosed")}` : unit.name} icon="building" level={2}
-            right={typeKey ? <Tag>{t(typeKey)}</Tag> : null}>
-            <p className="m-0 mb-2 flex flex-wrap items-center gap-2 text-13">
-              <b className="font-data">{t("doluluk.occupied", { occupied: counts.occupied, usable: counts.usable })}</b>
-              {COUNT_KEYS.filter((key) => counts[key] > 0).map((key) => (
-                <Tag key={key} tone={COUNT_TONE[key] ?? "neutral"}>{t(`doluluk.counts.${key}`, { n: counts[key] })}</Tag>
-              ))}
-            </p>
-            {(unit.rooms ?? []).length === 0 ? <p className="m-0 text-13 text-mute">{t("doluluk.noRooms")}</p> : null}
+          // One block per unit — its .sec head across the top, its rooms as cards under it.
+          <div key={unit.id} className="grid grid-cols-[repeat(auto-fill,minmax(184px,1fr))] items-start gap-3">
+            <div className="col-span-full mt-[18px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              <h2 className="m-0 flex items-center gap-2 font-display text-14 font-bold leading-[normal]">
+                {unit.is_active === false ? `${unit.name} · ${t("doluluk.unitClosed")}` : unit.name}
+              </h2>
+              {typeKey ? <span className="rounded-full bg-card2 px-2 py-[3px] text-11.5 font-semibold leading-[normal] text-mute">{t(typeKey)}</span> : null}
+              <p className="m-0 ml-auto flex flex-wrap items-center gap-1.5 text-12 font-medium text-mute">
+                <span>{t("doluluk.occupied", { occupied: counts.occupied, usable: counts.usable })}</span>
+                {COUNT_KEYS.filter((key) => counts[key] > 0).map((key) => (
+                  <Tag key={key} tone={COUNT_TONE[key] ?? "neutral"}>{t(`doluluk.counts.${key}`, { n: counts[key] })}</Tag>
+                ))}
+              </p>
+            </div>
+            {(unit.rooms ?? []).length === 0 ? <p className="col-span-full m-0 text-13 text-mute">{t("doluluk.noRooms")}</p> : null}
             {(unit.rooms ?? []).map((room, roomIndex) => {
               // The landmark is named "unit · room": two units may each have an "Otaq 1".
               const headingId = `${uid}-room-${unitIndex}-${roomIndex}`;
+              const many = (room.beds ?? []).length > 1;
               return (
-                <section key={room.id} aria-labelledby={headingId} className="mb-2.5 last:mb-0">
-                  <h3 className="m-0 mb-1 flex items-center gap-2 text-12.5 font-semibold text-mute">
+                <section key={room.id} aria-labelledby={headingId}
+                  className={`rounded-[14px] border border-line bg-card px-2 pb-2 pt-2.5 ${many ? "[grid-column:span_1]" : ""}`}>
+                  <h3 className="m-0 mb-1.5 flex items-center gap-2 px-0.5 text-11 font-bold uppercase leading-[normal] tracking-[.06em] text-mute">
                     <span id={headingId}>
                       <span className="sr-only">{unit.name} · </span>
                       {room.name}{room.is_active === false ? ` · ${t("doluluk.roomClosed")}` : ""}
@@ -256,12 +346,12 @@ export function DolulukScreen() {
                     {room.is_isolation ? <Tag tone="warn">{t("doluluk.isolation")}</Tag> : null}
                   </h3>
                   {(room.beds ?? []).length === 0 ? <p className="m-0 text-13 text-mute">{t("doluluk.noBeds")}</p> : (
-                    <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 p-0">
+                    <ul className={`m-0 grid list-none gap-1.5 p-0 ${many ? "grid-cols-2" : "grid-cols-1"}`}>
                       {(room.beds ?? []).map((raw) => {
                         const bed = withOpen(unit, room, raw);
                         const subject = `${bed.label} · ${room.name} · ${unit.name}`;
                         // By the state the structure shows, never the names read's (M-2).
-                        const shown = shownOf(bed, names.byBed.get(normId(bed.id)));
+                        const shownBed = shownOf(bed, names.byBed.get(normId(bed.id)));
                         const since = bed.open ? sinceKey(msOf(bed.state_since), now) : null;
                         const held = working !== null && working.id !== bed.id;
                         const actions = actionsFor(bed, perms);
@@ -269,19 +359,21 @@ export function DolulukScreen() {
                         return (
                           <li key={bed.id} tabIndex={-1}
                             ref={(el) => { if (el) tiles.current.set(bed.id, el); else tiles.current.delete(bed.id); }}
-                            className={`grid gap-1.5 rounded-ctl border border-line bg-card px-2.5 py-2 ${bed.open ? EDGE[bed.state] ?? "" : "opacity-70"} ${FOCUS_RING}`}>
-                            <span className="flex items-center justify-between gap-2">
-                              <b className="font-data text-15">{bed.label}</b>
+                            className={`group relative grid min-w-0 gap-0.5 rounded-[10px] border border-line px-2 py-1.5 ${bed.open ? `${EDGE[bed.state] ?? ""} ${FILL[bed.state] ?? "bg-card"}` : "bg-card2 opacity-70"} ${FOCUS_RING}`}>
+                            <span className="flex min-w-0 items-center justify-between gap-1">
+                              <b className="truncate font-data text-12.5 font-bold text-ink">{bed.label}</b>
                               <Tag tone={bed.open ? TONE[bed.state] ?? "neutral" : "neutral"}>{stateText}</Tag>
                             </span>
-                            {since ? <span className="text-12 text-mute">{t(since.key, since.vars)}</span> : null}
-                            {shown.name ? <span className="text-14 font-semibold">{shown.name}</span> : null}
-                            {shown.reason ? <span className="text-12.5">{t(`doluluk.reason.${shown.reason}`)}</span> : null}
-                            {shown.note ? <span className="text-12.5 text-mute">{shown.note}</span> : null}
+                            {shownBed.name ? <span className="truncate text-11.5 font-semibold text-ink">{shownBed.name}</span> : null}
+                            {since ? <span className="truncate text-11 text-mute">{t(since.key, since.vars)}</span> : null}
+                            {shownBed.reason ? <span className="text-11.5">{t(`doluluk.reason.${shownBed.reason}`)}</span> : null}
+                            {shownBed.note ? <span className="truncate text-11.5 text-mute">{shownBed.note}</span> : null}
                             {actions.length > 0 ? (
-                              <span className="flex flex-wrap gap-1.5">
+                              // The moves open from the tile — on the pointer, or the keyboard's focus inside it —
+                              // as a small card under it (the prototype's bed menu). Always in the document.
+                              <span className="absolute left-0 top-[calc(100%+4px)] z-20 hidden min-w-full flex-col gap-1 rounded-[10px] border border-line2 bg-card p-1.5 shadow-pop group-focus-within:flex group-hover:flex">
                                 {actions.map((action) => (
-                                  <Button key={action} size="sm" icon={ICON[action]} busy={working?.id === bed.id}
+                                  <Button key={action} size="sm" icon={ICON[action]} busy={working?.id === bed.id} className="justify-start"
                                     aria-label={`${t(`doluluk.action.${action}`)}: ${subject}`}
                                     aria-disabled={held ? "true" : undefined} aria-describedby={held ? heldId : undefined}
                                     onClick={() => press(unit, bed, subject, action)}>
@@ -298,7 +390,7 @@ export function DolulukScreen() {
                 </section>
               );
             })}
-          </Box>
+          </div>
         );
       })}
       {working !== null ? <span id={heldId} className="sr-only">{saying}</span> : null}
