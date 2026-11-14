@@ -41,11 +41,12 @@ import { SEVERITY_ORDER } from "../../data/boardStore.js";
 import { isSnoozed, maySnooze } from "../../data/snooze.js";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { apiErrorText } from "../../apiErrors.js";
-import { Alert, Announce, Box, Button, Empty, Note, RiskPill, Seg, StatusPill, useToast } from "../../ui/index.js";
+import { Alert, Announce, Box, Button, Empty, Icon, Note, RiskPill, Seg, StatusPill, riskStyle, useToast } from "../../ui/index.js";
+import { useUnitNames } from "../../data/StructureProvider.jsx";
 import { FOCUS_RING } from "../../ui/focus.js";
 import { hhmm } from "../../i18n/dates.js";
 import {
-  BoardStrip, ChronicExpected, ScopeNote, boardKnown, boardStale, pillRisk, summaryOf, useBoardNow,
+  BoardStrip, ChronicExpected, ScopeNote, boardKnown, boardStale, pillRisk, railOf, summaryOf, useBoardNow,
 } from "../common/BoardState.jsx";
 import { elapsed } from "../common/elapsed.js";
 import { RrtCallDialog } from "../rrt/RrtCallDialog.jsx";
@@ -82,7 +83,21 @@ function worstFirst(a, b) {
     || oldestFirst(a, b);
 }
 
-function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, onSnooze, critNote }) {
+/** The severity's colour as text and as the card's bar — the prototype's `--r` on .card. An unknown
+ *  severity takes the attention colour, never a quiet one (riskStyle's rule). */
+const SEV_TEXT = Object.freeze({ crit: "text-crit", high: "text-high-ink", mid: "text-mid-ink", low: "text-low-ink", att: "text-att-ink", neutral: "text-mute" });
+
+/** A small pill of the row's meta line (the prototype's .pill). */
+function Pill({ tone = "neutral", icon, children, ...rest }) {
+  const look = tone === "att" ? "bg-att text-att-ink" : tone === "crit" ? "bg-crit-soft text-crit-ink" : "bg-card2 text-mute";
+  return (
+    <span {...rest} className={`inline-flex items-center gap-[5px] rounded-full px-2 py-[3px] text-11.5 font-semibold leading-[normal] ${look}`}>
+      {icon ? <Icon name={icon} size={12} /> : null}{children}
+    </span>
+  );
+}
+
+function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, onSnooze, critNote, patient, unitName }) {
   const { t } = useI18n();
   const age = elapsed(alarm.firstSeenAtMs, nowMs);
   const bed = alarm.bedLabel || alarm.patientId;
@@ -94,42 +109,48 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, on
   const call = alarm.rrtCall;
   // Said only while the snooze runs, by this screen's clock: once `until` has passed the alarm waits again.
   const snooze = isSnoozed(alarm, nowMs) ? alarm.snooze : null;
+  const tone = riskStyle(pillRisk(alarm.severity), { measured: true }).tone;
+  const name = patient?.display_name || null;
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-t border-line px-3 py-2.5 first:border-t-0 max-[640px]:grid-cols-[auto_minmax(0,1fr)]">
-      <RiskPill risk={pillRisk(alarm.severity)} measured />
+    // The prototype's alarm card: the age large in the severity's colour, a 4 px bar, the patient and
+    // what fired, the actions at the right.
+    <li className="grid grid-cols-[70px_4px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-card px-3.5 py-3 max-[640px]:grid-cols-[56px_4px_minmax(0,1fr)]">
+      <span className={`font-data text-16 font-bold leading-[normal] ${SEV_TEXT[tone] ?? SEV_TEXT.att}`}>
+        {age === null ? "—" : (<><span className="sr-only">{`${t("alarms.elapsed")}: `}</span>{age}</>)}
+      </span>
+      <span aria-hidden="true" className={`h-full min-h-[44px] w-1 rounded-sm ${railOf(tone)}`} />
       <div className="min-w-0">
-        <a
-          href={`#/patients/${encodeURIComponent(alarm.patientId ?? "")}`}
-          aria-label={t("alarms.openPatient", { bed })}
-          className={`rounded-md font-data text-13.5 font-bold text-ink ${FOCUS_RING}`}
-        >
-          {bed}
-        </a>
+        <p className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <a
+            href={`#/patients/${encodeURIComponent(alarm.patientId ?? "")}`}
+            aria-label={t("alarms.openPatient", { bed })}
+            className={`rounded-md text-14.5 font-bold text-ink hover:underline ${FOCUS_RING}`}
+          >
+            {bed}{name ? ` · ${name}` : ""}
+          </a>
+          <span className="sr-only">{" · "}</span>
+          <RiskPill risk={pillRisk(alarm.severity)} measured />
+          {patient?.unitId ? <Pill>{unitName(patient.unitId)}</Pill> : null}
+        </p>
         {/* The engine writes its summaries in English (reco/engine.py); marked so a screen reader
             pronounces them as English. The screen says once, below, that they are. */}
-        <p lang="en" className="m-0 text-13 text-ink">{summaryOf(alarm) ?? t("board.findingUnnamed")}</p>
-        <p className="m-0 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-11.5 text-mute">
-          {age === null ? (
-            <span>{t("alarms.noElapsed")}</span>
-          ) : (
-            <span>
-              <span className="sr-only">{`${t("alarms.elapsed")}: `}</span>
-              <b className="font-data text-12.5 text-ink">{age}</b>
-            </span>
-          )}
-          {Number.isFinite(alarm.firstSeenAtMs) ? <span className="font-data">{hhmm(alarm.firstSeenAtMs)}</span> : null}
-          {alarm.escalated ? <StatusPill tone="att" icon="alert">{t("board.escalated")}</StatusPill> : null}
+        <p lang="en" className="m-0 mt-0.5 text-13 text-mute">{summaryOf(alarm) ?? t("board.findingUnnamed")}</p>
+        <p className="m-0 mt-1.5 flex flex-wrap items-center gap-1 text-11.5 text-mute">
+          {age === null ? <Pill>{t("alarms.noElapsed")}</Pill> : null}
+          {Number.isFinite(alarm.firstSeenAtMs) ? <Pill icon="clock"><span className="font-data">{hhmm(alarm.firstSeenAtMs)}</span></Pill> : null}
+          {/* The engine's one escalation fact (see the head of this file): not the prototype's ladder. */}
+          {alarm.escalated ? <Pill tone="crit" icon="alert">{t("board.escalated")}</Pill> : null}
           {/* G2-B5 (D8): the open call to the rapid-response team — who called it, and when. */}
           {call ? (
-            <StatusPill tone="att" icon="zap">
+            <Pill tone="att" icon="zap">
               {t("rrt.called", { by: call.by || "—", time: Number.isFinite(call.atMs) ? hhmm(call.atMs) : "—" })}
-            </StatusPill>
+            </Pill>
           ) : null}
           {/* G2-B5b (spec §2): until when, by whom and why. */}
           {snooze ? (
-            <span data-snooze="">
+            <Pill data-snooze="" icon="clock">
               {t("ertele.snoozedRow", { until: hhmm(snooze.untilMs), by: snooze.by || "—", reason: snoozeReasonText(t, snooze) })}
-            </span>
+            </Pill>
           ) : null}
           {/* G2-A1 (O17): a critical whose condition passed before anyone acknowledged it stays
               here, waiting, until someone does. Its sound has stopped (signals.js); the badge and
@@ -144,30 +165,17 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, on
           {/* Visible, and marked as the engine's own explanation — but NOT in the counts that mean
               "someone must answer this" (boardStore `needsAnswer`). */}
           <ChronicExpected alarm={alarm} />
-          {alarm.ackBy ? <span>{t("alarms.seenBy", { who: alarm.ackBy })}</span> : null}
-          {Number.isFinite(alarm.ackAtMs) ? <span className="font-data">{hhmm(alarm.ackAtMs)}</span> : null}
+          {alarm.ackBy ? <Pill>{t("alarms.seenBy", { who: alarm.ackBy })}{Number.isFinite(alarm.ackAtMs) ? <span className="font-data">{` · ${hhmm(alarm.ackAtMs)}`}</span> : null}</Pill> : null}
         </p>
       </div>
       {ackable || callable || snoozable || critNote ? (
-        <div className="flex flex-wrap items-start justify-end gap-2">
-          {/* G2-B5b (spec D4): «Kritik alarm ertelenemez», once on the screen, where «Ertele» would be. */}
-          {critNote ? <span className="self-center text-11.5 text-mute">{t("ertele.criticalNever")}</span> : null}
-          {/* Named like «Gördüm»: the words the row shows, then the bed and the kind it is for. */}
-          {snoozable ? (
-            <Button size="sm" icon="clock" onClick={() => onSnooze(alarm)}
-              aria-label={t("ertele.snoozeLabel", { bed, kind: alarm.kind })}>
-              {t("ertele.snooze")}
-            </Button>
-          ) : null}
-          {callable ? (
-            <Button size="sm" icon="zap" onClick={() => onCall(alarm)}
-              aria-label={t("rrt.callLabel", { bed, kind: alarm.kind })}>
-              {t("rrt.call")}
-            </Button>
-          ) : null}
+        <div className="flex flex-wrap items-center justify-end gap-1.5 max-[640px]:col-span-3">
+          {/* The prototype's order: «Gördüm» · «Ertele» · «Eskale» — here «RRT çağır», the live
+              system's way to escalate by hand (G2-B5). Named like the row: the words, then the bed
+              and the kind it is for. */}
           {ackable ? (
             <>
-              <Button variant="primary" size="sm" icon="ok" busy={busy} onClick={() => onAck(alarm)}
+              <Button variant="primary" size="sm" busy={busy} onClick={() => onAck(alarm)}
                 aria-label={t("alarms.ackLabel", { bed, kind: alarm.kind })}>
                 {t("alarms.seen")}
               </Button>
@@ -175,6 +183,20 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, on
                   (Wave 1B's note for G1-10's first use of `busy`). */}
               <Announce text={busy ? t("alarms.seeing") : ""} />
             </>
+          ) : null}
+          {snoozable ? (
+            <Button size="sm" onClick={() => onSnooze(alarm)}
+              aria-label={t("ertele.snoozeLabel", { bed, kind: alarm.kind })}>
+              {t("ertele.snooze")}
+            </Button>
+          ) : null}
+          {/* G2-B5b (spec D4): «Kritik alarm ertelenemez», once on the screen, where «Ertele» would be. */}
+          {critNote ? <span className="text-11.5 text-mute">{t("ertele.criticalNever")}</span> : null}
+          {callable ? (
+            <Button variant="danger" size="sm" onClick={() => onCall(alarm)}
+              aria-label={t("rrt.callLabel", { bed, kind: alarm.kind })}>
+              {t("rrt.call")}
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -184,30 +206,31 @@ function Row({ alarm, nowMs, canAck, onAck, busy, canCall, onCall, canSnooze, on
 
 /** `sectionRef`: where the focus goes when a write took away the button it was on (DevirScreen's rule): the list is
  *  then focusable, named by its heading, and shows the ring. */
-function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, canSnooze = false, onSnooze, critNoteId = null, counted, level = 2, sectionRef }) {
+function Section({ titleKey, emptyKey, alarms, nowMs, canAck, onAck, busyId, canCall, onCall, canSnooze = false, onSnooze, critNoteId = null, counted, level = 2, sectionRef, patientOf, unitName }) {
   const { t } = useI18n();
   const Heading = `h${level}`;
   const titleId = useId();
   return (
     <section ref={sectionRef} tabIndex={sectionRef ? -1 : undefined} aria-labelledby={sectionRef ? titleId : undefined}
-      className={`grid gap-2 ${sectionRef ? `rounded-box ${FOCUS_RING}` : ""}`}>
-      <Heading id={titleId} className="m-0 flex items-center gap-2 font-text text-11 font-bold uppercase leading-[normal] tracking-[.08em] text-mute">
+      className={sectionRef ? `rounded-box ${FOCUS_RING}` : ""}>
+      {/* The prototype's .sec: 14 px, 18 px above and 10 px below. */}
+      <Heading id={titleId} className="m-0 mb-2.5 mt-[18px] flex items-center gap-2 font-display text-14 font-bold leading-[normal] text-ink">
         {t(titleKey)}
         {/* `counted` is `known || stale`, and these are the two largest numbers on the screen. On
             an unreadable board `refresh()` has emptied it, so an ungated `alarms.length` printed
             a bold 0 beside "waiting for a response" — inches from a group label that correctly
             said it could not know. A STALE number is defensible and the bell already shows one;
             a zero the board cannot know is not. */}
-        {counted ? <span className="font-data text-12 text-ink">{alarms.length}</span> : null}
+        {counted ? <span className="rounded-full bg-card2 px-2 py-[3px] font-data text-11.5 font-semibold text-mute">{alarms.length}</span> : null}
       </Heading>
       {alarms.length === 0 ? (
         <Empty icon="bell">{t(emptyKey)}</Empty>
       ) : (
-        <ul className="m-0 list-none rounded-box border border-line bg-card p-0">
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {alarms.map((a) => (
             <Row key={a.id} alarm={a} nowMs={nowMs} canAck={canAck} onAck={onAck} busy={busyId === a.id}
               canCall={canCall} onCall={onCall} canSnooze={canSnooze} onSnooze={onSnooze}
-              critNote={critNoteId === a.id} />
+              critNote={critNoteId === a.id} patient={patientOf(a.patientId)} unitName={unitName} />
           ))}
         </ul>
       )}
@@ -236,6 +259,10 @@ export function AlarmsScreen() {
     if (active && active !== document.body) return;
     snoozedRef.current?.focus();
   }, [refocus]);
+  // The card names the patient and the unit as the prototype does: from the board's own cards.
+  const byId = useMemo(() => new Map((board.patients ?? []).map((p) => [p.patient_id, p])), [board.patients]);
+  const patientOf = (id) => byId.get(id) ?? null;
+  const unitName = useUnitNames((board.patients ?? []).map((p) => p.unitId).filter(Boolean)).nameOf;
   const canAck = user?.perms?.includes("alerts.ack") ?? false;
   const canCall = user?.perms?.includes("alerts.escalate") ?? false;
   const known = boardKnown(board.connection);
@@ -306,20 +333,19 @@ export function AlarmsScreen() {
   }
 
   return (
-    <div className="flex min-h-0 max-w-[1000px] flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="m-0 font-display text-23 font-bold">{t("nav.alarms")}</h1>
-          <p className="m-0 text-13 text-mute">{t("alarms.sub")}</p>
-        </div>
-        {/* No number unless the board is LIVE. This was the one count on the screen with no
-            `known` guard: it read "Açıq · 0" beside the crit alert saying the board could not be
-            read at all — and zero is the most reassuring thing this screen can print. */}
-        <Seg label={known ? t("alarms.openCount", { count: openTotal }) : t("alarms.openUnknown")} value={only} onChange={setOnly} options={[
-          { value: "all", label: t("alarms.all") },
-          { value: "crit", label: t("alarms.criticalOnly"), icon: "alert" },
-        ]} />
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* The prototype's .ph, then its filter under it. */}
+      <div>
+        <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("nav.alarms")}</h1>
+        <p className="m-0 mt-1 text-13 text-mute">{t("alarms.sub")}</p>
       </div>
+      {/* No number unless the board is LIVE. This was the one count on the screen with no
+          `known` guard: it read "Açıq · 0" beside the crit alert saying the board could not be
+          read at all — and zero is the most reassuring thing this screen can print. */}
+      <Seg className="self-start" label={known ? t("alarms.openCount", { count: openTotal }) : t("alarms.openUnknown")} value={only} onChange={setOnly} options={[
+        { value: "all", label: known ? t("alarms.allCount", { count: openTotal }) : t("alarms.all") },
+        { value: "crit", label: t("alarms.criticalOnly") },
+      ]} />
 
       <BoardStrip connection={board.connection} />
       <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
@@ -335,7 +361,7 @@ export function AlarmsScreen() {
         alarms={waiting} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
         canCall={canCall} onCall={setCallFor}
         canSnooze={canAck} onSnooze={setSnoozeFor} critNoteId={critNoteId}
-        counted={known || stale}
+        counted={known || stale} patientOf={patientOf} unitName={unitName}
       />
       {/* G2-B5b (spec D4): «Ertelenenler», only while one is snoozed, the soonest back first. Each can still be
           answered, called or snoozed again. */}
@@ -345,14 +371,14 @@ export function AlarmsScreen() {
           alarms={snoozed} nowMs={nowMs} canAck={canAck} onAck={acknowledge} busyId={busyId}
           canCall={canCall} onCall={setCallFor}
           canSnooze={canAck} onSnooze={setSnoozeFor}
-          counted={known || stale}
+          counted={known || stale} patientOf={patientOf} unitName={unitName}
         />
       ) : null}
       <Section
         titleKey="alarms.reviewing" emptyKey={emptyKey("alarms.emptyReviewing")}
         alarms={reviewing} nowMs={nowMs} canAck={false} onAck={acknowledge} busyId={busyId}
         canCall={false} onCall={setCallFor}
-        counted={known || stale}
+        counted={known || stale} patientOf={patientOf} unitName={unitName}
       />
       <RrtCallDialog alarm={callFor} open={callFor !== null} onClose={() => setCallFor(null)} />
       <SnoozeDialog alarm={snoozeFor} open={snoozeFor !== null} onClose={() => setSnoozeFor(null)}

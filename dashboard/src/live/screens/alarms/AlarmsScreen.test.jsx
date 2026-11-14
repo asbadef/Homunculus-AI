@@ -120,7 +120,8 @@ describe("the alarms screen", () => {
       });
       const waiting = screen.getByRole("heading", { level: 2, name: /Cavab gözləyir/ }).parentElement;
       expect(within(waiting).getAllByRole("link").map((a) => a.textContent))
-        .toEqual(["REA-01 · 2", "REA-01 · 2", "REA-01 · 2"]);
+        // «bed · name», the prototype's card title (the name is the board card's own)
+        .toEqual(["REA-01 · 2 · Ayşe Sentetik", "REA-01 · 2 · Ayşe Sentetik", "REA-01 · 2 · Ayşe Sentetik"]);
       expect(within(waiting).getAllByText(/ölçütü karşılandı/).map((p) => p.textContent))
         .toEqual(["c ölçütü karşılandı", "b ölçütü karşılandı", "a ölçütü karşılandı"]);
     });
