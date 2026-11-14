@@ -5,20 +5,33 @@
 // the same items; nothing here scores or decides — the server says the state, the screen paints it.
 import React, { useMemo, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
-import { hhmm } from "../../i18n/dates.js";
+import { ddmm, hhmm } from "../../i18n/dates.js";
 import { useBoard } from "../../data/BoardProvider.jsx";
 import { useSession } from "../../session/SessionProvider.jsx";
 import { readErrorText } from "../../apiErrors.js";
-import { Alert, Button, Note, Seg } from "../../ui/index.js";
+import { Alert, Button, Icon, Note, Seg } from "../../ui/index.js";
+import { FOCUS_RING } from "../../ui/focus.js";
 import { BoardStrip, ScopeNote, useBoardNow } from "../common/BoardState.jsx";
 import { orderBeds } from "../beds/order.js";
 import { counters, items, keep, myRole } from "./taskModel.js";
 import { useTasks } from "./useTasks.js";
-import { TaskGrid } from "./TaskGrid.jsx";
+import { TaskGrid, scrollToNow } from "./TaskGrid.jsx";
 import { TaskList } from "./TaskList.jsx";
 import { NewTaskDialog, TaskDialog, VitalDialog } from "./TaskDialogs.jsx";
 
 const NARROW_PX = 900;
+
+// The prototype's four counters (.att.tkAtt): an icon in a tinted square, the number 24 px. Late is
+// red while there is one; «now» wears the brand's tint; done the green tick.
+const COUNTERS = [
+  ["late", "alert", "counterLateTile"], ["due", "clock", "counterDueTile"], ["plan", "list", "counterPlan"], ["done", "ok", "counterDone"],
+];
+const LOOK = {
+  late: (n) => (n ? ["border-[color:color-mix(in_srgb,var(--crit)_45%,transparent)] bg-crit-soft", "bg-[color:color-mix(in_srgb,var(--crit)_18%,transparent)] text-crit"] : ["border-line bg-card", "bg-card2 text-ok"]),
+  due: (n) => (n ? ["border-[color:color-mix(in_srgb,var(--pri)_40%,transparent)] bg-pri-soft", "bg-pri-soft text-pri"] : ["border-line bg-card", "bg-card2 text-mute"]),
+  plan: () => ["border-line bg-card", "bg-card2 text-mute"],
+  done: () => ["border-line bg-card", "bg-card2 text-ok"],
+};
 
 export function GorevlerScreen() {
   const { t } = useI18n();
@@ -50,13 +63,18 @@ export function GorevlerScreen() {
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      {/* The prototype's .ph: «Name · bu nöbet 14.11 08:00 → 15.11 08:00 · 22 hasta», the tools at the right. */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 font-display text-23 font-bold">{t("gorevler.title")}</h1>
-          <p className="m-0 text-13 text-mute">{t("gorevler.intro")}</p>
-          {data ? <p className="m-0 mt-1 text-13 text-ink">{t("gorevler.shift", { start: hhmm(shiftStartMs), end: hhmm(shiftEndMs), count: patients.length })}</p> : null}
+          <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("gorevler.title")}</h1>
+          <p className="m-0 mt-1 text-13 text-mute">
+            {user?.fullName ? `${user.fullName} · ` : ""}{t("gorevler.thisShift")}{" "}
+            {data ? <b className="font-data font-bold">{`${ddmm(shiftStartMs)} ${hhmm(shiftStartMs)} → ${ddmm(shiftEndMs)} ${hhmm(shiftEndMs)}`}</b> : "—"}
+            {` · ${t("gorevler.patientCount", { count: patients.length })}`}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button icon="print" onClick={() => window.print()}>{t("gorevler.print")}</Button>
           <Seg label={t("gorevler.modeLabel")} value={mode} onChange={setMode}
             options={[{ value: "grid", label: t("gorevler.modeGrid") }, { value: "list", label: t("gorevler.modeList") }]} />
           {canManage ? <Button variant="primary" icon="plus" onClick={() => setDialog({ kind: "new" })}>{t("gorevler.newTask")}</Button> : null}
@@ -66,24 +84,36 @@ export function GorevlerScreen() {
       <ScopeNote scope={board.scope} scopeNote={board.scopeNote} />
       {error ? <Alert tone="crit"><p className="m-0">{t("gorevler.readFailed", { reason: readErrorText(t, error) })}</p></Alert> : null}
       {!canManage ? <Note tone="info" icon="lock">{t("gorevler.readOnly")}</Note> : null}
-      <div className="grid grid-cols-2 gap-2 min-[640px]:grid-cols-4">
-        {[["late", "counterLate", "text-crit"], ["due", "counterDue", "text-pri"], ["plan", "counterPlan", "text-mute"], ["done", "counterDone", "text-ok"]].map(([k, label, cls]) => (
-          <div key={k} className="rounded-box border border-line bg-card px-3 py-2">
-            <b data-testid={`counter-${k}`} className={`block font-data text-23 ${cls}`}>{count[k]}</b>
-            <span className="text-12 text-mute">{t(`gorevler.${label}`)}</span>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-3 min-[861px]:grid-cols-4">
+        {COUNTERS.map(([k, icon, label]) => {
+          const [box, ico] = LOOK[k](count[k]);
+          const body = (
+            <>
+              <span className={`row-span-2 grid h-10 w-10 place-items-center rounded-[10px] ${ico}`}><Icon name={icon} size={20} /></span>
+              <b data-testid={`counter-${k}`} className="font-display text-[calc(24px*var(--fs))] font-bold leading-none text-ink">{count[k]}</b>
+              <span className="min-w-0 text-12.5 text-mute">{t(`gorevler.${label}`)}</span>
+            </>
+          );
+          const cls = `grid min-w-0 grid-cols-[40px_minmax(0,1fr)] gap-x-3 gap-y-[3px] rounded-[14px] border px-[13px] py-3 text-left ${box}`;
+          // «Geciken · yalnız bunları göster»: the late counter is the late filter, as in the prototype.
+          return k === "late" ? (
+            <button key={k} type="button" aria-pressed={filters.onlyLate} onClick={() => set({ onlyLate: !filters.onlyLate })}
+              className={`${cls} transition-transform duration-150 hover:-translate-y-px ${FOCUS_RING}`}>{body}</button>
+          ) : <div key={k} className={cls}>{body}</div>;
+        })}
       </div>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Seg label={t("gorevler.kindLabel")} value={filters.kind} onChange={(kind) => set({ kind })}
           options={[{ value: "all", label: t("gorevler.kindAll") }, { value: "vital", label: t("gorevler.kindVital") }, { value: "hand", label: t("gorevler.kindHand") }]} />
-        <label className="flex items-center gap-2 text-13"><input type="checkbox" checked={filters.onlyLate} onChange={(e) => set({ onlyLate: e.target.checked })} />{t("gorevler.onlyLate")}</label>
+        <label className="flex items-center gap-2.5 text-13 font-semibold"><input type="checkbox" className="h-[22px] w-[22px] accent-[var(--pri)]" checked={filters.onlyLate} onChange={(e) => set({ onlyLate: e.target.checked })} />{t("gorevler.onlyLate")}</label>
         {role ? <label className="flex items-center gap-2 text-13"><input type="checkbox" checked={filters.onlyMine} onChange={(e) => set({ onlyMine: e.target.checked })} />{t("gorevler.onlyMine")}</label> : null}
+        {mode === "grid" ? <Button variant="ghost" size="sm" icon="clock" onClick={scrollToNow}>{t("gorevler.gotoNow")}</Button> : null}
       </div>
       {patients.length === 0 ? <Note tone="info" icon="bed">{t("gorevler.noPatients")}</Note>
         : mode === "grid"
           ? <TaskGrid patients={patients} items={shown} shiftStartMs={shiftStartMs} nowMs={nowMs} onOpen={openItem} />
           : <TaskList patients={patients} items={shown} nowMs={nowMs} onOpen={openItem} />}
+      <p className="m-0 text-11.5 text-mute">{t("gorevler.intro")}</p>
       {dialog?.kind === "new" ? <NewTaskDialog patients={patients} nowMs={nowMs} write={write} onClose={() => setDialog(null)} /> : null}
       {dialog?.kind === "hand" ? <TaskDialog item={liveItem} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} write={write} onClose={() => setDialog(null)} /> : null}
       {dialog?.kind === "vital" ? <VitalDialog item={liveItem} patient={patients.find((p) => p.patient_id === dialog.patientId)} nowMs={nowMs} canManage={canManage} canChart={canChart} write={write} refresh={refresh} onClose={() => setDialog(null)} /> : null}

@@ -56,7 +56,8 @@ describe("the task screen", () => {
     const m = await open();
     expect(screen.getByRole("heading", { level: 1, name: "Tapşırıqlarım" })).toBeInTheDocument();
     expect(m.api.tasks).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/^Növbə .* · 2 xəstə$/)).toBeInTheDocument();
+    // the prototype's head line: «… · bu növbə dd.mm hh:mm → dd.mm hh:mm · 2 xəstə»
+    expect(screen.getByRole("heading", { level: 1 }).nextElementSibling).toHaveTextContent(/bu növbə \d\d\.\d\d \d\d:\d\d → \d\d\.\d\d \d\d:\d\d · 2 xəstə$/);
     expect(screen.getByTestId("counter-late")).toHaveTextContent("1");
     expect(screen.getByTestId("counter-done")).toHaveTextContent("1");
     expect(screen.getByTestId("counter-plan")).toHaveTextContent("1");
