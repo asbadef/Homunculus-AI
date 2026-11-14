@@ -21,6 +21,7 @@
 | ✅ | Yatak paneli: dört kutu, birim başlıkları, kart ölçüleri, boş/temizlikte/rezerve kartlar, hastasız birimler | canlıda |
 | ✅ | Alarmlar · Görevlerim · Vardiya devri · Hasta Kabul · Doluluk (Faz 4'ün ilk beşi) | canlıda |
 | ⏳ | Faz 4 kalanlar: Yatak başı ölçüm, Eczane, RRT, Yönetici özeti, Kalite, İş yükü, Cihazlar, Denetim, Yönetim, Ayarlar, Hasta sayfası | sırada |
+| ✅ | Tur 0: sunucu (API + veritabanı) güncel main'e alındı, yedekli yayın yöntemi | canlıda |
 | ⛔ | 10 yoğun bakım dışı birim (Acil, Poliklinik, servisler…): sunucuda birim türü + bina/kat alanı gerekir | Asaf |
 
 ## Faz 1 — Ortak kabuk (her ekranı etkiler)

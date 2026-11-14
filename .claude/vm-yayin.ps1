@@ -1,16 +1,15 @@
-# Yerelden VM'e arayüz yayını: yamayı ve değişen metin dosyalarının tamamını hazırlar, gönderir, yayınlar.
-# Kullanım: powershell -File .claude\vm-yayin.ps1 <etiket>
-# Taban: 1b33d399 (asbadef/main'de bizim ilk kaydımızdan önceki son Asaf kaydı).
-param([string]$Etiket = "yama")
+# Yerelden VM'e yayın (Tur 0'dan beri git ile): VM, asbadef/main'e ileri sarılır; değişen servisler
+# (homunculus-engine -> api, dashboard -> web) derlenir. Her yayından önce tam yedek alınır.
+# Önkoşul: değişiklikler yerelde test edilmiş ve asbadef/main'e gönderilmiş olmalı.
+# Kullanım: powershell -File .claude\vm-yayin.ps1 [-Kuru] [-Hepsi]
+param([switch]$Kuru, [switch]$Hepsi)
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
-$taban = "1b33d399"
-$yama = Join-Path $env:TEMP "vm-$Etiket.patch"
-$tar = Join-Path $env:TEMP "vm-$Etiket-metin.tar"
-cmd /c "git diff --binary $taban HEAD -- dashboard > `"$yama`""
-$metin = git diff --name-only $taban HEAD -- dashboard/src/live/i18n/strings
-if ($metin) { tar -cf $tar $metin } else { if (Test-Path $tar) { Remove-Item $tar } }
-scp $yama .claude/vm-yayin.sh sysadmin@172.100.101.72:/tmp/ | Out-Null
-$ucuncu = ""
-if ($metin) { scp $tar sysadmin@172.100.101.72:/tmp/vm-metin.tar | Out-Null; $ucuncu = "/tmp/vm-metin.tar" }
-ssh sysadmin@172.100.101.72 "sudo bash /tmp/vm-yayin.sh /tmp/vm-$Etiket.patch $Etiket $ucuncu 2>&1 | tail -2; echo kaynak=`$(cd /opt/homunculus && sudo git status --porcelain | grep -c dashboard)"
+$hedef = "sysadmin@172.100.101.72"
+scp .claude/vm/yedek-al.sh .claude/vm/geri-don.sh .claude/vm/guncelle.sh .claude/vm/durum.sh "${hedef}:/tmp/" | Out-Null
+$bayrak = @(); if ($Kuru) { $bayrak += "--kuru" }; if ($Hepsi) { $bayrak += "--hepsi" }
+if ($Kuru) {
+  ssh $hedef "sudo bash /tmp/guncelle.sh $($bayrak -join ' ')"
+} else {
+  ssh $hedef "TS=`$(sudo bash /tmp/yedek-al.sh) && echo yedek=`$TS && sudo bash /tmp/guncelle.sh $($bayrak -join ' '); sudo bash /tmp/durum.sh | head -6"
+}
