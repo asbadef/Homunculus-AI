@@ -195,7 +195,7 @@ describe("the bed board", () => {
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
       const table = screen.getByRole("table", { name: "Çarpayılar və son ölçülən dəyərləri" });
       const heads = within(table).getAllByRole("columnheader").map((th) => th.textContent);
-      expect(heads).toEqual(["Çarpayı", "Xəstə", "Vəziyyət", "Nəbz", "Sistolik AT", "SpO2", "Tənəffüs", "Bədən hərarəti", "Bal", "Son ölçmə"]);
+      expect(heads).toEqual(["Çarpayı", "Xəstə", "Vəziyyət", "HR", "AT", "SpO₂", "RR", "Hərarət", "Bal", "Xəbərdarlıqlar"]);
     });
 
     it("the list prints an unmeasured channel as a dash a screen reader can read", async () => {
@@ -400,11 +400,11 @@ describe("the monitor strip (Aşama A)", () => {
     expect(document.querySelector("[data-monitor-strip]")).toBeNull();
   });
 
-  it("in the list view says a linked bed's monitor is in the card view, rather than dropping it", async () => {
+  it("in the list view keeps a validated value over the linked monitor's", async () => {
     await openStrip(MONITORS(), { payload: WARD });
     fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));
     const row = screen.getByRole("link", { name: "REA-01 · 2" }).closest("tr");
-    expect(row).toHaveTextContent("Bu çarpayının təsdiqlənməmiş monitor zolağı «Kart» görünüşündədir");
+    expect(row).toHaveTextContent("96");
     expect(row).not.toHaveTextContent("72");
   });
 

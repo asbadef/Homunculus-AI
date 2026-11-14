@@ -37,7 +37,7 @@ import { channelsOf } from "../patient/trends/cards.js";
 import { parsePoints } from "../patient/trends/trendGeometry.js";
 import { ChronicExpected, News2, boardKnown, nameOf, pillRisk, railOf, summaryOf } from "../common/BoardState.jsx";
 import { MonitorStrip } from "../common/MonitorStrip.jsx";
-import { STATUS_KEY } from "../common/monitor.js";
+import { STATUS_KEY, cellOf } from "../common/monitor.js";
 import { ageText } from "../patient/ageText.js";
 import { newestInputAt } from "../patient/shadow/shadowVitals.js";
 
@@ -61,7 +61,7 @@ function Provenance({ patient }) {
 
 /** Age and sex as the HIS sent them, in the prototype's short form («52y E»); a part the HIS did
  *  not send is left out, never guessed. */
-function AgeSex({ patient }) {
+export function AgeSex({ patient }) {
   const { t } = useI18n();
   const parts = [
     Number.isInteger(patient?.age) ? t("beds.ageYears", { age: patient.age }) : null,
@@ -76,7 +76,7 @@ function AgeSex({ patient }) {
 const TONE_TEXT = Object.freeze({
   crit: "text-crit-ink", high: "text-high-ink", mid: "text-mid-ink", low: "text-low-ink", att: "text-att-ink", neutral: "text-mute",
 });
-const toneText = (tone) => TONE_TEXT[tone] ?? TONE_TEXT.att;
+export const toneText = (tone) => TONE_TEXT[tone] ?? TONE_TEXT.att;
 
 // The prototype's five columns (.vit), in its order and with its short names. A channel not
 // measured on a card that has others reads «—»; a card with none says so once instead.
@@ -84,15 +84,49 @@ const ROW = [
   ["heart_rate", "HR"], ["map", "MAP"], ["spo2", "SpO₂"], ["resp_rate", "RR"], ["temperature", null],
 ];
 
-function Vitals({ patient }) {
+/** The bedside monitor's value for each of the row's channels, when it is fresh and the monitor
+ *  shows a number (monitor.js `cellOf`): {heart_rate, map, spo2, resp_rate, temperature} -> text. */
+export function monitorValues(monitor) {
+  const out = {};
+  if (!monitor?.entry || monitor.unreadable) return out;
+  const opts = { nowMs: monitor.nowMs, fetchedAtMs: monitor.fetchedAtMs, maxAgeS: monitor.maxAgeS, feedOk: monitor.feedOk };
+  const by = new Map((monitor.entry.parameters ?? []).map((p) => [p.parameter, p]));
+  const num = (code) => {
+    const p = by.get(code);
+    if (!p) return null;
+    const c = cellOf(p, opts);
+    return c.kind === "value" ? c.value : null;
+  };
+  const nbp = by.get("nbp") ? cellOf(by.get("nbp"), opts) : null;
+  const fmt = (v, digits = 0) => (Number.isFinite(v) ? v.toFixed(digits) : null);
+  out.heart_rate = fmt(num("hr") ?? num("pls"));
+  out.map = fmt((nbp && (nbp.kind === "nbp" || nbp.kind === "nbp_untimed") ? nbp.mean : null) ?? num("art_mean"));
+  out.spo2 = fmt(num("spo2"));
+  out.resp_rate = fmt(num("respiration"));
+  out.temperature = fmt(num("temperature"), 1);
+  // The list's KB column: the cuff's systolic/diastolic.
+  out.bp = nbp && (nbp.kind === "nbp" || nbp.kind === "nbp_untimed") ? `${fmt(nbp.systolic)}/${fmt(nbp.diastolic)}` : null;
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== null));
+}
+
+/** A monitor value in the row: drawn with a small «M» (the bedside monitor, unvalidated), and kept
+ *  out of what the card's link says (aria-hidden, in a monitor slot): what opening the patient reads
+ *  out never includes a monitor value, and nothing on the card — risk, alarms, NEWS2 — reads it. */
+export function MonitorValue({ value, t }) {
+  return (
+    <span data-monitor-value="" aria-hidden="true" title={t("beds.monitorUnvalidated")}>
+      {value}<sup className="ml-0.5 font-text text-[9px] font-bold text-att-ink">M</sup>
+    </span>
+  );
+}
+
+function Vitals({ patient, monitor }) {
   const { t } = useI18n();
   const shown = measuredVitals(patient);
-  if (shown.length === 0) {
-    return <p className="m-0 mb-1.5 mt-[11px] text-12 text-mute">{t("beds.noVitals")}</p>;
-  }
-  const byKey = new Map(shown.map((v) => [v.at, v]));
+  const mon = monitorValues(monitor);
+  const hasMon = Object.keys(mon).length > 0;
   const meta = new Map(VITALS.map((v) => [v.at, v]));
-  return (
+  const row = (byKey) => (
     // .vit: a row 14 px apart; the number 18 px on its own height, its name 9.5 px above it.
     <dl className="m-0 mb-1.5 mt-[11px] flex flex-wrap gap-x-3.5 gap-y-2">
       {ROW.map(([key, short]) => {
@@ -101,14 +135,30 @@ function Vitals({ patient }) {
           <div key={key} className="min-w-[22px]">
             <dt className={`mb-1 text-9.5 font-bold leading-[normal] ${meta.get(key)?.color ?? "text-mute"}`}>{short ?? t("beds.tempShort")}</dt>
             <dd className={`m-0 font-data text-[calc(18px*var(--fs))] font-bold leading-none ${v ? "text-ink" : "text-mute"}`}>
-              {v ? v.value : "—"}
-              {v ? null : <span className="sr-only">{` ${t("board.notMeasured")}`}</span>}
+              {v ? v.value : (
+                <>
+                  {/* A channel the validated record lacks: the monitor's value, marked, when there is one;
+                      otherwise «—». The dash stays in the document (hidden after a monitor value). */}
+                  {mon[key] ? <MonitorValue value={mon[key]} t={t} /> : null}
+                  <span className="[[data-monitor-value]+&]:hidden">—<span className="sr-only">{` ${t("board.notMeasured")}`}</span></span>
+                </>
+              )}
             </dd>
           </div>
         );
       })}
     </dl>
   );
+  if (shown.length === 0) {
+    return (
+      <>
+        {/* Nothing validated: the monitor's row when it sends, the sentence otherwise. */}
+        {hasMon ? <div data-monitor-value="" aria-hidden="true">{row(new Map())}</div> : null}
+        <p className="m-0 mb-1.5 mt-[11px] text-12 text-mute [[data-monitor-value]+&]:hidden">{t("beds.noVitals")}</p>
+      </>
+    );
+  }
+  return row(new Map(shown.map((v) => [v.at, v])));
 }
 
 /** The heart rate of the last hours as one line (the prototype's .spark, 28 px), from the engine's
@@ -185,6 +235,9 @@ function monitorLive(monitor) {
   return Boolean(monitor?.entry) && monitor.feedOk && !monitor.unreadable && !STATUS_KEY[monitor.entry.status];
 }
 
+/** The prototype's flag (.flags span), for the list's «Uyarılar» column too. */
+export { Flag as CardFlag };
+
 export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false, lateTasks = 0 }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
@@ -221,7 +274,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           <RiskPill risk={patient?.risk} measured={measured} />
         </div>
 
-        <Vitals patient={patient} />
+        <Vitals patient={patient} monitor={monitor} />
         {/* `spark`: the board turns it on; it reads trends through the session. */}
         {spark ? <Spark patient={patient} tone={style.tone} /> : null}
 
@@ -258,32 +311,32 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           </p>
         ) : null}
       </a>
-      {/* The bedside monitor, in sight on the card (owner, 2026-11-14): its unvalidated values and the
-          shadow's tag, after the card's link and outside it — what opening the patient reads out never
-          includes a monitor value, and nothing above (risk, alarms, NEWS2) reads it. */}
-      {monitor?.entry || patient?.shadow ? (
-        <div data-monitor-slot="" className="pb-2.5 pl-[18px] pr-3.5">
-          {monitor?.entry ? (
-            <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
-              maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
-          ) : null}
-          {patient?.shadow ? (
-            <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
-              {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
-              <Tag tone="warn" className="!whitespace-normal">
-                {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
-              </Tag>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {/* What the engine adds beyond that — the alarms' own words, the NEWS2 caveats — one click away. */}
       <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5">
         <summary className={`flex cursor-pointer list-none items-center gap-1 rounded text-11.5 font-semibold text-mute hover:text-ink ${FOCUS_RING}`}>
           <Icon name="chevR" size={13} className="transition-transform group-open:rotate-90" />
           {t("beds.details")}
+          {monitor?.entry ? <span data-monitor-value="" className="text-att-ink">{` · ${t("beds.detailsMonitor")}`}</span> : null}
         </summary>
         <div className="mt-2 flex flex-col gap-2">
+              {/* The bedside monitor in full — every parameter, its age and its evidence — and the shadow's tag.
+                  Its values are on the card's row (marked M); outside the link, read by nothing above. */}
+          {monitor?.entry || patient?.shadow ? (
+            <div data-monitor-slot="" className="">
+              {monitor?.entry ? (
+                <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+                  maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
+              ) : null}
+              {patient?.shadow ? (
+                <div data-shadow-tag="" className={monitor?.entry ? "mt-1.5" : ""}>
+                  {/* Wraps: the ru words are wider than a 390 px card on one line in a large type size. */}
+                  <Tag tone="warn" className="!whitespace-normal">
+                    {shadowTagText(t, patient.shadow, boardKnown(connection), nowMs)}
+                  </Tag>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {open.length > 0 ? (
             <ul className="m-0 flex list-none flex-col gap-1 p-0">
               {open.map((a) => (

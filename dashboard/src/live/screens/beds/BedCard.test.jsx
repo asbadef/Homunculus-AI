@@ -354,6 +354,25 @@ describe("the bed card — the monitor strip", () => {
     );
   }
 
+  // Owner, 2026-11-14: the monitor's numbers on the card's row, as the prototype shows them — marked M,
+  // hidden from what the link says, and never in place of a validated value.
+  it("fills the row's empty channels with the monitor's values, marked M, outside what the link says", () => {
+    withStrip(STRIP);
+    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    const marked = link.querySelector("[data-monitor-value]");
+    expect(marked).toHaveTextContent("72M");
+    expect(marked.closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("keeps a validated value over the monitor's", () => {
+    const patient = patientFromBoard(entry("S-001", [], { identity: identity(), ...reading({ heart_rate: 88 }, 30) }));
+    render(<I18nProvider><ul><BedCard patient={patient} alerts={[]} nowMs={NOW} connection={CONNECTION.LIVE} monitor={STRIP} /></ul></I18nProvider>);
+    const link = screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
+    const hr = within(link).getByText("HR").nextElementSibling;
+    expect(hr).toHaveTextContent(/^88$/);
+    expect(hr.querySelector("[data-monitor-value]")).toBeNull();
+  });
+
   it("draws none without one", () => {
     const { container } = withStrip(undefined);
     expect(container.querySelector("[data-monitor-strip]")).toBeNull();
@@ -452,11 +471,13 @@ describe("the bed card — the shadow tag", () => {
     const alarms = [alarm("septic_shock", "critical", { summary: "Septik şok ölçütləri qarşılandı" })];
     const link = () => screen.getByRole("link", { name: "REA-01 · 2 xəstəsini aç" });
     withShadow(null, { alarms });
-    const without = link().textContent;
+    // What the link says, without the monitor's marked values (data-monitor-value: aria-hidden, the row's «M»).
+    const said = () => { const c = link().cloneNode(true); c.querySelectorAll("[data-monitor-value]").forEach((n) => n.remove()); return c.textContent; };
+    const without = said();
     const rail = document.querySelector("[data-rail]").getAttribute("data-rail");
     cleanup();
     withShadow(shadowOf(), { monitor: STRIP, alarms });
-    expect(link().textContent).toBe(without);
+    expect(said()).toBe(without);
     expect(document.querySelector("[data-rail]").getAttribute("data-rail")).toBe(rail);
     expect(without).toContain("Kritik");
     // the alarm's own words are in the card's details since the prototype's layout (2026-11-14)

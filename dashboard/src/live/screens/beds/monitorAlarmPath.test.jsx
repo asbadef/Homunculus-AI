@@ -131,7 +131,7 @@ async function run({ patients = WARD, shadow = STAGE_OFF } = {}) {
   const cards = screen.getAllByRole("link", { name: /xəstəsini aç$/ }).map((a) => {
     const card = a.closest("li").cloneNode(true);
     // the strip's slot, and the foot line's «Monitör · canlı» mark (it names the link, never a value)
-    for (const slot of card.querySelectorAll("[data-monitor-slot], [data-monitor-chip]")) slot.remove();
+    for (const slot of card.querySelectorAll("[data-monitor-slot], [data-monitor-chip], [data-monitor-value]")) slot.remove();
     for (const el of [card, ...card.querySelectorAll("*")]) {
       for (const attr of ["id", "aria-labelledby", "aria-describedby", "aria-controls"]) el.removeAttribute(attr);
     }
