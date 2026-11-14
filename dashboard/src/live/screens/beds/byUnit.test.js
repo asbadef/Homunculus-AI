@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { byUnit } from "./BedsScreen.jsx";
+import { byUnit, withEmptyUnits } from "./BedsScreen.jsx";
+
+const index = (units) => ({ units: new Map(units.map((u) => [u.id, { isActive: true, ...u }])), beds: new Map() });
+
+describe("withEmptyUnits", () => {
+  const groups = [{ unitId: "u1", items: [{}] }, { unitId: null, items: [{}] }];
+  const idx = index([{ id: "u1" }, { id: "u2" }, { id: "u3", isActive: false }, { id: "u4" }]);
+
+  it("adds every active unit with no card before the unplaced group", () => {
+    expect(withEmptyUnits(groups, idx).map((g) => g.unitId)).toEqual(["u1", "u2", "u4", null]);
+  });
+
+  it("adds only the units the session may see, and only the chosen one under a filter", () => {
+    expect(withEmptyUnits(groups, idx, ["u1", "u4"]).map((g) => g.unitId)).toEqual(["u1", "u4", null]);
+    expect(withEmptyUnits([], idx, [], "u2").map((g) => g.unitId)).toEqual(["u2"]);
+  });
+});
 
 describe("byUnit", () => {
   it("keeps the given order inside each unit, units in first-seen order, the unplaced last", () => {

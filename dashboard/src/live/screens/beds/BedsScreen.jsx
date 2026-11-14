@@ -164,6 +164,20 @@ export function byUnit(list) {
   return [...out.filter((g) => g.unitId), ...out.filter((g) => !g.unitId)];
 }
 
+/** The prototype shows every unit of the hospital, an empty one too («Anjiyografi · 0 / 3 dolu»).
+ *  `groups` (byUnit) gains, after its own, each active unit of the structure that has no card —
+ *  only units this session may see (`scope`, the engine's list; all when it sent none) and only the
+ *  chosen one under a unit filter. The group without a unit stays last. */
+export function withEmptyUnits(groups, index, scope = [], chosen = null) {
+  const seen = new Set(groups.map((g) => normId(g.unitId)));
+  const allowed = new Set(scope.map(normId));
+  const extra = [...index.units.values()]
+    .filter((u) => u.isActive && !seen.has(normId(u.id)))
+    .filter((u) => (chosen ? normId(u.id) === normId(chosen) : allowed.size === 0 || allowed.has(normId(u.id))))
+    .map((u) => ({ unitId: u.id, items: [] }));
+  return [...groups.filter((g) => g.unitId), ...extra, ...groups.filter((g) => !g.unitId)];
+}
+
 /** The list view (the prototype's `table.t`). The numbers are written in `ink`, not in the
  *  channels' own colours: on `card2` — which the table's header and zebra use — `--v-map` and
  *  `--v-spo` fall under 4.5:1 in daylight (Wave 1B's contrast table).
@@ -398,7 +412,7 @@ export function BedsScreen() {
       ) : view === "liste" ? (
         <div className="mt-4"><BedList patients={shown} alertsOf={alertsOf} monitored={linked} nowMs={nowMs} /></div>
       ) : (
-        byUnit(shown).map((group, _i, groups) => {
+        withEmptyUnits(byUnit(shown), structure.index, units, unit).map((group, _i, groups) => {
           const beds = unitBeds(structure.index, group.unitId);
           const occupied = beds.filter((b) => b.state === "OCCUPIED").length;
           // Every bed of the unit that holds no patient: free ones first, then the others by label.
