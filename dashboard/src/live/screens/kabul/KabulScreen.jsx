@@ -38,10 +38,11 @@ export function KabulScreen() {
   const current = tabs.find((x) => x.id === tab) ?? tabs[0] ?? null;
   const shown = tabs.map((x) => ({ value: x.id, label: t(x.labelKey) }));
   return (
-    <div className="flex min-h-0 max-w-[1200px] flex-col gap-3">
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* The prototype's .ph. */}
       <div>
-        <h1 className="m-0 font-display text-23 font-bold">{t("kabul.title")}</h1>
-        <p className="m-0 text-13 text-mute">{t("kabul.sub")}</p>
+        <h1 className="m-0 font-display text-23 font-bold leading-[1.1]">{t("kabul.title")}</h1>
+        <p className="m-0 mt-1 text-13 text-mute">{t("kabul.sub")}</p>
       </div>
       {current === null ? <Empty icon="shield">{t("kabul.noAccess")}</Empty> : (
         <>

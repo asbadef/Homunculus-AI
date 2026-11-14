@@ -164,12 +164,16 @@ function Choice({ id, name, legend, options, value, onChange, error }) {
       aria-invalid={error ? "true" : undefined} aria-describedby={error ? errorId : undefined}
       className="mb-2.5 min-w-0 border-0 p-0">
       <legend id={legendId} className="mb-1.5 text-13.5 font-semibold text-mute">{legend}<span aria-hidden="true" className="text-crit-ink"> *</span></legend>
-      <div className="flex flex-wrap gap-3">
+      {/* The prototype's chips: each choice a small button, the chosen one filled. The radio stays
+          underneath — arrow keys, the group's name and its required state are the browser's. */}
+      <div className="flex flex-wrap gap-1.5">
         {options.map((option, at) => (
-          <label key={option.value} className="inline-flex items-center gap-1.5 text-13.5">
+          <label key={option.value} className="relative inline-flex cursor-pointer">
             <input id={at === 0 ? id : undefined} type="radio" name={name} value={option.value}
-              checked={value === option.value} onChange={() => onChange(option.value)} className={FOCUS_RING} />
-            {t(option.key)}
+              checked={value === option.value} onChange={() => onChange(option.value)} className="peer absolute inset-0 cursor-pointer opacity-0" />
+            <span className="rounded-[10px] border border-line2 bg-card px-[11px] py-1.5 text-13 font-semibold leading-[normal] text-ink peer-checked:border-pri peer-checked:bg-pri peer-checked:text-onpri peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-pri">
+              {t(option.key)}
+            </span>
           </label>
         ))}
       </div>
@@ -588,8 +592,9 @@ export function AdmitTab() {
   // (duplicate_open_admission): a hold only «Yeni qəbul» ends.
   const exists = held?.conflict ?? held?.duplicate ?? null;
   return (
-    <form noValidate autoComplete="off" onSubmit={submit} className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="grid min-w-0 gap-3">
+    <form noValidate autoComplete="off" onSubmit={submit} className="grid gap-3">
+      {/* The prototype's two columns of groups: identity and the admission side by side. */}
+      <div className="grid min-w-0 items-start gap-3 min-[1100px]:grid-cols-2">
         <Box title={t("kabul.groupIdentity")} icon="user" level={2}>
           <Field label={t("kabul.f.name")} required error={errorOf("name")}>
             <Input id={idOf("name")} value={form.name} maxLength={200} onChange={(e) => set({ name: e.target.value })} autoComplete="off" />
@@ -725,24 +730,29 @@ export function AdmitTab() {
         </Box>
       </div>
 
-      <aside aria-labelledby={`${panelId}-title`} className="h-fit rounded-box border border-line bg-card px-3.5 py-3 min-[1100px]:sticky min-[1100px]:top-0">
-        <h2 id={`${panelId}-title`} className="m-0 text-14 font-bold">{t("kabul.missingTitle")}</h2>
-        <div id={panelId}>
-          {gaps.length === 0 ? (
-            <p className="m-0 mt-1.5 text-13 text-mute">{t("kabul.missingNone")}</p>
-          ) : (
-            <ul className="m-0 mt-1.5 grid gap-1 ps-4 text-13">
-              {gaps.map((g) => <li key={g.field}>{t(g.key)}</li>)}
-            </ul>
-          )}
+      {/* The prototype's foot bar: what is still missing at the left, the send at the right; it stays
+          in sight at the bottom of the screen while the form scrolls. */}
+      <aside aria-labelledby={`${panelId}-title`} className="sticky bottom-0 z-[3] -mx-1 flex flex-wrap items-start gap-x-4 gap-y-2 rounded-box border border-line bg-card px-3.5 py-3 shadow-pop">
+        <div className="min-w-0 flex-1">
+          <h2 id={`${panelId}-title`} className="m-0 text-13 font-bold">{t("kabul.missingTitle")}</h2>
+          <div id={panelId}>
+            {gaps.length === 0 ? (
+              <p className="m-0 mt-1 text-13 text-mute">{t("kabul.missingNone")}</p>
+            ) : (
+              <ul className="m-0 mt-1 flex list-none flex-wrap gap-1 p-0 text-12.5">
+                {gaps.map((g) => <li key={g.field} className="rounded-full bg-att px-2 py-[3px] font-semibold text-att-ink">{t(g.key)}</li>)}
+              </ul>
+            )}
+          </div>
         </div>
-        <Button ref={submitRef} type="submit" variant="primary" icon="ok" busy={busy} className="mt-3 w-full justify-center"
+        {form.bedId ? <p className="m-0 self-center"><Tag icon="bed">{bedText}</Tag></p> : null}
+        <Button ref={submitRef} type="submit" variant="primary" icon="ok" busy={busy} className="self-center justify-center"
           aria-disabled={gaps.length > 0 || held ? "true" : undefined}
           aria-describedby={held ? `${heldId} ${panelId}` : panelId}>
           {t("kabul.admit")}
         </Button>
         {held ? (
-          <div className="mt-2 grid justify-items-start gap-2">
+          <div className="grid basis-full justify-items-start gap-2">
             <p id={heldId} tabIndex={-1} className={`m-0 text-12.5 font-semibold text-crit-ink ${FOCUS_RING}`}>
               {exists ? t(exists.key, exists.vars) : t("kabul.heldNoAnswer", { bed: held.bed, where })}
             </p>
@@ -758,7 +768,6 @@ export function AdmitTab() {
             )}
           </div>
         ) : null}
-        {form.bedId ? <p className="m-0 mt-2"><Tag icon="bed">{bedText}</Tag></p> : null}
         <Announce text={busy ? t("kabul.admitting") : ""} />
       </aside>
       {ask ? (
