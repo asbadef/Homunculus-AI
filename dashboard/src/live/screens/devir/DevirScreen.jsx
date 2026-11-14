@@ -460,7 +460,7 @@ export function DevirScreen() {
           />
           {/* The prototype's legend for the note's letters. */}
           <p className="m-0 text-12 text-mute">
-            {`${NOTE_PARTS.map((part) => t(`devir.part.${part}`).charAt(0)).join("-")}: ${NOTE_PARTS.map((part) => t(`devir.part.${part}`)).join(" · ")}`}
+            {`${NOTE_PARTS.map((part) => t(`devir.part.${part}`).charAt(0)).join("-")}: ${NOTE_PARTS.map((part) => t(`devir.part.${part}`).split(" · ").pop()).join(" · ")}`}
           </p>
         </>
       )}
