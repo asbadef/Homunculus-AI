@@ -67,8 +67,11 @@ export function AgeSex({ patient }) {
     Number.isInteger(patient?.age) ? t("beds.ageYears", { age: patient.age }) : null,
     patient?.sex === "female" || patient?.sex === "male" ? t(`beds.sexShort.${patient.sex}`) : null,
   ].filter(Boolean);
+  // The diagnoses the HIS sent with the admission, as the prototype's «61y E · Pnevmoniya, …».
+  const dx = (Array.isArray(patient?.diagnoses) ? patient.diagnoses : []).map((d) => d?.text || d?.code).filter(Boolean).join(", ");
+  const line = [parts.join(" "), dx].filter(Boolean).join(" · ");
   // The prototype's .mt: 12 px on an 18 px line.
-  return parts.length ? <span className="block text-12 leading-[18px] text-mute">{parts.join(" ")}</span> : null;
+  return line ? <span className="block text-12 leading-[18px] text-mute">{line}</span> : null;
 }
 
 /** The tone's own colour as text — the prototype's `--r`, which paints the bed code, the rail and
@@ -162,10 +165,11 @@ function Vitals({ patient, monitor }) {
 }
 
 /** The heart rate of the last hours as one line (the prototype's .spark, 28 px), from the engine's
- *  own trend read — never drawn from anything else. Too few readings: no line. */
-function Spark({ patient, tone }) {
+ *  own trend read. With fewer than two validated readings, the bedside monitor's heart rate seen
+ *  since the board opened (`trail`, owner 2026-11-14) — drawn only, read by nothing. Neither: no line. */
+function Spark({ patient, tone, trail, t }) {
   const { data } = useTrends(patient?.patient_id, SPARK_HOURS, measuredKeyOf(patient?.measuredAt));
-  const pts = parsePoints(channelsOf(data).heart_rate?.points).filter((p) => Number.isFinite(p.ms) && Number.isFinite(p.value));
+  const { pts, fromMonitor } = sparkPoints(parsePoints(channelsOf(data).heart_rate?.points), trail);
   if (pts.length < 2) return null;
   const xs = pts.map((p) => p.ms);
   const vs = pts.map((p) => p.value);
@@ -173,10 +177,17 @@ function Spark({ patient, tone }) {
   const [lo, hi] = [Math.min(...vs), Math.max(...vs)];
   const line = pts.map((p) => `${(((p.ms - x0) / (x1 - x0 || 1)) * 100).toFixed(1)},${(24 - ((p.value - lo) / (hi - lo || 1)) * 20).toFixed(1)}`).join(" ");
   return (
-    <svg aria-hidden="true" viewBox="0 0 100 28" preserveAspectRatio="none" className={`block h-7 w-full ${toneText(tone)}`}>
+    <svg aria-hidden="true" data-monitor-trail={fromMonitor ? "" : undefined} viewBox="0 0 100 28" preserveAspectRatio="none" className={`block h-7 w-full ${toneText(tone)}`}>
+      {fromMonitor ? <title>{t("beds.monitorUnvalidated")}</title> : null}
       <polyline points={line} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
   );
+}
+/** The line's points: the validated trend when it has two, else the monitor's trail. */
+export function sparkPoints(trend, trail) {
+  const ok = (p) => Number.isFinite(p?.ms) && Number.isFinite(p?.value);
+  const valid = (trend ?? []).filter(ok);
+  return valid.length >= 2 ? { pts: valid, fromMonitor: false } : { pts: (trail ?? []).filter(ok), fromMonitor: true };
 }
 // The widest window the trends endpoint serves: a ward whose monitors paused still shows its
 // last readings' shape (owner, 2026-11-14).
@@ -238,7 +249,7 @@ function monitorLive(monitor) {
 /** The prototype's flag (.flags span), for the list's «Uyarılar» column too. */
 export { Flag as CardFlag };
 
-export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false, lateTasks = 0 }) {
+export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draft = false, spark = false, lateTasks = 0, trail, detailsOpen, onDetails }) {
   const { t } = useI18n();
   const measured = hasMeasurement(patient?.measuredAt);
   const style = riskStyle(patient?.risk, { measured });
@@ -276,7 +287,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
 
         <Vitals patient={patient} monitor={monitor} />
         {/* `spark`: the board turns it on; it reads trends through the session. */}
-        {spark ? <Spark patient={patient} tone={style.tone} /> : null}
+        {spark ? <Spark patient={patient} tone={style.tone} trail={trail} t={t} /> : null}
 
         {/* What waits on this bed, as the prototype's flags: each a count the server gave. */}
         {draft || open.length > 0 || lateTasks > 0 || stale > 0 ? (
@@ -312,7 +323,10 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
         ) : null}
       </a>
       {/* What the engine adds beyond that — the alarms' own words, the NEWS2 caveats — one click away. */}
-      <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5">
+      {/* `detailsOpen`/`onDetails`: the board opens and closes every card's details together (owner, 2026-11-14). */}
+      <details className="group border-t border-line pb-2 pl-[18px] pr-3.5 pt-1.5"
+        open={detailsOpen === undefined ? undefined : detailsOpen}
+        onToggle={onDetails ? (e) => { if (e.currentTarget.open !== detailsOpen) onDetails(e.currentTarget.open); } : undefined}>
         <summary className={`flex cursor-pointer list-none items-center gap-1 rounded text-11.5 font-semibold text-mute hover:text-ink ${FOCUS_RING}`}>
           <Icon name="chevR" size={13} className="transition-transform group-open:rotate-90" />
           {t("beds.details")}
@@ -324,7 +338,7 @@ export function BedCard({ patient, alerts = [], nowMs, connection, monitor, draf
           {monitor?.entry || patient?.shadow ? (
             <div data-monitor-slot="" className="">
               {monitor?.entry ? (
-                <MonitorStrip variant="compact" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
+                <MonitorStrip variant="screen" entry={monitor.entry} nowMs={monitor.nowMs} fetchedAtMs={monitor.fetchedAtMs}
                   maxAgeS={monitor.maxAgeS} feedOk={monitor.feedOk} unreadable={monitor.unreadable} />
               ) : null}
               {patient?.shadow ? (

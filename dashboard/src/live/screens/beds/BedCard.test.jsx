@@ -6,7 +6,7 @@ import { CONNECTION } from "../../../liveConnection.js";
 import { patientFromBoard, alertsFromPatients } from "../../../liveAdapters.js";
 import { NOW, ago, alarm, entry, identity, measured, news2, reading } from "../../data/board.testutil.js";
 import { bed as monitorBed, param as monitorParam } from "../../data/shadow.testutil.js";
-import { BedCard } from "./BedCard.jsx";
+import { BedCard, sparkPoints } from "./BedCard.jsx";
 
 /** The card as the screen builds it: the adapter's record, and that patient's flattened alarms.
  *  `connection` defaults to LIVE because that is the state nearly every one of these tests is
@@ -530,5 +530,16 @@ describe("the bed card — the shadow tag", () => {
     }
     withShadow(shadowOf({ vitals: { heart_rate: input(ago(120)) } }), { connection: CONNECTION.DEGRADED });
     expect(tag()).toHaveTextContent("kölgə tövsiyə · NEWS2 6 · 2 dəq əvvəl");
+  });
+});
+
+describe("the card's line (sparkPoints)", () => {
+  const trail = [{ ms: 1, value: 80 }, { ms: 2, value: 92 }];
+  it("takes the monitor's trail when the engine has fewer than two readings, and says so", () => {
+    expect(sparkPoints([{ ms: 1, value: 70 }], trail)).toEqual({ pts: trail, fromMonitor: true });
+  });
+  it("keeps the validated trend over the monitor's trail", () => {
+    const valid = [{ ms: 1, value: 70 }, { ms: 2, value: 75 }];
+    expect(sparkPoints(valid, trail)).toEqual({ pts: valid, fromMonitor: false });
   });
 });

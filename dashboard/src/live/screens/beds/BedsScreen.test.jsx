@@ -190,6 +190,15 @@ describe("the bed board", () => {
   });
 
   describe("the view and the order", () => {
+    it("opens every card's details when one is opened", async () => {
+      await open({ payload: board([entry("S-001", [], CARD), entry("S-002", [], { ...CARD, identity: identity({ patient_id: "S-002", bed_label: "REA-01 · 3", bed_id: "REA-01-3" }) })]) });
+      const all = () => [...document.querySelectorAll("details")];
+      expect(all().length).toBeGreaterThan(1);
+      fireEvent.click(all()[0].querySelector("summary"));
+      fireEvent(all()[0], new Event("toggle"));
+      for (const d of all()) expect(d.open).toBe(true);
+    });
+
     it("switches to the list, and the list names every column", async () => {
       await open({ payload: board([entry("S-001", [], CARD)]) });
       fireEvent.click(screen.getByRole("button", { name: "Siyahı" }));

@@ -25,6 +25,15 @@ import {
 
 const KNOWN = new Set(PARAM_ORDER);
 
+// The «screen» variant (owner, 2026-11-14): the bedside monitor drawn as the monitor's own screen,
+// the prototype's .mon — a dark panel whose numbers take the monitor's channel colours. It stays
+// the monitor's: its own heading, the DOĞRULANMAMIŞ tag, every value's age, and never the card's
+// vital row, risk or alarms.
+const SCREEN_INK = Object.freeze({
+  hr: "text-[#22e05a]", pls: "text-[#22e05a]", nbp: "text-[#ff5c5c]", art: "text-[#ff5c5c]", art_mean: "text-[#ff5c5c]",
+  spo2: "text-[#ffe14a]", respiration: "text-[#3fd8ff]",
+});
+
 /** NBP's numbers and the time its value last changed — an upper bound of the measurement ("≤"). */
 function NbpValue({ cell, unit }) {
   const { t } = useI18n();
@@ -61,7 +70,7 @@ function NbpUntimedValue({ cell, unit }) {
   );
 }
 
-function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
+function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full, screen }) {
   const { t } = useI18n();
   const cell = cellOf(param, { nowMs, fetchedAtMs, maxAgeS, feedOk });
   const label = t(`monitor.p.${param.parameter}`);
@@ -71,12 +80,12 @@ function Cell({ param, nowMs, fetchedAtMs, maxAgeS, feedOk, full }) {
   const nbp = param.parameter === "nbp";
   return (
     // NBP's line is two cells wide: three numbers, a unit and the time they changed.
-    <div className={nbp ? "col-span-2 min-w-0" : "min-w-0"}>
-      <dt className="flex flex-wrap items-center gap-1 font-text text-10 font-bold uppercase leading-[normal] tracking-[.06em] text-mute">
+    <div className={`${nbp ? "col-span-2 min-w-0" : "min-w-0"} ${screen ? `border-b border-[#1c2c45] px-3 py-[5px] ${SCREEN_INK[param.parameter] ?? "text-[#e8eef7]"}` : ""}`}>
+      <dt className={`flex flex-wrap items-center gap-1 font-text text-10 font-bold uppercase leading-[normal] tracking-[.06em] ${screen ? "" : "text-mute"}`}>
         {label}
         {param.partial ? <StatusPill tone="neutral">{t("monitor.partial")}</StatusPill> : null}
       </dt>
-      <dd className="m-0 font-data text-14 font-bold text-ink">
+      <dd className={`m-0 font-data font-bold ${screen ? "mt-0.5 text-[24px] leading-none" : "text-14 text-ink"}`}>
         {cell.kind === "nbp" ? (
           <NbpValue cell={cell} unit={unit} />
         ) : cell.kind === "nbp_untimed" ? (
@@ -145,13 +154,17 @@ export function MonitorStrip({
   const id = useId();
   if (!entry) return null;
   const full = variant === "full";
+  const screen = variant === "screen";
   const Heading = `h${Math.min(6, Math.max(2, level))}`;
   const sentence = statusSentence(t, entry);
   const params = (entry.parameters ?? []).filter((p) => KNOWN.has(p.parameter));
   return (
-    <section aria-labelledby={id} data-monitor-strip="" className={`relative rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Heading id={id} className="m-0 font-text text-11.5 font-bold leading-[normal] text-ink">
+    <section aria-labelledby={id} data-monitor-strip="" data-monitor-screen={screen ? "" : undefined}
+      className={screen
+        ? `relative overflow-hidden rounded-[14px] border-[3px] border-[#1d2736] bg-[radial-gradient(120%_140%_at_30%_0%,#07142a,#02060d_70%)] py-2 text-[#e8eef7] [&_small]:!text-[#8fa1ba] ${className}`
+        : `relative rounded-ctl border border-dashed border-line2 px-2.5 py-2 ${className}`}>
+      <div className={`flex flex-wrap items-center gap-2 ${screen ? "px-3" : ""}`}>
+        <Heading id={id} className={`m-0 font-text text-11.5 font-bold leading-[normal] ${screen ? "" : "text-ink"}`}>
           {title ? `${title} · ${t("monitor.title")}` : t("monitor.title")}
         </Heading>
         <Tag tone="warn">{t("monitor.tag")}</Tag>
@@ -161,16 +174,18 @@ export function MonitorStrip({
       {sentence ? (
         <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{sentence}</p>
       ) : params.length > 0 ? (
-        <dl className="m-0 mt-1.5 grid grid-cols-3 gap-x-3 gap-y-1.5 min-[641px]:grid-cols-[repeat(auto-fill,minmax(92px,1fr))]">
+        <dl className={screen
+          ? "m-0 mt-1.5 grid grid-cols-2 border-t border-[#1c2c45]"
+          : "m-0 mt-1.5 grid grid-cols-3 gap-x-3 gap-y-1.5 min-[641px]:grid-cols-[repeat(auto-fill,minmax(92px,1fr))]"}>
           {params.map((p) => (
             <Cell key={p.parameter} param={p} nowMs={nowMs} fetchedAtMs={fetchedAtMs} maxAgeS={maxAgeS}
-              feedOk={feedOk} full={full} />
+              feedOk={feedOk} full={full} screen={screen} />
           ))}
         </dl>
       ) : (
         <p className="m-0 mt-1.5 text-12.5 font-semibold text-mute">{t("monitor.noValues")}</p>
       )}
-      <p className="m-0 mt-1.5 text-10.5 leading-[normal] text-mute">{t(full ? fullNoteKey(stage) : "monitor.short")}</p>
+      <p className={`m-0 mt-1.5 text-10.5 leading-[normal] ${screen ? "px-3 text-[#8fa1ba]" : "text-mute"}`}>{t(full ? fullNoteKey(stage) : "monitor.short")}</p>
     </section>
   );
 }

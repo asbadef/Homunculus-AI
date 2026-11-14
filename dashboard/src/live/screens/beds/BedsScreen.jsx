@@ -180,6 +180,8 @@ export function withEmptyUnits(groups, index, scope = [], chosen = null) {
 
 // The list's numeric columns: the board's channel, the prototype's header, the monitor's value
 // (monitorValues), the channel's colour.
+const TRAIL_POINTS = 120;
+
 const LIST_COLS = [
   ["heart_rate", "HR", "heart_rate"], ["sbp", null, "bp"], ["spo2", "SpO₂", "spo2"],
   ["resp_rate", "RR", "resp_rate"], ["temperature", null, "temperature"],
@@ -309,6 +311,24 @@ export function BedsScreen() {
     return { linked: byPatient, loose: rest };
   }, [all, strip]);
   const strays = strip?.unassigned ?? [];
+  // The monitor's heart rate per linked patient, one point per strip read while the board is
+  // open: the card's line when the engine has no trend yet. Kept here only, never sent or read.
+  const [trails, setTrails] = useState(() => new Map());
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => {
+    if (!stripView || !shadow.fetchedAtMs) return;
+    setTrails((prev) => {
+      const next = new Map(prev);
+      for (const [id, entry] of linked) {
+        const hr = Number(monitorValues({ entry, ...stripView }).heart_rate);
+        if (!Number.isFinite(hr)) continue;
+        const pts = next.get(id) ?? [];
+        if (pts.at(-1)?.ms === shadow.fetchedAtMs) continue;
+        next.set(id, [...pts, { ms: shadow.fetchedAtMs, value: hr }].slice(-TRAIL_POINTS));
+      }
+      return next;
+    });
+  }, [shadow.fetchedAtMs]); // eslint-disable-line react-hooks/exhaustive-deps
   const looseInUnit = unit ? loose.filter((c) => c.unit_id === unit) : loose;
   const straysInUnit = unit ? [] : strays;              // a device on no bed belongs to no unit
   const looseFound = looseInUnit;
@@ -462,7 +482,7 @@ export function BedsScreen() {
                   {group.items.map((p) => (
                     <BedCard key={p.patient_id} patient={p} alerts={alertsOf(p.patient_id)} nowMs={nowMs} connection={board.connection}
                       monitor={linked.has(p.patient_id) ? { entry: linked.get(p.patient_id), ...stripView } : undefined}
-                      draft={draftNumbers.has(p.patient_id)} spark lateTasks={lateBy.get(p.patient_id) ?? 0} />
+                      draft={draftNumbers.has(p.patient_id)} spark lateTasks={lateBy.get(p.patient_id) ?? 0} trail={trails.get(p.patient_id)} detailsOpen={detailsOpen} onDetails={setDetailsOpen} />
                   ))}
                   {free.map((b) => <FreeBed key={b.id} bed={b} kabulHref={kabulHref} />)}
                 </ul>
